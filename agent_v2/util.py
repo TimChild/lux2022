@@ -97,7 +97,7 @@ def get_test_env(path=None):
 
 
 def game_state_from_env(env):
-    return obs_to_game_state(env.state.env_steps, env.env_cfg, env.state.get_obs())
+    return obs_to_game_state(env.master.env_steps, env.env_cfg, env.master.get_obs())
 
 
 def run(

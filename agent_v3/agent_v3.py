@@ -11,11 +11,11 @@ logging.info('Starting Log')
 
 from dataclasses import dataclass, asdict
 from unit_manager import UnitManager
-from master_plan import MasterState, Planners
+from master_state import MasterState, Planners
 from factory_manager import FactoryManager
 from path_finder import PathFinder, CollisionParams
 
-from typing import Dict, TYPE_CHECKING, List, Any
+from typing import Dict, TYPE_CHECKING, List, Any, Union
 from lux.kit import obs_to_game_state, GameState
 from lux.config import EnvConfig
 from lux.utils import my_turn_to_place_factory
@@ -25,7 +25,7 @@ import numpy as np
 import logging
 
 if TYPE_CHECKING:
-    from master_plan import Recommendation
+    from master_state import Recommendation
 
 
 class Agent:
@@ -37,13 +37,12 @@ class Agent:
 
         # Additional initialization
         self.last_obs = None
-        self.state: MasterState = MasterState(
+        self.master: MasterState = MasterState(
             player=self.player,
             opp_player="player_1" if self.player == "player_0" else "player_0",
             unit_managers={},
             enemy_unit_managers={},
             factory_managers={},
-            pathfinder=PathFinder(),
         )
 
     def log(self, message, level=logging.INFO, **kwargs):
@@ -53,19 +52,22 @@ class Agent:
         """Required API for Agent. This is called until all factories are placed"""
         self._beginning_of_step_update(step, obs, remainingOverageTime)
 
-        game_state = self.state.game_state
         action = dict()
         if step == 0:
             action = self.bid(obs)
         else:
             # factory placement period
             my_turn_to_place = my_turn_to_place_factory(
-                game_state.teams[self.player].place_first, step
+                self.master.game_state.teams[self.player].place_first, step
             )
-            factories_to_place = game_state.teams[self.player].factories_to_place
+            factories_to_place = self.master.game_state.teams[
+                self.player
+            ].factories_to_place
             if factories_to_place > 0 and my_turn_to_place:
                 # TODO: Improve factory placement
-                action = FactoryManager.place_factory(game_state, self.player)
+                action = FactoryManager.place_factory(
+                    self.master.game_state, self.player
+                )
         self.log(f'Early setup action {action}')
         return action
 
@@ -79,33 +81,31 @@ class Agent:
 
         # Get processed observations (i.e. the obs that I will use to train a PPO agent)
         # First - general observations of the full game state (i.e. not factory/unit specific)
-        general_processed_obs = self._get_general_processed_obs()
+        general_obs = self._get_general_processed_obs()
 
         # Then observations for units/factories that might want to act
         unit_obs = {}
-        for unit_id, unit in self.state.unit_managers.items():
-            if unit_should_consider_acting(unit, self.state):
-                unit_obs[unit_id] = calculate_unit_obs(unit, self.state)
+        for unit_id, unit in self.master.units.friendly_units.items():
+            if unit_should_consider_acting(unit, self.master):
+                unit_obs[unit_id] = calculate_unit_obs(unit, self.master)
 
         factory_obs = {}
-        for factory_id, factory in self.state.factory_managers.items():
-            if factory_should_consider_acting(factory, self.state):
-                factory_obs[factory_id] = calculate_factory_obs(
-                    factory, self.state
-                )
+        for factory_id, factory in self.master.factories.friendly.items():
+            if factory_should_consider_acting(factory, self.master):
+                factory_obs[factory_id] = calculate_factory_obs(factory, self.master)
 
         # ML agent can use obs to generate action here (note: not the basic actions of the game)
         # For now, I'll just make some algorithms to return the high level actions
         unit_high_level_actions = {}
         for unit_id, obs in unit_obs.items():
-            full_obs = combine_obs(general_processed_obs, unit_obs)
+            full_obs = MyObs.combine_obs(general_obs, obs)
             unit_high_level_actions[unit_id] = calculate_high_level_unit_actions(
                 full_obs
             )
 
         factory_high_level_actions = {}
         for factory_id, obs in factory_obs.items():
-            full_obs = combine_obs(general_processed_obs, factory_obs)
+            full_obs = MyObs.combine_obs(general_obs, obs)
             factory_high_level_actions[
                 factory_id
             ] = calculate_high_level_factory_actions(full_obs)
@@ -120,8 +120,8 @@ class Agent:
     ):
         """Use the step and obs to update any turn based info (e.g. map changes)"""
         game_state = obs_to_game_state(step, self.env_cfg, obs)
-        # TODO: Use last obs to see what has changed to optimize update?
-        self.state.update(game_state)
+        # TODO: Use last obs to see what has changed to optimize update? Or master does this?
+        self.master.update(game_state)
         self.last_obs = obs
 
     def _get_general_processed_obs(self) -> GeneralObs:
@@ -134,25 +134,42 @@ class Agent:
         pass
 
 
+@dataclass
+class FullObs:
+    general: GeneralObs
+    specific: [UnitObs, FactoryObs]
+
+
 class MyObs(abc.ABC):
-    """General form of my observations s.t."""
+    """General form of my observations (i.e. some general requirements)"""
 
     @abc.abstractmethod
     def to_array(self):
         """Return observations as a numpy array"""
         pass
 
+    @staticmethod
+    def combine_obs(general_obs: GeneralObs, specific_obs: Union[UnitObs, FactoryObs]):
+        """Combine the general and unit obs into a single array that can be passed into ML"""
+        return FullObs(general_obs, specific_obs)
+
 
 @dataclass
 class GeneralObs(MyObs):
-
     def to_array(self):
         return np.array([])
 
 
-def combine_obs(general_obs, unit_obs):
-    """Combine the general and unit obs into a single array that can be passed into ML"""
-    pass
+@dataclass
+class UnitObs(MyObs):
+    def to_array(self):
+        return np.array([])
+
+
+@dataclass
+class FactoryObs(MyObs):
+    def to_array(self):
+        return np.array([])
 
 
 def calculate_high_level_unit_actions(processed_obs):

@@ -206,7 +206,7 @@ class MiningPlanner(Planner):
             path = pathfinder.path_fast(
                 start,
                 end,
-                step=unit_manager.master_plan.step,
+                step=unit_manager.master.step,
                 rubble=True if unit_type == UnitType.HEAVY else False,
                 margin=2,
                 collision_params=CollisionParams(

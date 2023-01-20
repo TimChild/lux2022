@@ -39,12 +39,12 @@ class UnitManager:
     def __init__(
         self,
         unit: Unit,
-        master_plan: MasterState,
+        master_state: MasterState,
     ):
         self.unit_id = unit.unit_id
         self.unit = unit
         self.unit_config: UnitConfig = unit.unit_cfg
-        self.master_plan = master_plan
+        self.master: MasterState = master_state
 
         self.status: Status = Status(
             role='not set', current_action='', recommendation=Recommendation()
@@ -56,12 +56,12 @@ class UnitManager:
     def assign(self, role: str, recommendation: Recommendation, resource_pos: Optional[Tuple[int, int]] = None, factory_pos: Optional[Tuple[int, int]] = None):
         self.status.role = role
         self.status.recommendation = recommendation
-        self.master_plan.deassign_unit_resource(unit_id=self.unit_id)
-        self.master_plan.deassign_unit_factory(unit_id=self.unit_id)
+        self.master.deassign_unit_resource(unit_id=self.unit_id)
+        self.master.deassign_unit_factory(unit_id=self.unit_id)
         if resource_pos is not None:
-            self.master_plan.assign_unit_resource(self.unit_id, resource_pos)
+            self.master.assign_unit_resource(self.unit_id, resource_pos)
         if factory_pos is not None:
-            self.master_plan.assign_unit_factory(self.unit_id, factory_pos)
+            self.master.assign_unit_factory(self.unit_id, factory_pos)
 
     def actions_to_path(self, actions=None):
         if actions is None:
@@ -71,6 +71,6 @@ class UnitManager:
     def log(self, message, level=logging.INFO):
         logging.log(
             level,
-            f"Step {self.master_plan.game_state.real_env_steps}, Unit {self.unit_id}: {message}",
+            f"Step {self.master.game_state.real_env_steps}, Unit {self.unit_id}: {message}",
         )
 
