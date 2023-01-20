@@ -15,9 +15,45 @@ if TYPE_CHECKING:
     from factory_manager import FactoryManager
     from path_finder import PathFinder
 
+
 class Recommendation:
     role: str = 'not set'
     value: float = 0
+
+
+class Planner(abc.ABC):
+    """E.g. MiningPlanner makes Mining Recommendations
+    Other Planners might be:
+        - Attack
+        - Defend
+        - Solar Farm
+        - Dig Rubble
+        - Dig Lichen
+    """
+
+    @abc.abstractmethod
+    def recommend(self, unit: UnitManager):
+        """Recommend an action for the unit (effectively make a high level obs)"""
+        pass
+
+    @abc.abstractmethod
+    def carry_out(self, unit: UnitManager, recommendation: Recommendation):
+        """TODO: Should this be here?
+        Idea would be to make the actions necessary to carry out recommendation
+        The Planner instance has probably already calculated what would need to be done, so might be more efficient to ask it again?
+        Then clear it's cache at the beginning of each turn?
+        """
+        pass
+
+    @abc.abstractmethod
+    def update(self, *args, **kwargs):
+        """Clear cached recommendations for example"""
+        pass
+
+    def log(self, message, level=logging.INFO):
+        """Record a logging message in a way that I can easily change the behaviour later"""
+        logging.log(level, message)
+
 
 @dataclass
 class ResourceTile(dict):
@@ -61,30 +97,6 @@ class FactoryMaps:
             enemy=other_maps[self.opp_player],
         )
         return factory_maps
-
-
-class Planner(abc.ABC):
-    @abc.abstractmethod
-    def recommend(self, unit: UnitManager):
-        pass
-
-    @abc.abstractmethod
-    def carry_out(self, unit: UnitManager, recommendation: Recommendation):
-        pass
-
-    @abc.abstractmethod
-    def update(self):
-        pass
-
-    def log(self, message, level=logging.INFO):
-        logging.log(level, message)
-
-
-class Planners:
-    def __init__(self, master_plan: MasterState):
-        from mining_planner import MiningPlanner
-
-        self.mining_planner: MiningPlanner = MiningPlanner(master_plan)
 
 
 @dataclass
@@ -275,6 +287,3 @@ class MasterState:
 
     def _update_allocations(self, game_state: GameState):
         raise
-
-
-

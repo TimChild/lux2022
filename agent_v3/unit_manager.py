@@ -53,7 +53,13 @@ class UnitManager:
     def update(self, unit: Unit):
         self.unit = unit
 
-    def assign(self, role: str, recommendation: Recommendation, resource_pos: Optional[Tuple[int, int]] = None, factory_pos: Optional[Tuple[int, int]] = None):
+    def assign(
+        self,
+        role: str,
+        recommendation: Recommendation,
+        resource_pos: Optional[Tuple[int, int]] = None,
+        factory_pos: Optional[Tuple[int, int]] = None,
+    ):
         self.status.role = role
         self.status.recommendation = recommendation
         self.master.deassign_unit_resource(unit_id=self.unit_id)
@@ -73,4 +79,3 @@ class UnitManager:
             level,
             f"Step {self.master.game_state.real_env_steps}, Unit {self.unit_id}: {message}",
         )
-

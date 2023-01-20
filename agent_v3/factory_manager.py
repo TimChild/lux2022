@@ -3,7 +3,7 @@ from typing import Dict, TYPE_CHECKING
 
 import numpy as np
 
-from master_plan import MasterState, Planner, Recommendation
+from master_state import MasterState, Recommendation, Planner
 from lux.kit import obs_to_game_state, GameState
 from lux.factory import Factory
 

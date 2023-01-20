@@ -5,7 +5,7 @@ from cachetools.keys import hashkey
 import logging
 from typing import TYPE_CHECKING, Tuple, Optional
 from dataclasses import dataclass
-from master_plan import Recommendation, MasterState, Planner
+from master_state import Recommendation, MasterState, Planner
 from path_finder import CollisionParams
 from util import (
     ICE,
@@ -43,8 +43,8 @@ class MiningRecommendation(Recommendation):
 
 
 class MiningPlanner(Planner):
-    def __init__(self, master_plan: MasterState):
-        self.master_plan = master_plan
+    def __init__(self, master_state: MasterState):
+        self.master: MasterState = master_state
         # self.mining_routes: dict = {}
         self._mining_routes = None
 
@@ -56,15 +56,15 @@ class MiningPlanner(Planner):
 
     @property
     def ice(self):
-        return self.master_plan.game_state.board.ice
+        return self.master.maps.ice
 
     @property
     def ore(self):
-        return self.master_plan.game_state.board.ore
+        return self.master.maps.ore
 
     @property
     def friendly_factories(self):
-        return self.master_plan.factory_maps.friendly
+        return self.master.factories.friendly
 
     def update(self):
         # For now, only calculate once
@@ -113,9 +113,9 @@ class MiningPlanner(Planner):
             for i, path in enumerate(routes.paths):
                 resource_pos = tuple(path[-1])
                 if (
-                    resource_pos not in self.master_plan.resource_allocation
-                    or resource_pos in self.master_plan.resource_allocation
-                    and not self.master_plan.resource_allocation[resource_pos].used_by
+                    resource_pos not in self.master.resource_allocation
+                    or resource_pos in self.master.resource_allocation
+                    and not self.master.resource_allocation[resource_pos].used_by
                 ):
                     next_unoccupied_path = path
                     next_unoccupied_value = routes.values[i]
@@ -156,16 +156,16 @@ class MiningPlanner(Planner):
         unit_type = unit_manager.unit.unit_type
         unit_id = unit_manager.unit_id
 
-        pathfinder = self.master_plan.pathfinder
+        pathfinder = self.master.pathfinder
         resource_pos = recommendation.resource_pos
 
         # Figure out which factory tile to use
         factory_id = recommendation.factory_id
         factory_num = int(factory_id[-1])
         factory_map = np.array(
-            self.master_plan.factory_maps.friendly == factory_num, dtype=int
+            self.master.factory_maps.friendly == factory_num, dtype=int
         )
-        center_coord = self.master_plan.game_state.factories[self.master_plan.player][
+        center_coord = self.master.game_state.factories[self.master.player][
             factory_id
         ].pos
         factory_map[
@@ -180,9 +180,9 @@ class MiningPlanner(Planner):
                 factory_pos = center_coord
                 break
             elif (
-                factory_id in self.master_plan.factory_allocation
-                and factory_pos in self.master_plan.factory_allocation[factory_id]
-                and self.master_plan.factory_allocation[factory_id][factory_pos].used_by
+                factory_id in self.master.factory_allocation
+                and factory_pos in self.master.factory_allocation[factory_id]
+                and self.master.factory_allocation[factory_id][factory_pos].used_by
             ):
                 factory_map[factory_pos[0], factory_pos[1]] = 0  # Already occupied
             else:
@@ -232,7 +232,7 @@ class MiningPlanner(Planner):
 
         # Energy cost of mining route
         route_cost = power_cost_of_actions(
-            self.master_plan.game_state, unit_manager.unit, route_actions
+            self.master.game_state, unit_manager.unit, route_actions
         )
         route_actions.insert(0, unit_manager.unit.pickup(POWER, route_cost * 2.0))
         for action in route_actions:
@@ -267,9 +267,9 @@ class MiningPlanner(Planner):
     ) -> Tuple[int, int]:
         if resource_map is None:
             if resource == ICE:
-                resource_map = self.master_plan.game_state.board.ice
+                resource_map = self.master.game_state.board.ice
             elif resource == ORE:
-                resource_map = self.master_plan.game_state.board.ore
+                resource_map = self.master.game_state.board.ore
             else:
                 raise NotImplementedError(f"Dont know {resource}")
         return nearest_non_zero(resource_map, pos)
@@ -296,7 +296,7 @@ class MiningPlanner(Planner):
             for resource in [ICE, ORE]:
                 routes[unit_type.name][resource] = {}
 
-                for factory in self.master_plan.factory_managers.values():
+                for factory in self.master.factory_managers.values():
                     position = factory.factory.pos
                     resource_map = self.resource_maps[resource].copy()
 
@@ -306,10 +306,10 @@ class MiningPlanner(Planner):
                         nearest_pos = self.nearest_resource(
                             position, resource, resource_map=resource_map
                         )
-                        path = self.master_plan.pathfinder.path_fast(
+                        path = self.master.pathfinder.path_fast(
                             position,
                             nearest_pos,
-                            step=self.master_plan.step,
+                            step=self.master.step,
                             rubble=rubble,
                         )
                         paths.append(path)
@@ -329,7 +329,7 @@ class MiningPlanner(Planner):
                         unit = units[unit_type]
                         unit.pos = path[0]
                         cost = power_cost_of_actions(
-                            self.master_plan.game_state,
+                            self.master.game_state,
                             unit,
                             path_to_actions(path),
                         )

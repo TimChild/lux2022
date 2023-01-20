@@ -11,7 +11,7 @@ logging.info('Starting Log')
 
 from dataclasses import dataclass, asdict
 from unit_manager import UnitManager
-from master_state import MasterState, Planners
+from master_state import MasterState
 from factory_manager import FactoryManager
 from path_finder import PathFinder, CollisionParams
 
@@ -94,8 +94,34 @@ class Agent:
             if factory_should_consider_acting(factory, self.master):
                 factory_obs[factory_id] = calculate_factory_obs(factory, self.master)
 
+        """
+        Thoughts:
+            Should there be a separate round of collecting recommendations for units?
+            unit obs might be things like:
+                - enemy within two tiles
+                - energy left
+                - distance to favoured factory
+                - distance to nearest factory
+                - distance to nearest enemy 
+                - distance to nearest friendly
+                etc
+                Fairly easy to see how these would have fixed shape etc
+            unit recommendations might be things like:
+                - mine ore for this factory
+                - attack enemy unit
+                - defend friendly unit
+                - go solar farm
+                etc
+                Probably not necessary to get all recommendations every time, but then not a fixed shape obs
+                
+        """
+
         # ML agent can use obs to generate action here (note: not the basic actions of the game)
         # For now, I'll just make some algorithms to return the high level actions
+        """Thoughts: Maybe the ML  agent can return a 0 to 1 value for every recommendation, the highest is carried 
+        out So each recommendation+general_obs+unit_obs becomes an observation for ML and it only says 0 to 1? - 
+        could just the recommendation input be enough to change the behaviour of the whole PPO agent? i.e. however it 
+        interprets data for an Attack recommendation, it needs to do basically the opposite for defend."""
         unit_high_level_actions = {}
         for unit_id, obs in unit_obs.items():
             full_obs = MyObs.combine_obs(general_obs, obs)
@@ -103,6 +129,12 @@ class Agent:
                 full_obs
             )
 
+        """
+        Thoughts:
+            Maybe treat the training of factory behaviour as separate from training of unit behaviour?
+            - But I do want the whole agent to be able to strategize together somehow
+            - Maybe this isn't necessary if the action space is a single 0 to 1 for every combination?
+        """
         factory_high_level_actions = {}
         for factory_id, obs in factory_obs.items():
             full_obs = MyObs.combine_obs(general_obs, obs)
@@ -203,7 +235,11 @@ def unit_should_consider_acting(unit: UnitManager, plan: MasterState) -> bool:
 
 
 def calculate_unit_obs(unit: UnitManager, plan: MasterState) -> UnitObs:
-    """Calculate observations that are specific to a particular unit"""
+    """Calculate observations that are specific to a particular unit
+
+    Something like, get some recommended actions for the unit given the current game state?
+    Those recommendations can include some standard information (values etc) that can be used to make an ML interpretable observation along with some extra information that identifies what action to take if this action is recommended
+    """
     pass
 
 
