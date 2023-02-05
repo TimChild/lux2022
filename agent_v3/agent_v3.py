@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import abc
 
+from agent_v3.actions import (
+    calculate_high_level_unit_action,
+    calculate_high_level_factory_actions,
+    unit_should_consider_acting,
+    factory_should_consider_acting,
+)
+
 with open('agent_v3_log.log', 'w') as f:
     pass
 import logging
@@ -9,18 +16,16 @@ import logging
 logging.basicConfig(filename='agent_v3_log.log', level=logging.INFO)
 logging.info('Starting Log')
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field
 from unit_manager import UnitManager
 from master_state import MasterState
 from factory_manager import FactoryManager
-from path_finder import PathFinder, CollisionParams
 
-from typing import Dict, TYPE_CHECKING, List, Any, Union
-from lux.kit import obs_to_game_state, GameState
+from typing import TYPE_CHECKING
+from lux.kit import obs_to_game_state
 from lux.config import EnvConfig
 from lux.utils import my_turn_to_place_factory
 
-from util import ACT_TYPE, MOVE
 import numpy as np
 import logging
 
@@ -39,10 +44,7 @@ class Agent:
         self.last_obs = None
         self.master: MasterState = MasterState(
             player=self.player,
-            opp_player="player_1" if self.player == "player_0" else "player_0",
-            unit_managers={},
-            enemy_unit_managers={},
-            factory_managers={},
+            env_cfg=env_cfg,
         )
 
     def log(self, message, level=logging.INFO, **kwargs):
@@ -64,7 +66,7 @@ class Agent:
                 self.player
             ].factories_to_place
             if factories_to_place > 0 and my_turn_to_place:
-                # TODO: Improve factory placement
+                # TODO: Improve factory placement (currently random)
                 action = FactoryManager.place_factory(
                     self.master.game_state, self.player
                 )
@@ -84,7 +86,7 @@ class Agent:
         general_obs = self._get_general_processed_obs()
 
         # Then observations for units/factories that might want to act
-        unit_obs = {}
+        unit_obs: dict[str, UnitObs] = {}
         for unit_id, unit in self.master.units.friendly_units.items():
             if unit_should_consider_acting(unit, self.master):
                 unit_obs[unit_id] = calculate_unit_obs(unit, self.master)
@@ -113,6 +115,7 @@ class Agent:
                 - go solar farm
                 etc
                 Probably not necessary to get all recommendations every time, but then not a fixed shape obs
+                maybe just always include top 3 recommendations (and leave zeroes if fewer obs)
                 
         """
 
@@ -123,11 +126,8 @@ class Agent:
         could just the recommendation input be enough to change the behaviour of the whole PPO agent? i.e. however it 
         interprets data for an Attack recommendation, it needs to do basically the opposite for defend."""
         unit_high_level_actions = {}
-        for unit_id, obs in unit_obs.items():
-            full_obs = MyObs.combine_obs(general_obs, obs)
-            unit_high_level_actions[unit_id] = calculate_high_level_unit_actions(
-                full_obs
-            )
+        for unit_id, u_obs in unit_obs.items():
+            unit_high_level_actions[unit_id] = calculate_high_level_unit_action(general_obs, u_obs)
 
         """
         Thoughts:
@@ -136,19 +136,20 @@ class Agent:
             - Maybe this isn't necessary if the action space is a single 0 to 1 for every combination?
         """
         factory_high_level_actions = {}
-        for factory_id, obs in factory_obs.items():
-            full_obs = MyObs.combine_obs(general_obs, obs)
+        for factory_id, f_obs in factory_obs.items():
             factory_high_level_actions[
                 factory_id
-            ] = calculate_high_level_factory_actions(full_obs)
+            ] = calculate_high_level_factory_actions(general_obs, f_obs)
 
         # Convert back to actions that the game supports
-        unit_actions = generate_unit_low_level_actions(unit_high_level_actions)
-        factory_actions = generate_factory_low_level_actions(factory_high_level_actions)
+        unit_actions = {unit_id: hla.to_action_queue(plan=self.master) for unit_id, hla in
+                        unit_high_level_actions.items()}
+        factory_actions = {factory_id: hla.to_action_queue(plan=self.master) for factory_id, hla in
+                           factory_high_level_actions.items()}
         return dict(**unit_actions, **factory_actions)
 
     def _beginning_of_step_update(
-        self, step: int, obs: dict, remainingOverageTime: int
+            self, step: int, obs: dict, remainingOverageTime: int
     ):
         """Use the step and obs to update any turn based info (e.g. map changes)"""
         game_state = obs_to_game_state(step, self.env_cfg, obs)
@@ -166,12 +167,6 @@ class Agent:
         pass
 
 
-@dataclass
-class FullObs:
-    general: GeneralObs
-    specific: [UnitObs, FactoryObs]
-
-
 class MyObs(abc.ABC):
     """General form of my observations (i.e. some general requirements)"""
 
@@ -179,11 +174,6 @@ class MyObs(abc.ABC):
     def to_array(self):
         """Return observations as a numpy array"""
         pass
-
-    @staticmethod
-    def combine_obs(general_obs: GeneralObs, specific_obs: Union[UnitObs, FactoryObs]):
-        """Combine the general and unit obs into a single array that can be passed into ML"""
-        return FullObs(general_obs, specific_obs)
 
 
 @dataclass
@@ -194,96 +184,54 @@ class GeneralObs(MyObs):
 
 @dataclass
 class UnitObs(MyObs):
+    """Object for holding recommendations and other observations relevant to unit on a per-turn basis"""
+    id: str
+    nearest_enemy_distance: int
+
+    def __post_init__(self):
+        self.recommendations: list[Recommendation] = []
+
     def to_array(self):
-        return np.array([])
+        recommendations = np.zeroes(3)
+        for i, r in enumerate(self.recommendations):
+            recommendations[i] = r.to_array()
+
+        return np.array([recommendations])
 
 
 @dataclass
 class FactoryObs(MyObs):
+    id: str
+
+    def __post_init__(self):
+        self.recommendations: list[Recommendation] = []
+
     def to_array(self):
         return np.array([])
-
-
-def calculate_high_level_unit_actions(processed_obs):
-    """Take the processed obs, and return high level actions per unit/factory
-
-    Examples:
-        - Mine X Ore for factory X
-        - Mine X Ice for factory X
-        - Attack area X
-        - Defend area X
-        - Solar Farm at X
-    """
-    pass
-
-
-def calculate_high_level_factory_actions(processed_obs):
-    """Take the processed obs, and return high level actions per factory
-
-    Examples:
-        - Make Light Unit
-        - Make Heavy Unit
-    """
-    pass
-
-
-def unit_should_consider_acting(unit: UnitManager, plan: MasterState) -> bool:
-    """Whether unit should consider acting this turn
-    If no, can save the cost of calculating obs/options for that unit
-    """
-    pass
 
 
 def calculate_unit_obs(unit: UnitManager, plan: MasterState) -> UnitObs:
     """Calculate observations that are specific to a particular unit
 
+    Include all the basic stuff like id etc
+
     Something like, get some recommended actions for the unit given the current game state?
-    Those recommendations can include some standard information (values etc) that can be used to make an ML interpretable observation along with some extra information that identifies what action to take if this action is recommended
+    Those recommendations can include some standard information (values etc.) that can be used to make an ML interpretable observation along with some extra information that identifies what action to take if this action is recommended
+
     """
-    pass
+    id = unit.unit_id
+    nearest_enemy_distance = plan.maps.nearest_enemy_unit(unit.unit.pos)
+    uobs = UnitObs(id=id, nearest_enemy_distance=nearest_enemy_distance)
 
+    # Calculate a few recommendations for this unit
+    uobs.recommendations = [Recommendation()]
 
-@dataclass
-class UnitObs(MyObs):
-    def to_array(self):
-        return np.array([])
-
-
-def factory_should_consider_acting(factory: FactoryManager, plan: MasterState) -> bool:
-    """Whether factory should consider acting this turn
-    If no, can save the cost of calculating obs/options for that factory
-    """
-    return True
+    return uobs
 
 
 def calculate_factory_obs(factory: FactoryManager, plan: MasterState) -> FactoryObs:
     """Calculate observations that are specific to a particular factory"""
     pass
-
-
-@dataclass
-class FactoryObs(MyObs):
-    def to_array(self):
-        return np.array([])
-
-
-def generate_unit_low_level_actions(
-    high_level_actions: dict[str, Any]
-) -> dict[str, list[np.ndarray]]:
-    """Take the high level action (e.g. Mine X Ice for factory X) and turn it into
-    the low level action the game uses (e.g. Move up, dig, etc)"""
-    return {}
-
-
-def generate_factory_low_level_actions(
-    high_level_actions: dict[str, Any]
-) -> dict[str, np.ndarray]:
-    """Take the high level action (e.g. ???) and turn it into
-    the low level action the game uses (e.g. ???)
-
-    Not sure what these will look like yet
-    """
-    return {}
 
 
 """
@@ -314,7 +262,6 @@ parts of game)
     - Not fixed length...
     - Could give positions at least as an array of values size of map (but that is a lot!)
 """
-
 
 # class Agent:
 #     def __init__(self, player: str, env_cfg: EnvConfig) -> None:
@@ -538,9 +485,7 @@ parts of game)
 #
 
 if __name__ == '__main__':
-    obs = GeneralObs(3)
-    obs.test()
-
+    obs = GeneralObs()
 
 if __name__ == '_main__':
     run_type = 'start'
@@ -548,11 +493,7 @@ if __name__ == '_main__':
 
     start = time.time()
     ########## PyCharm ############
-    from luxai2022.env import LuxAI2022
-    from util import initialize_step_fig, add_env_step
     from util import get_test_env, show_env, run
-    from luxai_runner.utils import to_json
-    import dataclasses
     import json
 
     if run_type == 'test':
@@ -580,7 +521,7 @@ if __name__ == '_main__':
         fig = show_env(env)
         fig.show()
 
-    print(f'Finished in {time.time()-start:.3g} s')
+    print(f'Finished in {time.time() - start:.3g} s')
     ####################################
 
     ####### JUPYTER ONLY  ########

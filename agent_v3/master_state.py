@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 import numpy as np
 
+from .actions import HighLevelAction
 from lux.kit import GameState
-from util import ORE, ICE, METAL, WATER
+from .util import ORE, ICE, METAL, WATER
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager
@@ -16,9 +17,14 @@ if TYPE_CHECKING:
     from path_finder import PathFinder
 
 
-class Recommendation:
+class Recommendation(HighLevelAction):
     role: str = 'not set'
     value: float = 0
+
+    @abc.abstractmethod
+    def to_array(self):
+        """Turn recommendation into an array of values with standard size"""
+        pass
 
 
 class Planner(abc.ABC):
@@ -198,38 +204,49 @@ class Allocations:
                 _remove_from(f_id)
 
 
-@dataclass
 class Maps:
-    ice: np.ndarray
-    ore: np.ndarray
-    rubble: np.ndarray
-    lichen: np.ndarray
-    factory_maps: FactoryMaps
+    def __init__(self):
+        self.ice: np.ndarray = None
+        self.ore: np.ndarray = None
+        self.rubble: np.ndarray = None
+        self.lichen: np.ndarray = None
+        self.factory_maps: FactoryMaps = None
 
-    def resource_at_tile(self, pos) -> str:
+        self.first_update = False
+
+    def update(self, game_state: GameState):
+        board = game_state.board
+        if not self.first_update:
+            self.ice = board.ice
+            self.ore = board.ore
+            self.first_update = True
+        self.rubble = board.rubble
+        self.lichen = board.lichen
+        self.factory_maps = FactoryMaps(
+            all=board.factory_occupancy_map,
+            friendly=NotImplemented,
+            enemy=NotImplemented,
+        )
+
+    def resource_at_tile(self, pos) -> int:
         pos = tuple(pos)
         if self.ice[pos[0], pos[1]]:
             return ICE
         if self.ore[pos[0], pos[1]]:
             return ORE
-        if self.lichen[pos[0], pos[1]]:
-            return 'lichen'
-        if self.rubble[pos[0], pos[1]]:
-            return 'rubble'
-        return None
+        return -1  # Invalid
 
 
 class MasterState:
     def __init__(
         self,
         player,
-        opp_player,
-        unit_managers,
-        enemy_unit_managers,
-        factory_managers,
+        env_cfg,
     ):
         self.player = player
-        self.opp_player = opp_player
+        self.opp_player = ("player_1" if self.player == "player_0" else "player_0",)
+        self.env_cfg = env_cfg
+
         self.game_state: GameState = None
         self.step: int = None
         self.pathfinder: PathFinder = PathFinder()
@@ -239,17 +256,6 @@ class MasterState:
         self.factories = Factories(friendly={}, enemy={})
         self.allocations = Allocations()
         self.maps = Maps()
-
-        # self.unit_managers: Dict[str, UnitManager] = unit_managers
-        # self.enemy_unit_managers: Dict[str, UnitManager] = enemy_unit_managers
-        # self.factory_managers: Dict[str, FactoryManager] = factory_managers
-
-        # self.resource_allocation: Dict[Tuple[int, int], ResourceTile] = {}
-        # self.factory_allocation: Dict[str, Dict[Tuple[int, int], FactoryTile]] = {}
-
-        # self.unit_allocations: Dict[str, ResourceTile] = {}
-
-        # self._factory_maps: FactoryMaps = None
 
     def update(self, game_state: GameState):
         if game_state.real_env_steps < 0:
