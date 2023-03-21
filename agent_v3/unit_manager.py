@@ -62,6 +62,7 @@ class UnitManager:
     ):
         self.status.role = role
         self.status.recommendation = recommendation
+        # TODO: Not sure UnitManager should have to deal with master_plan... Think more (should master plan be calling this method?)
         self.master.deassign_unit_resource(unit_id=self.unit_id)
         self.master.deassign_unit_factory(unit_id=self.unit_id)
         if resource_pos is not None:

@@ -81,6 +81,7 @@ class PathFinder:
                 else:
                     raise RuntimeError
 
+        self.all_paths = data
         self.friendly_light_paths = data['friendly']['light']
         self.friendly_heavy_paths = data['friendly']['heavy']
         self.enemy_light_paths = data['enemy']['light']

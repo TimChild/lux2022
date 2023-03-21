@@ -12,15 +12,13 @@ if TYPE_CHECKING:
 
 
 class FactoryManager:
-    def __init__(self, factory: Factory, master_plan: MasterState):
+    def __init__(self, factory: Factory):
         self.unit_id = factory.unit_id
         self.factory = factory
-        self.master_plan = master_plan
 
     @staticmethod
     def place_factory(game_state: GameState, player):
         """Place factory in early_setup"""
-
         # how many factories you have left to place
         factories_to_place = game_state.teams[player].factories_to_place
 
@@ -37,12 +35,6 @@ class FactoryManager:
 
     def update(self, factory: Factory):
         self.factory = factory
-
-    # def assign_unit(self, unit: UnitManager):
-    #     self.master_plan.assign_unit_factory(unit.unit_id, factory_id=self.unit_id)
-    #
-    # def deassign_unit(self, unit: UnitManager):
-    #     self.master_plan.deassign_unit_factory(unit.unit_id, factory_id=self.unit_id)
 
 
 # class FactoryRecommendation(Recommendation):

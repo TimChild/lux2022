@@ -152,17 +152,6 @@ class Allocations:
             exclusive: Whether this resource should be marked for exclusive use by unit
         """
         pass
-        # position = tuple(position)
-        # rt = self.resource_allocation.get(
-        #     position,
-        #     ResourceTile(pos=position, resource_type=self.resource_at_tile(position)),
-        # )
-        # rt.used_by.append(unit_id)
-        # self.resource_allocation[position] = rt
-        #
-        # current_allocations = self.unit_allocations.get(unit_id, [])
-        # current_allocations.append(rt)
-        # self.unit_allocations[unit_id] = current_allocations
 
     def assign_unit_factory(
         self, unit_id: str, position: Optional[Tuple[int, int]] = None
