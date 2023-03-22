@@ -71,28 +71,24 @@ class FactoryMaps:
     """-1 where no factory, factory_id_num where factory"""
 
     all: np.ndarray
-    friendly: np.ndarray
-    enemy: np.ndarray
+    by_player: dict[str, np.ndarray]
 
-    def _generate_factory_maps(self, game_state: GameState, player: str):
+    @classmethod
+    def from_game_state(cls, game_state: GameState):
         # TODO: This came from MasterState, needs to be implemented here instead I think
-        factory_map = self.game_state.board.factory_occupancy_map
-        factories = self.game_state.factories
+        factory_map = game_state.board.factory_occupancy_map
+        factories = game_state.factories
 
-        other_maps = {}
-        for team in self.game_state.teams:
+        by_player_maps = {}
+        for team in game_state.teams:
             fs = factories[team]
             arr = np.ones(factory_map.shape, dtype=int) * -1
             for f in fs.values():
                 f_num = int(f.unit_id[-1])
                 arr[factory_map == f_num] = f_num
-            other_maps[team] = arr
+            by_player_maps[team] = arr
 
-        factory_maps = FactoryMaps(
-            all=factory_map,
-            friendly=other_maps[self.player],
-            enemy=other_maps[self.opp_player],
-        )
+        factory_maps = cls(all=factory_map, by_player=by_player_maps)
         return factory_maps
 
 
@@ -106,6 +102,11 @@ class Units:
     def friendly_units(self) -> dict[str, UnitManager]:
         """Return full list of friendly units"""
         return dict(**self.light, **self.heavy)
+
+    @property
+    def enemy_units(self) -> dict[str, UnitManager]:
+        """Return full list of enemy units"""
+        return self.enemy.friendly_units
 
 
 @dataclass
@@ -202,11 +203,7 @@ class Maps:
             self.first_update = True
         self.rubble = board.rubble
         self.lichen = board.lichen
-        self.factory_maps = FactoryMaps(
-            all=board.factory_occupancy_map,
-            friendly=NotImplemented,
-            enemy=NotImplemented,
-        )
+        self.factory_maps = FactoryMaps.from_game_state(game_state=game_state)
 
     def resource_at_tile(self, pos) -> int:
         pos = tuple(pos)
@@ -224,26 +221,32 @@ class MasterState:
         env_cfg,
     ):
         self.player = player
-        self.opp_player = ("player_1" if self.player == "player_0" else "player_0",)
+        self.opp_player = "player_1" if self.player == "player_0" else "player_0"
         self.env_cfg = env_cfg
 
         self.game_state: GameState = None
         self.step: int = None
         self.pathfinder: PathFinder = PathFinder()
 
-        # TODO: Implement this
         self.units = Units(light={}, heavy={}, enemy=Units(light={}, heavy={}))
         self.factories = Factories(friendly={}, enemy={})
         self.allocations = Allocations()
         self.maps = Maps()
 
     def update(self, game_state: GameState):
+        self.maps.update(game_state)
         if game_state.real_env_steps < 0:
             self._early_update(game_state)
         else:
             self._update_units(game_state)
             self._update_factories(game_state)
             self._update_allocations(game_state)
+            self.pathfinder.update(
+                rubble=self.maps.rubble,
+                friendly_units=self.units.friendly_units,
+                enemy_units=self.units.enemy_units,
+                enemy_factories=self.factories.enemy,
+            )
 
         self.step = game_state.real_env_steps
         self.game_state = game_state

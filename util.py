@@ -1,18 +1,5 @@
 import sys
-
-# sys.path.append(
-#     'lux_kit'
-# )  #  lux_kit is a copy of https://github.com/Lux-AI-Challenge/Lux-Design-2022/tree/main/kits/python
 from typing import Tuple, List, Union, Optional
-from lux.kit import obs_to_game_state, GameState, EnvConfig, to_json, from_json
-from lux.config import UnitConfig, EnvConfig
-from lux.utils import direction_to, my_turn_to_place_factory
-from lux.unit import Unit, move_deltas, UnitCargo
-import dataclasses
-from luxai2022.state import state
-from luxai2022 import LuxAI2022
-from luxai2022.unit import UnitType
-from luxai2022.team import Team
 import numpy as np
 import sys
 import json
@@ -23,6 +10,17 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 from matplotlib.patches import Rectangle
 import plotly.graph_objects as go
+import dataclasses
+from luxai_s2 import LuxAI_S2
+from luxai_s2.state import state
+from luxai_s2.unit import UnitType
+from luxai_s2.team import Team
+
+from lux.kit import obs_to_game_state, GameState, EnvConfig, to_json, from_json
+from lux.config import UnitConfig, EnvConfig
+from lux.utils import direction_to, my_turn_to_place_factory
+from lux.unit import Unit, move_deltas, UnitCargo
+
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
 
@@ -266,6 +264,7 @@ def path_to_actions(path):
 
 
 def actions_to_path(unit, actions):
+    # TODO: take into account repeats, and only evaluate up to N steps?
     deltas = {
         0: (0, 0),
         1: (0, -1),

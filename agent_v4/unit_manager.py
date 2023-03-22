@@ -72,6 +72,10 @@ class UnitManager:
             self.master.assign_unit_factory(self.unit_id, factory_pos)
 
     def actions_to_path(self, actions=None):
+        """
+        Return a list of coordinates of the path the actions represent
+        """
+        # TODO: Take into account repeats in `actions_to_path`, and calculate to N steps?
         if actions is None:
             actions = self.unit.action_queue
         return actions_to_path(self.unit, actions)
