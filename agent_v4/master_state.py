@@ -10,11 +10,12 @@ import numpy as np
 from lux.kit import GameState
 
 from util import ORE, ICE, METAL, WATER
+from path_finder import PathFinder
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager
     from factory_manager import FactoryManager
-    from path_finder import PathFinder
+    from actions import Recommendation
 
 
 class Planner(abc.ABC):
@@ -271,4 +272,4 @@ class MasterState:
         pass
 
     def _update_allocations(self, game_state: GameState):
-        raise
+        pass
