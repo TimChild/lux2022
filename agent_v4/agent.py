@@ -13,6 +13,7 @@ import logging
 logging.basicConfig(filename='agent_log.log', level=logging.INFO)
 logging.info('Starting Log')
 
+from basic_agent import Agent as BasicAgent
 from unit_manager import UnitManager
 from master_state import MasterState
 from factory_manager import FactoryManager
@@ -288,6 +289,7 @@ if __name__ == '__main__':
 
         replay = run(
             Agent,
+            # BasicAgent,
             Agent,
             map_seed=1,
             max_steps=1000,
