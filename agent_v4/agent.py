@@ -189,7 +189,8 @@ class UnitObs(MyObs):
     """Object for holding recommendations and other observations relevant to unit on a per-turn basis"""
 
     id: str
-    nearest_enemy_distance: int
+    nearest_enemy_light_distance: int
+    nearest_enemy_heavy_distance: int
 
     def __post_init__(self):
         self.recommendations: list[Recommendation] = []
@@ -223,8 +224,10 @@ def calculate_unit_obs(unit: UnitManager, plan: MasterState) -> UnitObs:
 
     """
     id = unit.unit_id
-    nearest_enemy_distance = plan.maps.nearest_enemy_unit(unit.unit.pos)
-    uobs = UnitObs(id=id, nearest_enemy_distance=nearest_enemy_distance)
+    nearest_enemy_light_distance = plan.units.nearest_unit(pos=unit.unit.pos, friendly=False, enemy=True, light=True, heavy=False)
+    nearest_enemy_heavy_distance = plan.units.nearest_unit(pos=unit.unit.pos, friendly=False, enemy=True, light=False, heavy=True)
+    uobs = UnitObs(id=id, nearest_enemy_light_distance=nearest_enemy_light_distance,
+                   nearest_enemy_heavy_distance=nearest_enemy_heavy_distance)
 
     # Calculate a few recommendations for this unit
     uobs.recommendations = [Recommendation()]

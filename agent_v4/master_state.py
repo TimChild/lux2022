@@ -4,18 +4,27 @@ import copy
 import logging
 from typing import Dict, TYPE_CHECKING, Tuple, List, Optional, Any
 from dataclasses import dataclass, field
+import collections
 from functools import lru_cache
 
 import numpy as np
+
 from lux.kit import GameState
 
-from util import ORE, ICE, METAL, WATER
+from util import ORE, ICE, METAL, WATER, manhattan
 from path_finder import PathFinder
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager
     from factory_manager import FactoryManager
     from actions import Recommendation
+
+
+def map_nested_dicts(ob, func):
+    if isinstance(ob, collections.Mapping):
+        return {k: map_nested_dicts(v, func) for k, v in ob.items()}
+    else:
+        return func(ob)
 
 
 class Planner(abc.ABC):
@@ -96,6 +105,8 @@ class FactoryMaps:
 class Units:
     light: dict[str, UnitManager]
     heavy: dict[str, UnitManager]
+    #                  {LIGHT/HEAVY: {unit_id: pos}}
+    unit_positions: dict[str, dict[str, tuple[int, int]]] = None
     enemy: Units = None
 
     @property
@@ -107,6 +118,91 @@ class Units:
     def enemy_units(self) -> dict[str, UnitManager]:
         """Return full list of enemy units"""
         return self.enemy.friendly_units
+
+    def log(self, message, level=logging.INFO):
+        logging.log(level=level, msg=message)
+
+    def get_unit(self, unit_id: str):
+        if unit_id in self.light:
+            return self.light[unit_id]
+        elif unit_id in self.heavy:
+            return self.heavy[unit_id]
+        elif self.enemy is not None:
+            return self.enemy.get_unit(unit_id)
+        else:
+            raise KeyError(f'Unit {unit_id} does not exist')
+
+    def nearest_unit(self, pos: tuple[int, int], friendly=True, enemy=True, light=True, heavy=True) -> tuple[UnitManager, int]:
+        """Return the nearest unit and distance from the given position"""
+        unit_positions = {}
+        if friendly:
+            if light:
+                for unit_id, unit in self.light.items():
+                    unit_positions[unit_id] = unit.pos
+            if heavy:
+                for unit_id, unit in self.heavy.items():
+                    unit_positions[unit_id] = unit.pos
+        if enemy:
+            if light:
+                for unit_id, unit in self.enemy.light.items():
+                    unit_positions[unit_id] = unit.pos
+            if heavy:
+                for unit_id, unit in self.enemy.heavy.items():
+                    unit_positions[unit_id] = unit.pos
+
+        distances = {unit_id: manhattan(pos, other_pos) for unit_id, other_pos in unit_positions}
+        nearest_id = min(distances, key=distances.get)
+        return self.get_unit(nearest_id), distances[nearest_id]
+
+    def update(self, game_state: GameState, team: str, master_state: MasterState):
+        """
+        Update at the beginning of turn
+        TODO: May want to do something before calling this to check what has actually changed
+        """
+        units = {'LIGHT': {}, 'HEAVY': {}}
+        for id, unit in game_state.units[team].items():
+            units[unit.unit_type][id] = unit
+
+        for unit_id, unit in units['LIGHT'].items():
+            if unit_id in self.light:
+                self.light[unit_id].update(unit)
+            else:
+                self.light[unit_id] = UnitManager(unit, master_state)
+
+        for unit_id, unit in units['HEAVY'].items():
+            if unit_id in self.heavy:
+                self.heavy[unit_id].update(unit)
+            else:
+                self.heavy[unit_id] = UnitManager(unit, master_state)
+
+        # Remove dead units
+        for k in set(self.light.keys()) - set(units['LIGHT'].keys()):
+            self.log(f'Removing unit {k}, assumed dead')
+            self.light.pop(k)
+
+        for k in set(self.light.keys()) - set(units['HEAVY'].keys()):
+            self.log(f'Removing unit {k}, assumed dead')
+            self.heavy.pop(k)
+
+        # Store positions of all units
+        self.unit_positions = map_nested_dicts(units, lambda unit: unit.pos)
+
+        # Only update self.enemy if it isn't none (prevent infinite recursion)
+        if self.enemy is not None:
+            opp_team = 'player_1' if team == 'player_0' else 'player_1'
+            self.enemy.update(game_state, opp_team, master_state)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 @dataclass
@@ -204,6 +300,7 @@ class Maps:
         self.rubble = board.rubble
         self.lichen = board.lichen
         self.factory_maps = FactoryMaps.from_game_state(game_state=game_state)
+        # self.unit_map = game_state.units.
 
     def resource_at_tile(self, pos) -> int:
         pos = tuple(pos)
@@ -212,6 +309,11 @@ class Maps:
         if self.ore[pos[0], pos[1]]:
             return ORE
         return -1  # Invalid
+
+
+
+
+
 
 
 class MasterState:
@@ -265,6 +367,7 @@ class MasterState:
         If there are new units, add them to tracked units
         If units have died, remove them from tracked units and remove any allocations for them
         """
+        self.units.update(game_state, self.player, master_state=self)
         pass
 
     def _update_factories(self, game_state: GameState):

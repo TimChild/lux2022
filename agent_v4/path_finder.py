@@ -65,8 +65,8 @@ class PathFinder:
     def update(
         self,
         rubble: np.ndarray,
-        friendly_units: Iterable[UnitManager],
-        enemy_units: Iterable[UnitManager],
+        friendly_units: Dict[str, UnitManager],
+        enemy_units: Dict[str, UnitManager],
         enemy_factories: Dict[str, Factory],
     ):
         self.rubble = rubble
@@ -77,7 +77,7 @@ class PathFinder:
             'enemy': {'light': {}, 'heavy': {}},
         }
 
-        for units, player in zip([friendly_units, enemy_units], data.keys()):
+        for units, player in zip([friendly_units.values(), enemy_units.values()], data.keys()):
             for unit in units:
                 if unit.unit.unit_type == 'LIGHT':
                     data[player]['light'][unit.unit_id] = unit.actions_to_path()

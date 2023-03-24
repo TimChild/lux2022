@@ -54,6 +54,10 @@ class UnitManager:
     def update(self, unit: Unit):
         self.unit = unit
 
+    @property
+    def pos(self):
+        return self.unit.pos
+
     def assign(
         self,
         role: str,
