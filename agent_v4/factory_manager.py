@@ -1,13 +1,23 @@
 from __future__ import annotations
 from typing import Dict, TYPE_CHECKING
-
 import numpy as np
 
+from agent_v4.master_state import MasterState
 from lux.kit import obs_to_game_state, GameState
 from lux.factory import Factory
 
+from actions import Recommendation
+
 if TYPE_CHECKING:
     from unit_manager import UnitManager
+
+
+class BuildHeavyRecommendation(Recommendation):
+    role = 'heavy'
+    value = 0
+
+    def to_action_queue(self, plan: MasterState) -> int:
+        return 1
 
 
 class FactoryManager:

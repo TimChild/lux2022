@@ -24,6 +24,9 @@ from actions import (
     calculate_high_level_factory_actions,
 )
 
+from mining_planner import MiningPlanner
+from factory_manager import BuildHeavyRecommendation
+
 
 if TYPE_CHECKING:
     from .master_state import Recommendation
@@ -42,6 +45,8 @@ class Agent:
             player=self.player,
             env_cfg=env_cfg,
         )
+
+        self.mining_planner = MiningPlanner(self.master)
 
     def log(self, message, level=logging.INFO, **kwargs):
         logging.log(level, f'{self.player} {message}', **kwargs)
@@ -85,12 +90,26 @@ class Agent:
         unit_obs: dict[str, UnitObs] = {}
         for unit_id, unit in self.master.units.friendly_units.items():
             if unit_should_consider_acting(unit, self.master):
-                unit_obs[unit_id] = calculate_unit_obs(unit, self.master)
+                uobs = calculate_unit_obs(unit, self.master)
+
+                # Calculate a few recommendations for this unit
+                uobs.recommendations = [self.mining_planner.recommend(unit)]
+
+                unit_obs[unit_id] = uobs
+
 
         factory_obs = {}
         for factory_id, factory in self.master.factories.friendly.items():
             if factory_should_consider_acting(factory, self.master):
-                factory_obs[factory_id] = calculate_factory_obs(factory, self.master)
+                fobs = calculate_factory_obs(factory, self.master)
+
+                # Calculate a few recommendations for this factory
+                if general_obs.num_friendly_heavy < len(self.master.factories.friendly.keys()):
+                    fobs.recommendations = [BuildHeavyRecommendation()]
+                else:
+                    fobs.recommendations = None
+
+                factory_obs[factory_id] = fobs
 
         """
         Thoughts:
@@ -140,14 +159,29 @@ class Agent:
             ] = calculate_high_level_factory_actions(general_obs, f_obs)
 
         # Convert back to actions that the game supports
+        # unit_actions = {
+        #     unit_id: hla.to_action_queue(plan=self.master)
+        #     for unit_id, hla in unit_high_level_actions.items()
+        # }
         unit_actions = {
-            unit_id: hla.to_action_queue(plan=self.master)
-            for unit_id, hla in unit_high_level_actions.items()
+            unit_id: self.mining_planner.carry_out(unit, rec)
+            for unit_id, rec in unit_high_level_actions.items()
         }
+        unit_actions = {id: action for id, action in unit_actions.items() if action is not None}
+        # factory_actions = {
+        #     factory_id: hla.to_action_queue(plan=self.master)
+        #     for factory_id, hla in factory_high_level_actions.items()
+        # }
         factory_actions = {
-            factory_id: hla.to_action_queue(plan=self.master)
-            for factory_id, hla in factory_high_level_actions.items()
+            factory_id: fobs.recommendations[0].to_action_queue(self.master) for factory_id, fobs in factory_obs.items() if fobs.recommendations is not None
         }
+
+        if self.master.player == 'player_0':
+            unit_actions = {'unit_8': [unit.unit.move(1, 2)]}
+        else:
+            unit_actions = {}
+        print(unit_actions)
+        print(factory_actions)
         return dict(**unit_actions, **factory_actions)
 
     def _beginning_of_step_update(
@@ -166,7 +200,11 @@ class Agent:
             - Mostly generated from MasterPlan
             - Some additional info added based on metadata?
         """
-        pass
+        obs = GeneralObs(
+            num_friendly_heavy=len(self.master.units.heavy.keys()),
+        )
+        return obs
+
 
 
 class MyObs(abc.ABC):
@@ -180,6 +218,8 @@ class MyObs(abc.ABC):
 
 @dataclass
 class GeneralObs(MyObs):
+    num_friendly_heavy: int
+
     def to_array(self):
         return np.array([])
 
@@ -224,20 +264,24 @@ def calculate_unit_obs(unit: UnitManager, plan: MasterState) -> UnitObs:
 
     """
     id = unit.unit_id
-    nearest_enemy_light_distance = plan.units.nearest_unit(pos=unit.unit.pos, friendly=False, enemy=True, light=True, heavy=False)
-    nearest_enemy_heavy_distance = plan.units.nearest_unit(pos=unit.unit.pos, friendly=False, enemy=True, light=False, heavy=True)
-    uobs = UnitObs(id=id, nearest_enemy_light_distance=nearest_enemy_light_distance,
-                   nearest_enemy_heavy_distance=nearest_enemy_heavy_distance)
-
-    # Calculate a few recommendations for this unit
-    uobs.recommendations = [Recommendation()]
+    nearest_enemy_light_distance = plan.units.nearest_unit(
+        pos=unit.unit.pos, friendly=False, enemy=True, light=True, heavy=False
+    )
+    nearest_enemy_heavy_distance = plan.units.nearest_unit(
+        pos=unit.unit.pos, friendly=False, enemy=True, light=False, heavy=True
+    )
+    uobs = UnitObs(
+        id=id,
+        nearest_enemy_light_distance=nearest_enemy_light_distance,
+        nearest_enemy_heavy_distance=nearest_enemy_heavy_distance,
+    )
 
     return uobs
 
 
 def calculate_factory_obs(factory: FactoryManager, plan: MasterState) -> FactoryObs:
     """Calculate observations that are specific to a particular factory"""
-    pass
+    return FactoryObs(factory.unit_id)
 
 
 """

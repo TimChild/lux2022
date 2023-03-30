@@ -119,6 +119,14 @@ class Units:
         """Return full list of enemy units"""
         return self.enemy.friendly_units
 
+    def unit_at_position(self, pos: tuple[int, int]):
+        """Get the unit_id of unit at given position"""
+        for type, units in self.unit_positions.items():
+            for unit_id, unit_pos in units.items():
+                if tuple(pos) == tuple(unit_pos):
+                    return unit_id
+        return None
+
     def log(self, message, level=logging.INFO):
         logging.log(level=level, msg=message)
 
@@ -132,7 +140,9 @@ class Units:
         else:
             raise KeyError(f'Unit {unit_id} does not exist')
 
-    def nearest_unit(self, pos: tuple[int, int], friendly=True, enemy=True, light=True, heavy=True) -> tuple[UnitManager, int]:
+    def nearest_unit(
+        self, pos: tuple[int, int], friendly=True, enemy=True, light=True, heavy=True
+    ) -> tuple[str, int]:
         """Return the nearest unit and distance from the given position"""
         unit_positions = {}
         if friendly:
@@ -150,15 +160,20 @@ class Units:
                 for unit_id, unit in self.enemy.heavy.items():
                     unit_positions[unit_id] = unit.pos
 
-        distances = {unit_id: manhattan(pos, other_pos) for unit_id, other_pos in unit_positions}
+        distances = {
+            unit_id: manhattan(pos, other_pos) for unit_id, other_pos in unit_positions.items()
+        }
+        if not distances:
+            return '', 999
         nearest_id = min(distances, key=distances.get)
-        return self.get_unit(nearest_id), distances[nearest_id]
+        return nearest_id, distances[nearest_id]
 
     def update(self, game_state: GameState, team: str, master_state: MasterState):
         """
         Update at the beginning of turn
         TODO: May want to do something before calling this to check what has actually changed
         """
+        from unit_manager import UnitManager
         units = {'LIGHT': {}, 'HEAVY': {}}
         for id, unit in game_state.units[team].items():
             units[unit.unit_type][id] = unit
@@ -193,22 +208,25 @@ class Units:
             self.enemy.update(game_state, opp_team, master_state)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 @dataclass
 class Factories:
+    player: str
     friendly: dict[str, FactoryManager]
     enemy: dict[str, FactoryManager]
+
+    def update(self, game_state: GameState):
+        from factory_manager import FactoryManager
+        for player_id, factories in game_state.factories.items():
+            if player_id == self.player:
+                for factory_id, factory in factories.items():
+                    if factory_id not in self.friendly:
+                        self.friendly[factory_id] = FactoryManager(factory)
+                    self.friendly[factory_id].update(factory)
+            else:
+                for factory_id, factory in factories.items():
+                    if factory_id not in self.enemy:
+                        self.enemy[factory_id] = FactoryManager(factory)
+                    self.enemy[factory_id].update(factory)
 
 
 class UnitTasks(list):
@@ -311,11 +329,6 @@ class Maps:
         return -1  # Invalid
 
 
-
-
-
-
-
 class MasterState:
     def __init__(
         self,
@@ -331,7 +344,7 @@ class MasterState:
         self.pathfinder: PathFinder = PathFinder()
 
         self.units = Units(light={}, heavy={}, enemy=Units(light={}, heavy={}))
-        self.factories = Factories(friendly={}, enemy={})
+        self.factories = Factories(player=self.player, friendly={}, enemy={})
         self.allocations = Allocations()
         self.maps = Maps()
 
@@ -375,6 +388,7 @@ class MasterState:
         Update each factory with new power/resources
         If factory has died, update accordingly
         """
+        self.factories.update(game_state)
         pass
 
     def _update_allocations(self, game_state: GameState):

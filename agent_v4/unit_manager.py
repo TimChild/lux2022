@@ -33,7 +33,7 @@ LOGGING_LEVEL = 3
 class Status:
     role: str
     current_action: str
-    recommendation: Recommendation
+    recommendation: Optional[Recommendation]
 
 
 class UnitManager:
@@ -48,7 +48,7 @@ class UnitManager:
         self.master: MasterState = master_state
 
         self.status: Status = Status(
-            role='not set', current_action='', recommendation=Recommendation()
+            role='not set', current_action='', recommendation=None
         )
 
     def update(self, unit: Unit):
@@ -67,13 +67,13 @@ class UnitManager:
     ):
         self.status.role = role
         self.status.recommendation = recommendation
-        # TODO: Not sure UnitManager should have to deal with master_plan... Think more (should master plan be calling this method?)
-        self.master.deassign_unit_resource(unit_id=self.unit_id)
-        self.master.deassign_unit_factory(unit_id=self.unit_id)
-        if resource_pos is not None:
-            self.master.assign_unit_resource(self.unit_id, resource_pos)
-        if factory_pos is not None:
-            self.master.assign_unit_factory(self.unit_id, factory_pos)
+        # # TODO: Not sure UnitManager should have to deal with master_plan... Think more (should master plan be calling this method?)
+        # self.master.deassign_unit_resource(unit_id=self.unit_id)
+        # self.master.deassign_unit_factory(unit_id=self.unit_id)
+        # if resource_pos is not None:
+        #     self.master.assign_unit_resource(self.unit_id, resource_pos)
+        # if factory_pos is not None:
+        #     self.master.assign_unit_factory(self.unit_id, factory_pos)
 
     def actions_to_path(self, actions=None):
         """

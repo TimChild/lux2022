@@ -33,10 +33,10 @@ class Recommendation(HighLevelAction):
     role: str = 'not set'
     value: float = 0
 
-    @abc.abstractmethod
-    def to_array(self):
-        """Turn recommendation into an array of values with standard size"""
-        pass
+    # @abc.abstractmethod
+    # def to_array(self):
+    #     """Turn recommendation into an array of values with standard size"""
+    #     pass
 
 
 def calculate_high_level_unit_action(
@@ -63,7 +63,8 @@ def calculate_high_level_factory_actions(
         - Make Light Unit
         - Make Heavy Unit
     """
-    return factory_obs.recommendations[0]
+    # return factory_obs.recommendations[0]
+    return None
 
 
 def unit_should_consider_acting(unit: UnitManager, plan: MasterState) -> bool:
@@ -75,7 +76,7 @@ def unit_should_consider_acting(unit: UnitManager, plan: MasterState) -> bool:
     if power < action_queue_cost:
         return False
 
-    nearest_enemy_distance = plan.maps.nearest_enemy(unit.unit.pos)
+    nearest_unit_id, nearest_enemy_distance = plan.units.nearest_unit(unit.pos, friendly=False, enemy=True, light=True, heavy=True)
     if nearest_enemy_distance <= 2:
         return True
 
@@ -94,7 +95,8 @@ def factory_should_consider_acting(factory: FactoryManager, plan: MasterState) -
     If no, can save the cost of calculating obs/options for that factory
     """
     center_tile_occupied = (
-        True if plan.maps.unit_at_tile(factory.factory.pos) is not None else False
+        # True if plan.maps.unit_at_tile(factory.factory.pos) is not None else False
+        True if plan.units.unit_at_position(factory.factory.pos) is not None else False
     )
     if center_tile_occupied:
         return False

@@ -36,13 +36,20 @@ class MiningRoutes:
 
 
 class MiningRecommendation(Recommendation):
+    """Recommended mining action between a resource and factory"""
     role = 'miner'
+    value = 0
 
     def __init__(self, value: float, resource_pos, factory_id, resource_type: str):
         self.value = value
         self.resource_pos: Tuple[int, int] = resource_pos
         self.factory_id: str = factory_id
         self.resource_type = resource_type
+
+    def to_action_queue(self, plan: MasterState) -> list[np.ndarray]:
+        logging.error('Not Implemented')
+        print('error, MiningRecommendation.to_action_queue not implemented')
+        return []
 
 
 class MiningPlanner(Planner):
@@ -67,7 +74,8 @@ class MiningPlanner(Planner):
 
     @property
     def friendly_factories(self):
-        return self.master.factories.friendly
+        """Map of friendly factories (where -1 is non-factory, otherwise factory id)"""
+        return self.master.maps.factory_maps.by_player[self.master.player]
 
     def update(self):
         # For now, only calculate once
@@ -88,7 +96,7 @@ class MiningPlanner(Planner):
         pos = unit_manager.unit.pos
         # TODO: For ICE and ORE
         best_rec = MiningRecommendation(
-            value=0, resource_pos=(-1, -1), factory_id='', resource_type=ICE
+            value=-999, resource_pos=(-1, -1), factory_id='', resource_type=ICE
         )
         for resource in [ICE]:  # , ORE]:
             # for factory in self.master_plan.factory_managers.values():
@@ -116,9 +124,10 @@ class MiningPlanner(Planner):
             for i, path in enumerate(routes.paths):
                 resource_pos = tuple(path[-1])
                 if (
-                    resource_pos not in self.master.resource_allocation
-                    or resource_pos in self.master.resource_allocation
-                    and not self.master.resource_allocation[resource_pos].used_by
+                    # resource_pos not in self.master.allocations.resource_allocation
+                    # or resource_pos in self.master.allocations.resource_allocation
+                    # and not self.master.allocations.resource_allocation[resource_pos].used_by
+                    True
                 ):
                     next_unoccupied_path = path
                     next_unoccupied_value = routes.values[i]
@@ -140,8 +149,6 @@ class MiningPlanner(Planner):
             rec = MiningRecommendation(
                 value=next_unoccupied_value,
                 resource_pos=next_unoccupied_path[-1],
-                # value=routes.values[0],
-                # resource_pos=routes.paths[0][-1],
                 factory_id=nearest_factory_id,
                 resource_type=resource,
             )
@@ -164,9 +171,12 @@ class MiningPlanner(Planner):
 
         # Figure out which factory tile to use
         factory_id = recommendation.factory_id
+        if not factory_id:
+            self.log(f'No factory_id in recommendation for unit {unit_manager.unit_id}', level=logging.ERROR)
+            return None
         factory_num = int(factory_id[-1])
         factory_map = np.array(
-            self.master.factory_maps.friendly == factory_num, dtype=int
+            self.master.maps.factory_maps.by_player[self.master.player] == factory_num, dtype=int
         )
         center_coord = self.master.game_state.factories[self.master.player][
             factory_id
@@ -183,9 +193,10 @@ class MiningPlanner(Planner):
                 factory_pos = center_coord
                 break
             elif (
-                factory_id in self.master.factory_allocation
-                and factory_pos in self.master.factory_allocation[factory_id]
-                and self.master.factory_allocation[factory_id][factory_pos].used_by
+                # factory_id in self.master.allocations.factory_tiles
+                # and factory_pos in self.master.allocations.factory_tiles[factory_id]
+                # and self.master.allocations.factory_tiles[factory_id][factory_pos].used_by
+                False
             ):
                 factory_map[factory_pos[0], factory_pos[1]] = 0  # Already occupied
             else:
@@ -281,7 +292,7 @@ class MiningPlanner(Planner):
         """Calculate the X shortest paths from factory to each resource
 
         Returns:
-            routes: dict[unit_type, dict[resource], dict[factory_id], MiningRoutes]
+            routes: dict[unit_type, [dict[resource], [dict[factory_id], MiningRoutes]]]
         """
         base_costs = {
             UnitType.LIGHT: 25,
@@ -299,7 +310,7 @@ class MiningPlanner(Planner):
             for resource in [ICE, ORE]:
                 routes[unit_type.name][resource] = {}
 
-                for factory in self.master.factory_managers.values():
+                for factory in self.master.factories.friendly.values():
                     position = factory.factory.pos
                     resource_map = self.resource_maps[resource].copy()
 

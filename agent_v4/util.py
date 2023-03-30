@@ -4,6 +4,7 @@ sys.path.append(
     '../lux_kit'
 )  #  lux_kit is a copy of https://github.com/Lux-AI-Challenge/Lux-Design-2022/tree/main/kits/python
 from typing import Tuple, List, Union, Optional
+import logging
 from lux.kit import obs_to_game_state, GameState, EnvConfig, to_json, from_json
 from lux.config import UnitConfig, EnvConfig
 from lux.utils import direction_to, my_turn_to_place_factory
@@ -113,20 +114,23 @@ def power_cost_of_actions(state: GameState, unit: Unit, actions: List[np.ndarray
     pos = unit.pos
 
     cost = 0
-    for action in actions:
-        act_type = action[ACT_TYPE]
-        if act_type == MOVE:
-            pos = pos + move_deltas[ACT_DIRECTION]
-            rubble_at_target = state.board.rubble[pos[0], pos[1]]
-            cost += math.ceil(
-                unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_target
-            )
-        elif act_type in [TRANSFER, PICKUP]:
-            pass  # No cost
-        elif act_type == DESTRUCT:
-            cost += unit_cfg.SELF_DESTRUCT_COST
-        elif act_type == RECHARGE:
-            cost -= unit_cfg.CHARGE
+    try:
+        for action in actions:
+            act_type = action[ACT_TYPE]
+            if act_type == MOVE:
+                pos = pos + move_deltas[ACT_DIRECTION]
+                rubble_at_target = state.board.rubble[pos[0], pos[1]]
+                cost += math.ceil(
+                    unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_target
+                )
+            elif act_type in [TRANSFER, PICKUP]:
+                pass  # No cost
+            elif act_type == DESTRUCT:
+                cost += unit_cfg.SELF_DESTRUCT_COST
+            elif act_type == RECHARGE:
+                cost -= unit_cfg.CHARGE
+    except IndexError:
+        logging.error('IndexError while calculating power_cost_of_actions')
     return cost
 
 

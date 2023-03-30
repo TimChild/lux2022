@@ -67,7 +67,7 @@ class PathFinder:
         rubble: np.ndarray,
         friendly_units: Dict[str, UnitManager],
         enemy_units: Dict[str, UnitManager],
-        enemy_factories: Dict[str, Factory],
+        enemy_factories: Dict[str, FactoryManager],
     ):
         self.rubble = rubble
 
@@ -94,7 +94,7 @@ class PathFinder:
 
         # Update Enemy Factories
         self.enemy_factories = {
-            factory_id: factory.pos_slice
+            factory_id: factory.factory.pos_slice
             for factory_id, factory in enemy_factories.items()
         }
         arr = np.zeros(rubble.shape)
