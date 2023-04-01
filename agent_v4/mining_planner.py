@@ -11,7 +11,7 @@ from luxai2022.unit import UnitType
 from master_state import MasterState, Planner
 from actions import Recommendation
 from path_finder import CollisionParams
-from util import (
+from agent_v4.util import (
     ICE,
     ORE,
     nearest_non_zero,
@@ -306,7 +306,6 @@ class MiningPlanner(Planner):
         for unit_type in UnitType:
             routes[unit_type.name] = {}
 
-            rubble = False if unit_type.value == UnitType.LIGHT else True
             for resource in [ICE, ORE]:
                 routes[unit_type.name][resource] = {}
 
@@ -316,7 +315,7 @@ class MiningPlanner(Planner):
 
                     # Paths
                     paths = []
-                    for i in range(9):  # X best routes
+                    for i in range(3):  # X best routes
                         nearest_pos = self.nearest_resource(
                             position, resource, resource_map=resource_map
                         )
@@ -324,7 +323,7 @@ class MiningPlanner(Planner):
                             position,
                             nearest_pos,
                             step=self.master.step,
-                            rubble=rubble,
+                            rubble=True,
                         )
                         paths.append(path)
                         resource_map[

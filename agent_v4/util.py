@@ -67,12 +67,13 @@ METAL = 3
 POWER = 4
 
 # Actions:
-# (type, direction, resource, amount, repeat)
+# (type, direction, resource, amount, repeat, n)
 ACT_TYPE = 0
 ACT_DIRECTION = 1
 ACT_RESOURCE = 2
 ACT_AMOUNT = 3
 ACT_REPEAT = 4
+ACT_START_N = 5
 
 # Types:
 MOVE = 0

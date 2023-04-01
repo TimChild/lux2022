@@ -52,6 +52,10 @@ class Agent:
     def log(self, message, level=logging.INFO, **kwargs):
         logging.log(level, f'{self.player} {message}', **kwargs)
 
+    def bid(self, obs):
+        """Bid for starting factory (default to 0)"""
+        return dict(faction="TheBuilders", bid=0)
+
     def early_setup(self, step: int, obs, remainingOverageTime: int = 60):
         """Required API for Agent. This is called until all factories are placed"""
         self._beginning_of_step_update(step, obs, remainingOverageTime)
@@ -68,16 +72,11 @@ class Agent:
                 self.player
             ].factories_to_place
             if factories_to_place > 0 and my_turn_to_place:
-                # TODO: Improve factory placement (currently random)
                 action = FactoryManager.place_factory(
                     self.master.game_state, self.player
                 )
         self.log(f'Early setup action {action}')
         return action
-
-    def bid(self, obs):
-        """Bid for starting factory (default to 0)"""
-        return dict(faction="TheBuilders", bid=0)
 
     def act(self, step: int, obs, remainingOverageTime: int = 60):
         """Required API for Agent. This is called every turn after early_setup is complete"""
@@ -97,7 +96,6 @@ class Agent:
                 uobs.recommendations = [self.mining_planner.recommend(unit)]
 
                 unit_obs[unit_id] = uobs
-
 
         factory_obs = {}
         for factory_id, factory in self.master.factories.friendly.items():
@@ -205,7 +203,6 @@ class Agent:
             num_friendly_heavy=len(self.master.units.heavy.keys()),
         )
         return obs
-
 
 
 class MyObs(abc.ABC):
