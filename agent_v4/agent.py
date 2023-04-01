@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import logging
 
-logging.basicConfig(filename='agent_log.log', level=logging.INFO)
+# logging.basicConfig(filename='agent_log.log', level=logging.INFO)
+logging.basicConfig(level=logging.INFO)
 logging.info('Starting Log')
 
 from basic_agent import Agent as BasicAgent
@@ -176,10 +177,10 @@ class Agent:
             factory_id: fobs.recommendations[0].to_action_queue(self.master) for factory_id, fobs in factory_obs.items() if fobs.recommendations is not None
         }
 
-        if self.master.player == 'player_0':
-            unit_actions = {'unit_8': [unit.unit.move(1, 2)]}
-        else:
-            unit_actions = {}
+        # if self.master.player == 'player_0':
+        #     unit_actions = {'unit_8': [unit.unit.move(1, 2)]}
+        # else:
+        #     unit_actions = {}
         print(unit_actions)
         print(factory_actions)
         return dict(**unit_actions, **factory_actions)
