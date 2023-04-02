@@ -38,6 +38,7 @@ class MiningRoutes:
 
 class MiningRecommendation(Recommendation):
     """Recommended mining action between a resource and factory"""
+
     role = 'miner'
     value = 0
 
@@ -173,11 +174,15 @@ class MiningPlanner(Planner):
         # Figure out which factory tile to use
         factory_id = recommendation.factory_id
         if not factory_id:
-            self.log(f'No factory_id in recommendation for unit {unit_manager.unit_id}', level=logging.ERROR)
+            self.log(
+                f'No factory_id in recommendation for unit {unit_manager.unit_id}',
+                level=logging.ERROR,
+            )
             return None
         factory_num = int(factory_id[-1])
         factory_map = np.array(
-            self.master.maps.factory_maps.by_player[self.master.player] == factory_num, dtype=int
+            self.master.maps.factory_maps.by_player[self.master.player] == factory_num,
+            dtype=int,
         )
         center_coord = self.master.game_state.factories[self.master.player][
             factory_id
@@ -330,7 +335,7 @@ class MiningPlanner(Planner):
                         if len(path) < 1:
                             costs.append(0)
                             self.log(
-                                f'Path len 0 for {resource}, {unit_type}, {factory}'
+                                f'Path len 0 for {resource}, {unit_type}, {factory.factory.unit_id}'
                             )
                             continue
                         unit = units[unit_type]

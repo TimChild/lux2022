@@ -1,20 +1,11 @@
 import sys
 
-sys.path.append(
-    '../_lux_kit'
-)  #  lux_kit is a copy of https://github.com/Lux-AI-Challenge/Lux-Design-2022/tree/main/kits/python
 from typing import Tuple, List, Union, Optional
 import logging
-from lux.kit import obs_to_game_state, GameState, EnvConfig, to_json, from_json
-from lux.config import UnitConfig, EnvConfig
-from lux.utils import direction_to, my_turn_to_place_factory
-from lux.unit import Unit, move_deltas, UnitCargo
+from scipy import ndimage
+from scipy.signal import convolve2d
 import dataclasses
-from luxai_s2 import LuxAI_S2
-from luxai_s2.unit import UnitType
 import numpy as np
-import sys
-import json
 import pickle
 import math
 import re
@@ -22,6 +13,15 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 from matplotlib.patches import Rectangle
 import plotly.graph_objects as go
+
+from luxai_s2 import LuxAI_S2
+from luxai_s2.unit import UnitType
+from lux.kit import obs_to_game_state, GameState, to_json, from_json
+from lux.config import UnitConfig, EnvConfig
+from lux.utils import direction_to, my_turn_to_place_factory
+from lux.unit import Unit, move_deltas
+from lux.cargo import UnitCargo
+
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
 
@@ -134,6 +134,56 @@ def power_cost_of_actions(state: GameState, unit: Unit, actions: List[np.ndarray
     except IndexError:
         logging.error('IndexError while calculating power_cost_of_actions')
     return cost
+
+
+def count_connected_values(arr: np.ndarray, value: int = 0) -> np.ndarray:
+    """Returns an array where the values are how many connected `value`s there are there"""
+    # Define structuring element for labeling
+    struct = ndimage.generate_binary_structure(2, 1)
+
+    # Label connected regions of zeros
+    labeled_arr, num_labels = ndimage.label(arr == 0, structure=struct)
+
+    # Count the number of labels in each region
+    count_arr = np.zeros_like(arr)
+    for i in range(1, num_labels + 1):
+        count_arr[labeled_arr == i] = np.sum(labeled_arr == i)
+    return count_arr
+
+
+def factory_map_kernel(search_dist, dist_multiplier=0.8):
+    """Generate kernel that extends `search_dist` away from factory with 3x3 blanked out (for factory size) in the middle and decreasing value for distance from factory"""
+    dist = search_dist
+    x = np.arange(-dist, dist + 1)
+    y = np.arange(-dist, dist + 1)
+    xx, yy = np.meshgrid(x, y)
+
+    # Manhattan Distance from center
+    manhattan_dist = np.abs(xx - 0) + np.abs(yy - 0)
+
+    # Value accounting for dist_multiplier
+    ones = np.ones(xx.shape) / dist_multiplier
+    values = ones * dist_multiplier**manhattan_dist
+
+    # Set middle to zero (will become blocked out factory part)
+    mid_index = dist  # This will always also be the middle index
+    values[mid_index, mid_index] = 0
+
+    # Stretch out the middle (i.e. factory is 3x3 not 1x1)
+    # y-direction
+    values = np.insert(values, mid_index, values[mid_index, :], axis=0)
+    values = np.insert(values, mid_index, values[mid_index, :], axis=0)
+    # x-direction
+    values = np.insert(values, mid_index, values[:, mid_index], axis=1)
+    values = np.insert(values, mid_index, values[:, mid_index], axis=1)
+
+    return values
+
+
+def convolve_array_kernel(arr, kernel, fill=0):
+    """Convolve array and kernel returning same dimensions as array (filling edges with `fill` for conv)"""
+    convolved = convolve2d(arr, kernel, mode="same", boundary="fill", fillvalue=fill)
+    return convolved
 
 
 ################# Moving #################

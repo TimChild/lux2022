@@ -111,35 +111,70 @@ class Agent:
         unit_actions = {}
         for unit_id in unit_obs.keys():
             unit = self.master.units.get_unit(unit_id)
-
-            if unit.status.role != 'mine_ice':
-                self.log(f'{unit_id} assigned to mine_ice (for {unit.factory_id})')
-                unit.status.role = 'mine_ice'
-                unit_actions[unit_id] = self.mining_planner.carry_out(
-                    unit, recommendation=unit_recommendations[unit_id]['mine_ice']
-                )
+            uobs = unit_obs[unit_id]
+            fobs = factory_obs[unit.factory_id]
+            u_action = self.calculate_unit_actions(
+                unit=unit,
+                uobs=uobs,
+                factory=self.master.factories.friendly[unit.factory_id],
+                fobs=fobs,
+                unit_recommendations=unit_recommendations[unit_id],
+            )
+            if u_action is not None:
+                unit_actions[unit_id] = u_action
 
         # Factory Actions
         factory_actions = {}
         for factory_id in factory_obs.keys():
             factory = self.master.factories.friendly[factory_id]
             fobs = factory_obs[factory_id]
+            f_action = calculate_factory_action(
+                factory=factory, fobs=fobs, master=self.master
+            )
+            if f_action is not None:
+                factory_actions[factory_id] = f_action
 
-            if fobs.center_occupied is False:  # Consider building units
-                if (
-                    len(factory.heavy_units) < 1
-                    and factory.factory.cargo.metal
-                    > self.env_cfg.ROBOTS['HEAVY'].METAL_COST
-                    and factory.factory.power > self.env_cfg.ROBOTS['HEAVY'].POWER_COST
-                ):
-                    self.log(f'{factory_id} building Heavy')
-                    factory_actions[factory_id] = factory.factory.build_heavy()
-                # TODO: build light?
-            # TODO: Water?
-
-        self.log(f'{self.player} Unit actions: {unit_actions}')
-        self.log(f'{self.player} Factory actions: {factory_actions}')
+        self.log(f'{self.player} Unit actions: {unit_actions}', level=logging.DEBUG)
+        self.log(
+            f'{self.player} Factory actions: {factory_actions}', level=logging.INFO
+        )
         return dict(**unit_actions, **factory_actions)
+
+    def calculate_unit_actions(
+        self,
+        unit: UnitManager,
+        uobs: UnitObs,
+        factory: FactoryManager,
+        fobs: FactoryObs,
+        unit_recommendations: dict[str, Recommendation],
+    ) -> [list[np.ndarray], None]:
+        def factory_has_heavy_ice_miner(factory: FactoryManager):
+            units = factory.heavy_units
+            for unit_id, unit in units.items():
+                if unit.status.role == 'mine_ice':
+                    return True
+            return False
+
+        # Make at least 1 heavy mine ice
+        if (
+            not factory_has_heavy_ice_miner(factory)
+            and unit.unit.unit_type == 'HEAVY'
+            and unit.status.role != 'mine_ice'
+        ):
+            self.log(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
+            unit.status.role = 'mine_ice'
+            return self.mining_planner.carry_out(
+                unit, recommendation=unit_recommendations['mine_ice']
+            )
+
+        # Make at least one light mine rubble
+        if unit.unit.unit_type == 'LIGHT' and not unit.status.role:
+            self.log(
+                f'TODO: {unit.unit_id} assigned to clear_rubble (for {unit.factory_id})'
+            )
+            unit.status.role = 'rubble_clear'
+            pass
+        return None
 
     def _beginning_of_step_update(
         self, step: int, obs: dict, remainingOverageTime: int
@@ -230,6 +265,45 @@ def calculate_factory_obs(factory: FactoryManager, plan: MasterState) -> Factory
     )
 
     return FactoryObs(id=factory.unit_id, center_occupied=center_tile_occupied)
+
+
+def calculate_factory_action(
+    factory: FactoryManager, fobs: FactoryObs, master: MasterState
+) -> [np.ndarray, None]:
+    # Building Units
+    if (
+        fobs.center_occupied is False and master.step < 900
+    ):  # Only consider if middle is free and not near end of game
+        # Want at least one heavy mining ice
+        if (
+            len(factory.heavy_units) < 1
+            and factory.factory.cargo.metal > master.env_cfg.ROBOTS['HEAVY'].METAL_COST
+            and factory.factory.power > master.env_cfg.ROBOTS['HEAVY'].POWER_COST
+        ):
+            logging.info(f'{factory.factory.unit_id} building Heavy')
+            return factory.factory.build_heavy()
+
+        # Want at least one light to do other things
+        if (
+            len(factory.light_units) < 1
+            and factory.factory.cargo.metal > master.env_cfg.ROBOTS['LIGHT'].METAL_COST
+            and factory.factory.power > master.env_cfg.ROBOTS['LIGHT'].POWER_COST
+        ):
+            logging.info(f'{factory.factory.unit_id} building Light')
+            return factory.factory.build_light()
+
+    # Watering Lichen
+    water_cost = factory.factory.water_cost(master.game_state)
+    if (
+        factory.factory.cargo.water > 1000 or master.step > 900
+    ):  # Either excess water or near end game
+        if factory.factory.can_water(master.game_state):
+            logging.info(
+                f'{factory.factory.unit_id} watering with water={factory.factory.cargo.water} and water_cost={water_cost}'
+            )
+            return factory.factory.water()
+
+    return None
 
 
 """

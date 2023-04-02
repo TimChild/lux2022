@@ -1,11 +1,19 @@
 from __future__ import annotations
 from typing import Dict, TYPE_CHECKING
 import numpy as np
+import pandas as pd
 
-from master_state import MasterState
-from util import manhattan, nearest_non_zero
 from lux.kit import obs_to_game_state, GameState
 from lux.factory import Factory
+
+from master_state import MasterState
+from util import (
+    manhattan,
+    nearest_non_zero,
+    convolve_array_kernel,
+    factory_map_kernel,
+    count_connected_values,
+)
 
 from actions import Recommendation
 
@@ -65,27 +73,35 @@ class FactoryManager:
 
         # All possible spawns
         potential_spawns = list(zip(*np.where(game_state.board.valid_spawns_mask == 1)))
+        df = pd.DataFrame(potential_spawns, columns=['x', 'y'])
+        df['pos'] = df.apply(lambda row: (row.x, row.y), axis=1)
 
-        # Distance to ice
+        # Find distance to ice
         ice = game_state.board.ice
-        distances = [
-            manhattan(pos, nearest_non_zero(ice, pos)) for pos in potential_spawns
-        ]
+        df["ice_dist"] = df.apply(
+            lambda row: manhattan(row.pos, nearest_non_zero(ice, row.pos)), axis=1
+        )
+        df = df.sort_values("ice_dist")
 
-        # Order by closest ice
-        best_ordered = [
-            (p, dist)
-            for dist, p in sorted(
-                zip(distances, potential_spawns), key=lambda pair: pair[0]
-            )
-        ]
+        # Keep only top X distance to ice
+        df = df.iloc[:20]
 
-        # TODO: Calculate how much nearby rubble for top X
+        # Value based nearby zero-rubble
+        rubble = game_state.board.rubble
+        count_arr = count_connected_values(rubble, value=0)
+        factory_map_kernel(2, dist_multiplier=0.5)
+        kernel = factory_map_kernel(3, dist_multiplier=0.5)
+        conv_count_arr = convolve_array_kernel(count_arr, kernel)
+        df['zero_rubble_value'] = df.apply(
+            lambda row: (conv_count_arr[row.x, row.y]), axis=1
+        )
+        df = df.sort_values(['ice_dist', 'zero_rubble_value'], ascending=[True, False])
+        # return df
+
         # TODO: Calculate how close to nearest enemy factory for top X
         # TODO: Calculate how close to nearest ore (not so important?)
-        # TODO: Select best based on above
 
-        return dict(spawn=best_ordered[0][0], metal=150, water=150)
+        return dict(spawn=df.iloc[0].pos, metal=150, water=150)
 
     def update(self, factory: Factory):
         self.factory = factory
