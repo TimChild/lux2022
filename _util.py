@@ -11,6 +11,7 @@ from matplotlib import colors
 from matplotlib.patches import Rectangle
 import plotly.graph_objects as go
 import dataclasses
+from deprecation import deprecated
 from luxai_s2 import LuxAI_S2
 from luxai_s2.state import state
 from luxai_s2.unit import UnitType
@@ -83,6 +84,7 @@ RECHARGE = 5
 ################# General #################
 
 
+@deprecated()
 def get_test_env(path=None):
     if path is None:
         path = "test_state.pkl"
@@ -98,6 +100,7 @@ def game_state_from_env(env):
     return obs_to_game_state(env.master.env_steps, env.env_cfg, env.master.get_obs())
 
 
+@deprecated()
 def run(
     agent1,
     agent2,
@@ -264,7 +267,6 @@ def path_to_actions(path):
 
 
 def actions_to_path(unit, actions):
-    # TODO: take into account repeats, and only evaluate up to N steps?
     deltas = {
         0: (0, 0),
         1: (0, -1),
@@ -279,8 +281,10 @@ def actions_to_path(unit, actions):
             direction = action[1]
         else:
             direction = CENTER
-        pos = pos + deltas[direction]
-        path.append(pos)
+        n = action[5]
+        for i in range(n):
+            pos = pos + deltas[direction]
+            path.append(pos)
     return np.array(path)
 
 
