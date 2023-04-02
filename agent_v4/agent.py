@@ -86,107 +86,66 @@ class Agent:
         # First - general observations of the full game state (i.e. not factory/unit specific)
         general_obs = self._get_general_processed_obs()
 
-        # Then observations for units/factories that might want to act
+        # Then additional observations for units (not things they already store)
         unit_obs: dict[str, UnitObs] = {}
         for unit_id, unit in self.master.units.friendly_units.items():
             if unit_should_consider_acting(unit, self.master):
                 uobs = calculate_unit_obs(unit, self.master)
-
-                # Calculate a few recommendations for this unit
-                uobs.recommendations = [self.mining_planner.recommend(unit)]
-
                 unit_obs[unit_id] = uobs
 
+        # Then additional observations for factories (not things they already store)
         factory_obs = {}
         for factory_id, factory in self.master.factories.friendly.items():
             if factory_should_consider_acting(factory, self.master):
                 fobs = calculate_factory_obs(factory, self.master)
-
-                # Calculate a few recommendations for this factory
-                if general_obs.num_friendly_heavy < len(self.master.factories.friendly.keys()):
-                    fobs.recommendations = [BuildHeavyRecommendation()]
-                else:
-                    fobs.recommendations = None
-
                 factory_obs[factory_id] = fobs
 
-        """
-        Thoughts:
-            Should there be a separate round of collecting recommendations for units?
-            unit obs might be things like:
-                - enemy within two tiles
-                - energy left
-                - distance to favoured factory
-                - distance to nearest factory
-                - distance to nearest enemy 
-                - distance to nearest friendly
-                etc
-                Fairly easy to see how these would have fixed shape etc
-            unit recommendations might be things like:
-                - mine ore for this factory
-                - attack enemy unit
-                - defend friendly unit
-                - go solar farm
-                etc
-                Probably not necessary to get all recommendations every time, but then not a fixed shape obs
-                maybe just always include top 3 recommendations (and leave zeroes if fewer obs)
-                
-        """
+        # Unit Recommendations
+        unit_recommendations = {}
+        for unit_id in unit_obs.keys():
+            unit = self.master.units.get_unit(unit_id)
+            mining_rec = self.mining_planner.recommend(unit_manager=unit)
+            unit_recommendations[unit_id] = {'mine_ice': mining_rec}
 
-        # ML agent can use obs to generate action here (note: not the basic actions of the game)
-        # For now, I'll just make some algorithms to return the high level actions
-        """Thoughts: Maybe the ML  agent can return a 0 to 1 value for every recommendation, the highest is carried 
-        out So each recommendation+general_obs+unit_obs becomes an observation for ML and it only says 0 to 1? - 
-        could just the recommendation input be enough to change the behaviour of the whole PPO agent? i.e. however it 
-        interprets data for an Attack recommendation, it needs to do basically the opposite for defend."""
-        unit_high_level_actions = {}
-        for unit_id, u_obs in unit_obs.items():
-            unit_high_level_actions[unit_id] = calculate_high_level_unit_action(
-                general_obs, u_obs
-            )
+        # Unit Actions
+        unit_actions = {}
+        for unit_id in unit_obs.keys():
+            unit = self.master.units.get_unit(unit_id)
 
-        """
-        Thoughts:
-            Maybe treat the training of factory behaviour as separate from training of unit behaviour?
-            - But I do want the whole agent to be able to strategize together somehow
-            - Maybe this isn't necessary if the action space is a single 0 to 1 for every combination?
-        """
-        factory_high_level_actions = {}
-        for factory_id, f_obs in factory_obs.items():
-            factory_high_level_actions[
-                factory_id
-            ] = calculate_high_level_factory_actions(general_obs, f_obs)
+            if unit.status.role != 'mine_ice':
+                self.log(f'{unit_id} assigned to mine_ice (for {unit.factory_id})')
+                unit.status.role = 'mine_ice'
+                unit_actions[unit_id] = self.mining_planner.carry_out(
+                    unit, recommendation=unit_recommendations[unit_id]['mine_ice']
+                )
 
-        # Convert back to actions that the game supports
-        # unit_actions = {
-        #     unit_id: hla.to_action_queue(plan=self.master)
-        #     for unit_id, hla in unit_high_level_actions.items()
-        # }
-        unit_actions = {
-            unit_id: self.mining_planner.carry_out(unit, rec)
-            for unit_id, rec in unit_high_level_actions.items()
-        }
-        unit_actions = {id: action for id, action in unit_actions.items() if action is not None}
-        # factory_actions = {
-        #     factory_id: hla.to_action_queue(plan=self.master)
-        #     for factory_id, hla in factory_high_level_actions.items()
-        # }
-        factory_actions = {
-            factory_id: fobs.recommendations[0].to_action_queue(self.master) for factory_id, fobs in factory_obs.items() if fobs.recommendations is not None
-        }
+        # Factory Actions
+        factory_actions = {}
+        for factory_id in factory_obs.keys():
+            factory = self.master.factories.friendly[factory_id]
+            fobs = factory_obs[factory_id]
 
-        # if self.master.player == 'player_0':
-        #     unit_actions = {'unit_8': [unit.unit.move(1, 2)]}
-        # else:
-        #     unit_actions = {}
-        print(unit_actions)
-        print(factory_actions)
+            if fobs.center_occupied is False:  # Consider building units
+                if (
+                    len(factory.heavy_units) < 1
+                    and factory.factory.cargo.metal
+                    > self.env_cfg.ROBOTS['HEAVY'].METAL_COST
+                    and factory.factory.power > self.env_cfg.ROBOTS['HEAVY'].POWER_COST
+                ):
+                    self.log(f'{factory_id} building Heavy')
+                    factory_actions[factory_id] = factory.factory.build_heavy()
+                # TODO: build light?
+            # TODO: Water?
+
+        self.log(f'{self.player} Unit actions: {unit_actions}')
+        self.log(f'{self.player} Factory actions: {factory_actions}')
         return dict(**unit_actions, **factory_actions)
 
     def _beginning_of_step_update(
         self, step: int, obs: dict, remainingOverageTime: int
     ):
         """Use the step and obs to update any turn based info (e.g. map changes)"""
+        self.log(f'Beginning of step update for step {step}')
         game_state = obs_to_game_state(step, self.env_cfg, obs)
         # TODO: Use last obs to see what has changed to optimize update? Or master does this?
         self.master.update(game_state)
@@ -208,18 +167,12 @@ class Agent:
 class MyObs(abc.ABC):
     """General form of my observations (i.e. some general requirements)"""
 
-    @abc.abstractmethod
-    def to_array(self):
-        """Return observations as a numpy array"""
-        pass
+    pass
 
 
 @dataclass
 class GeneralObs(MyObs):
     num_friendly_heavy: int
-
-    def to_array(self):
-        return np.array([])
 
 
 @dataclass
@@ -229,27 +182,14 @@ class UnitObs(MyObs):
     id: str
     nearest_enemy_light_distance: int
     nearest_enemy_heavy_distance: int
-
-    def __post_init__(self):
-        self.recommendations: list[Recommendation] = []
-
-    def to_array(self):
-        recommendations = np.zeroes(3)
-        for i, r in enumerate(self.recommendations):
-            recommendations[i] = r.to_array()
-
-        return np.array([recommendations])
+    current_role: str
+    current_action: str
 
 
 @dataclass
 class FactoryObs(MyObs):
     id: str
-
-    def __post_init__(self):
-        self.recommendations: list[Recommendation] = []
-
-    def to_array(self):
-        return np.array([])
+    center_occupied: bool  # Center tile (i.e. where units are built)
 
 
 def calculate_unit_obs(unit: UnitManager, plan: MasterState) -> UnitObs:
@@ -272,6 +212,8 @@ def calculate_unit_obs(unit: UnitManager, plan: MasterState) -> UnitObs:
         id=id,
         nearest_enemy_light_distance=nearest_enemy_light_distance,
         nearest_enemy_heavy_distance=nearest_enemy_heavy_distance,
+        current_role=unit.status.role,
+        current_action=unit.status.current_action,
     )
 
     return uobs
@@ -279,7 +221,15 @@ def calculate_unit_obs(unit: UnitManager, plan: MasterState) -> UnitObs:
 
 def calculate_factory_obs(factory: FactoryManager, plan: MasterState) -> FactoryObs:
     """Calculate observations that are specific to a particular factory"""
-    return FactoryObs(factory.unit_id)
+
+    center_tile_occupied = (
+        # True if plan.maps.unit_at_tile(factory.factory.pos) is not None else False
+        True
+        if plan.units.unit_at_position(factory.factory.pos) is not None
+        else False
+    )
+
+    return FactoryObs(id=factory.unit_id, center_occupied=center_tile_occupied)
 
 
 """

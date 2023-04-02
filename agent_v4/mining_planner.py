@@ -11,7 +11,7 @@ from luxai2022.unit import UnitType
 from master_state import MasterState, Planner
 from actions import Recommendation
 from path_finder import CollisionParams
-from agent_v4.util import (
+from util import (
     ICE,
     ORE,
     nearest_non_zero,
@@ -20,6 +20,7 @@ from agent_v4.util import (
     HEAVY_UNIT,
     LIGHT_UNIT,
     ACT_REPEAT,
+    ACT_START_N,
     POWER,
     CENTER,
 )
@@ -160,7 +161,7 @@ class MiningPlanner(Planner):
         self, unit_manager: UnitManager, recommendation: MiningRecommendation
     ):
         # TODO: Check going to resource first (for now always going to factory first
-        dig_repeats = 3
+        dig_repeats = 10
 
         unit_pos = unit_manager.unit.pos
         unit_type = unit_manager.unit.unit_type
@@ -202,14 +203,6 @@ class MiningPlanner(Planner):
             else:
                 break
 
-        # Update status of unit
-        unit_manager.assign(
-            role='miner',
-            recommendation=recommendation,
-            resource_pos=resource_pos,
-            factory_pos=factory_pos,
-        )
-
         # Calculate paths avoiding short term collisions
         paths = []
         for start, end in zip(
@@ -221,7 +214,7 @@ class MiningPlanner(Planner):
                 start,
                 end,
                 step=unit_manager.master.step,
-                rubble=True if unit_type == UnitType.HEAVY else False,
+                rubble=True,
                 margin=2,
                 collision_params=CollisionParams(
                     turns=10,
@@ -229,11 +222,12 @@ class MiningPlanner(Planner):
                     ignore_ids=[unit_id],
                 ),
             )
-            pathfinder.update_unit_path(unit_manager, path)
             paths.append(path)
+
+        # Actions of regular route (excluding first starting)
         route_actions = (
             path_to_actions(paths[1])
-            + [unit_manager.unit.dig()] * dig_repeats
+            + [unit_manager.unit.dig(n=dig_repeats)]
             + path_to_actions(paths[2])
             + [
                 unit_manager.unit.transfer(
@@ -248,9 +242,9 @@ class MiningPlanner(Planner):
         route_cost = power_cost_of_actions(
             self.master.game_state, unit_manager.unit, route_actions
         )
-        route_actions.insert(0, unit_manager.unit.pickup(POWER, route_cost * 2.0))
+        route_actions.insert(0, unit_manager.unit.pickup(POWER, int(route_cost * 1.1)))
         for action in route_actions:
-            action[ACT_REPEAT] = -1  # Repeat forever
+            action[ACT_REPEAT] = action[ACT_START_N]  # Repeat forever
 
         # Route to start of mining loop (for now just move to factory, TODO: option to move to resource tile and start cycle form there)
         actions = path_to_actions(paths[0]) + route_actions

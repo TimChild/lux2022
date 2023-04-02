@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append(
-    '../lux_kit'
+    '../_lux_kit'
 )  #  lux_kit is a copy of https://github.com/Lux-AI-Challenge/Lux-Design-2022/tree/main/kits/python
 from typing import Tuple, List, Union, Optional
 import logging
@@ -10,10 +10,8 @@ from lux.config import UnitConfig, EnvConfig
 from lux.utils import direction_to, my_turn_to_place_factory
 from lux.unit import Unit, move_deltas, UnitCargo
 import dataclasses
-from luxai2022.state import state
-from luxai2022 import LuxAI2022
-from luxai2022.unit import UnitType
-from luxai2022.team import Team
+from luxai_s2 import LuxAI_S2
+from luxai_s2.unit import UnitType
 import numpy as np
 import sys
 import json
@@ -87,7 +85,6 @@ RECHARGE = 5
 ################# General #################
 
 
-
 def nearest_non_zero(
     array: np.ndarray, pos: Union[np.ndarray, Tuple[int, int]]
 ) -> Optional[Tuple[int, int]]:
@@ -117,19 +114,23 @@ def power_cost_of_actions(state: GameState, unit: Unit, actions: List[np.ndarray
     cost = 0
     try:
         for action in actions:
-            act_type = action[ACT_TYPE]
-            if act_type == MOVE:
-                pos = pos + move_deltas[ACT_DIRECTION]
-                rubble_at_target = state.board.rubble[pos[0], pos[1]]
-                cost += math.ceil(
-                    unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_target
-                )
-            elif act_type in [TRANSFER, PICKUP]:
-                pass  # No cost
-            elif act_type == DESTRUCT:
-                cost += unit_cfg.SELF_DESTRUCT_COST
-            elif act_type == RECHARGE:
-                cost -= unit_cfg.CHARGE
+            for _ in range(action[ACT_START_N]):
+                act_type = action[ACT_TYPE]
+                if act_type == MOVE:
+                    pos = pos + move_deltas[ACT_DIRECTION]
+                    rubble_at_target = state.board.rubble[pos[0], pos[1]]
+                    cost += math.ceil(
+                        unit_cfg.MOVE_COST
+                        + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_target
+                    )
+                elif act_type in [TRANSFER, PICKUP]:
+                    pass  # No cost
+                elif act_type == DESTRUCT:
+                    cost += unit_cfg.SELF_DESTRUCT_COST
+                elif act_type == RECHARGE:
+                    cost -= unit_cfg.CHARGE
+                elif act_type == DIG:
+                    cost += unit_cfg.DIG_COST
     except IndexError:
         logging.error('IndexError while calculating power_cost_of_actions')
     return cost
@@ -185,21 +186,22 @@ def actions_to_path(unit, actions):
     return np.array(path)
 
 
-
 ################### Plotting #################
 def get_test_env(path=None):
     if path is None:
         path = "test_state.pkl"
     with open(path, "rb") as f:
         state = pickle.load(f)
-    env = LuxAI2022()
+    env = LuxAI_S2()
     _ = env.reset(state.seed)
     env.set_state(state)
     return env
 
 
-def game_state_from_env(env):
-    return obs_to_game_state(env.master.env_steps, env.env_cfg, env.master.get_obs())
+def game_state_from_env(env: LuxAI_S2):
+    return obs_to_game_state(
+        env.state.env_steps, env.state.env_cfg, env.state.get_obs()
+    )
 
 
 def run(
@@ -218,7 +220,7 @@ def run(
     else:
         raise ValueError(f'return_type={return_type} not valid')
 
-    env = LuxAI2022()
+    env = LuxAI_S2()
     # This code is partially based on the luxai2022 CLI:
     # https://github.com/Lux-AI-Challenge/Lux-Design-2022/blob/main/luxai_runner/episode.py
 

@@ -37,13 +37,10 @@ class Status:
 
 
 class UnitManager:
-    def __init__(
-        self,
-        unit: Unit,
-        master_state: MasterState,
-    ):
+    def __init__(self, unit: Unit, master_state: MasterState, factory_id: str):
         self.unit_id = unit.unit_id
         self.unit = unit
+        self.factory_id = factory_id
         self.unit_config: UnitConfig = unit.unit_cfg
         self.master: MasterState = master_state
 
@@ -79,7 +76,6 @@ class UnitManager:
         """
         Return a list of coordinates of the path the actions represent
         """
-        # TODO: Take into account repeats in `actions_to_path`, and calculate to N steps?
         if actions is None:
             actions = self.unit.action_queue
         return actions_to_path(self.unit, actions)

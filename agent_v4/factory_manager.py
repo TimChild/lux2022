@@ -2,8 +2,8 @@ from __future__ import annotations
 from typing import Dict, TYPE_CHECKING
 import numpy as np
 
-from agent_v4.master_state import MasterState
-from agent_v4.util import manhattan, nearest_non_zero
+from master_state import MasterState
+from util import manhattan, nearest_non_zero
 from lux.kit import obs_to_game_state, GameState
 from lux.factory import Factory
 
@@ -19,6 +19,7 @@ class BuildHeavyRecommendation(Recommendation):
 
     def to_action_queue(self, plan: MasterState) -> int:
         return 1
+
 
 # class FactoryRecommendation(Recommendation):
 #     role = 'factory ice'
@@ -47,6 +48,9 @@ class FactoryManager:
         self.unit_id = factory.unit_id
         self.factory = factory
 
+        self.light_units = {}
+        self.heavy_units = {}
+
     @staticmethod
     def place_factory(game_state: GameState, player):
         """Place factory in early_setup"""
@@ -64,7 +68,9 @@ class FactoryManager:
 
         # Distance to ice
         ice = game_state.board.ice
-        distances = [manhattan(pos, nearest_non_zero(ice, pos)) for pos in potential_spawns]
+        distances = [
+            manhattan(pos, nearest_non_zero(ice, pos)) for pos in potential_spawns
+        ]
 
         # Order by closest ice
         best_ordered = [
@@ -83,5 +89,3 @@ class FactoryManager:
 
     def update(self, factory: Factory):
         self.factory = factory
-
-

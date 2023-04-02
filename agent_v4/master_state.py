@@ -161,7 +161,8 @@ class Units:
                     unit_positions[unit_id] = unit.pos
 
         distances = {
-            unit_id: manhattan(pos, other_pos) for unit_id, other_pos in unit_positions.items()
+            unit_id: manhattan(pos, other_pos)
+            for unit_id, other_pos in unit_positions.items()
         }
         if not distances:
             return '', 999
@@ -174,30 +175,39 @@ class Units:
         TODO: May want to do something before calling this to check what has actually changed
         """
         from unit_manager import UnitManager
+
         units = {'LIGHT': {}, 'HEAVY': {}}
         for id, unit in game_state.units[team].items():
             units[unit.unit_type][id] = unit
 
-        for unit_id, unit in units['LIGHT'].items():
-            if unit_id in self.light:
-                self.light[unit_id].update(unit)
-            else:
-                self.light[unit_id] = UnitManager(unit, master_state)
+        for attr_key, unit_type in zip(['light', 'heavy'], ['LIGHT', 'HEAVY']):
+            for unit_id, unit in units[unit_type].items():
+                # Update existing Units
+                if unit_id in getattr(self, attr_key):
+                    getattr(self, attr_key)[unit_id].update(unit)
+                # Add new units
+                else:
+                    factory_id_num = master_state.maps.factory_maps.all[
+                        unit.pos[0], unit.pos[1]
+                    ]
+                    factory_id = f'factory_{factory_id_num}'
+                    unit_manager = UnitManager(
+                        unit=unit,
+                        master_state=master_state,
+                        factory_id=factory_id,
+                    )
+                    getattr(self, attr_key)[unit_id] = unit_manager
+                    if team == master_state.player:
+                        getattr(master_state.factories.friendly[factory_id], f'{attr_key}_units')[unit_id] = unit_manager
 
-        for unit_id, unit in units['HEAVY'].items():
-            if unit_id in self.heavy:
-                self.heavy[unit_id].update(unit)
-            else:
-                self.heavy[unit_id] = UnitManager(unit, master_state)
-
-        # Remove dead units
-        for k in set(self.light.keys()) - set(units['LIGHT'].keys()):
-            self.log(f'Removing unit {k}, assumed dead')
-            self.light.pop(k)
-
-        for k in set(self.light.keys()) - set(units['HEAVY'].keys()):
-            self.log(f'Removing unit {k}, assumed dead')
-            self.heavy.pop(k)
+                # Remove dead units
+                for k in set(getattr(self, attr_key).keys()) - set(units[unit_type].keys()):
+                    self.log(f'Removing unit {k}, assumed dead')
+                    dead_unit = getattr(self, attr_key).pop(k)
+                    logging.info(f'{team}, {master_state.player}')
+                    if team == master_state.player:
+                        self.log(f'Removing unit {k} from factory also')
+                        getattr(master_state.factories.friendly[dead_unit.factory_id], f'{attr_key}_units').pop(k)
 
         # Store positions of all units
         self.unit_positions = map_nested_dicts(units, lambda unit: unit.pos)
@@ -216,6 +226,7 @@ class Factories:
 
     def update(self, game_state: GameState):
         from factory_manager import FactoryManager
+
         for player_id, factories in game_state.factories.items():
             if player_id == self.player:
                 for factory_id, factory in factories.items():

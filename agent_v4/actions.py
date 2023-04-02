@@ -76,7 +76,9 @@ def unit_should_consider_acting(unit: UnitManager, plan: MasterState) -> bool:
     if power < action_queue_cost:
         return False
 
-    nearest_unit_id, nearest_enemy_distance = plan.units.nearest_unit(unit.pos, friendly=False, enemy=True, light=True, heavy=True)
+    nearest_unit_id, nearest_enemy_distance = plan.units.nearest_unit(
+        unit.pos, friendly=False, enemy=True, light=True, heavy=True
+    )
     if nearest_enemy_distance <= 2:
         return True
 
@@ -94,10 +96,7 @@ def factory_should_consider_acting(factory: FactoryManager, plan: MasterState) -
     """Whether factory should consider acting this turn
     If no, can save the cost of calculating obs/options for that factory
     """
-    center_tile_occupied = (
-        # True if plan.maps.unit_at_tile(factory.factory.pos) is not None else False
-        True if plan.units.unit_at_position(factory.factory.pos) is not None else False
-    )
+    return True
     if center_tile_occupied:
         return False
     return True
