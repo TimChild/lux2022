@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append(
-    '../lux_kit'
+    '../_lux_kit'
 )  #  lux_kit is a copy of https://github.com/Lux-AI-Challenge/Lux-Design-2022/tree/main/kits/python
 from typing import Tuple, List, Union, Optional
 from lux.kit import obs_to_game_state, GameState, EnvConfig, to_json, from_json
