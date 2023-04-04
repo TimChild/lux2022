@@ -14,7 +14,6 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logging.info('Starting Log')
 
-from basic_agent import Agent as BasicAgent
 from unit_manager import UnitManager
 from master_state import MasterState
 from factory_manager import FactoryManager

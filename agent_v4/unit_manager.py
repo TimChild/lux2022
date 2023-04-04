@@ -1,14 +1,10 @@
 from typing import Optional, Tuple
 
-import numpy as np
 from dataclasses import dataclass
 import logging
 
-from luxai2022.unit import UnitType
 from lux.unit import Unit
-from lux.kit import GameState
 from lux.config import UnitConfig
-from lux.utils import direction_to
 from util import (
     manhattan,
     ICE,
@@ -22,7 +18,6 @@ from util import (
     power_cost_of_actions,
 )
 
-from mining_planner import MiningRecommendation
 from master_state import MasterState
 from actions import Recommendation
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Tuple, Optional
 from dataclasses import dataclass
 
 import numpy as np
-from luxai2022.unit import UnitType
+from luxai_s2.unit import UnitType
 
 from master_state import MasterState, Planner
 from actions import Recommendation
