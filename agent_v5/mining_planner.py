@@ -107,9 +107,8 @@ class MiningPlanner(Planner):
             #     ]
 
             friendly_factory_positions = self.friendly_factories.copy()
-            friendly_factory_positions += (
-                1  # make non-factories == 0, (and factory_id = 0 becomes 1)
-            )
+            # make non-factories == 0, (and factory_id = 0 becomes 1)
+            friendly_factory_positions += 1
             nearest_factory = nearest_non_zero(friendly_factory_positions, pos)
             if nearest_factory is None:
                 unit_manager.log(f'No nearest factory', level=logging.WARNING)
@@ -124,7 +123,7 @@ class MiningPlanner(Planner):
 
             # Only recommend unoccupied resource tiles
             for i, path in enumerate(routes.paths):
-                resource_pos = tuple(path[-1])
+                # resource_pos = tuple(path[-1])
                 if (
                     # resource_pos not in self.master.allocations.resource_allocation
                     # or resource_pos in self.master.allocations.resource_allocation
