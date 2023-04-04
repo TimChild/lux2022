@@ -271,7 +271,7 @@ def calculate_factory_action(
 ) -> [np.ndarray, None]:
     # Building Units
     if (
-        fobs.center_occupied is False and master.step < 900
+        fobs.center_occupied is False and master.step < 800
     ):  # Only consider if middle is free and not near end of game
         # Want at least one heavy mining ice
         if (
