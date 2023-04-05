@@ -1,0 +1,13 @@
+[[{"duration": 2.787544, "stdout": "", "stderr": ""}],
+ [{"duration": 0.532103, "stdout": "", "stderr": ""}],
+ [{"duration": 0.001524, "stdout": "", "stderr": ""}],
+ [{"duration": 0.497884, "stdout": "", "stderr": ""}],
+ [{"duration": 0.001748, "stdout": "", "stderr": ""}],
+ [{"duration": 0.447794, "stdout": "", "stderr": ""}],
+ [{"duration": 0.001629, "stdout": "", "stderr": ""}],
+ [{"duration": 0.484511, "stdout": "", "stderr": ""}],
+ [{"duration": 0.002302, "stdout": "", "stderr": ""}],
+ [{"duration": 0.408225, "stdout": "", "stderr": ""}],
+ [{"duration": 0.00217, "stdout": "", "stderr": ""}],
+ [{"duration": 0.003706, "stdout": "", "stderr": ""}],
+ [{"duration": 0.102931, "stdout": "", "stderr": "Traceback (most recent call last):\n  File \"/opt/conda/lib/python3.7/site-packages/kaggle_environments/agent.py\", line 159, in act\n    action = self.agent(*args)\n  File \"/opt/conda/lib/python3.7/site-packages/kaggle_environments/agent.py\", line 131, in callable_agent\n    if callable(agent) \\\n  File \"/kaggle_simulations/agent/main.py\", line 34, in agent_fn\n    actions = agent.act(step, obs, remainingOverageTime)\n  File \"/kaggle_simulations/agent/agent.py\", line 106, in act\n    mining_rec = self.mining_planner.recommend(unit_manager=unit)\n  File \"/kaggle_simulations/agent/mining_planner.py\", line 127, in recommend\n    resource_pos = tuple(path[-1])\nIndexError: list index out of range\n"}]]
