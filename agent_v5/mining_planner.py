@@ -123,6 +123,7 @@ class MiningPlanner(Planner):
 
             # Only recommend unoccupied resource tiles
             for i, path in enumerate(routes.paths):
+                next_unoccupied_path = None
                 # resource_pos = tuple(path[-1])
                 if (
                     # resource_pos not in self.master.allocations.resource_allocation
@@ -147,9 +148,10 @@ class MiningPlanner(Planner):
             #     path_to_actions(unit_manager, path_to_factory),
             # )
             # TODO: Take into account occupied routes, also cost of reaching route?
+
             rec = MiningRecommendation(
                 value=next_unoccupied_value,
-                resource_pos=next_unoccupied_path[-1],
+                resource_pos=next_unoccupied_path[-1] if next_unoccupied_path is not None and len(next_unoccupied_path) > 0 else None,
                 factory_id=nearest_factory_id,
                 resource_type=resource,
             )

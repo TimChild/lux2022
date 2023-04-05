@@ -80,3 +80,14 @@ class UnitManager:
             level,
             f"Step {self.master.game_state.real_env_steps}, Unit {self.unit_id}: {message}",
         )
+
+    def dead(self):
+        """Called when unit is detected as dead
+        """
+        unit_player = f'player_{self.unit.team_id}'
+        if unit_player == self.master.player:
+            self.log(f'Friendly unit {self.unit_id} dead, removing from factories also')
+            fkey = 'light' if self.unit.unit_type == 'LIGHT' else 'heavy'
+            getattr(self.master.factories.friendly[self.factory_id], f'{fkey}_units').pop(self.unit_id)
+        else:
+            self.log(f'Enemy unit {self.unit_id} dead, nothing more to do')

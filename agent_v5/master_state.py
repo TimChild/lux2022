@@ -103,11 +103,13 @@ class FactoryMaps:
 
 @dataclass
 class Units:
+    # TODO: Make Units keep track of friendly and enemy similar to Factories. Maybe make this class UnitsContainer or something
     light: dict[str, UnitManager]
     heavy: dict[str, UnitManager]
     #                  {LIGHT/HEAVY: {unit_id: pos}}
     unit_positions: dict[str, dict[str, tuple[int, int]]] = None
     enemy: Units = None
+    master: MasterState = None
 
     @property
     def friendly_units(self) -> dict[str, UnitManager]:
@@ -190,24 +192,25 @@ class Units:
                     factory_id_num = master_state.maps.factory_maps.all[
                         unit.pos[0], unit.pos[1]
                     ]
-                    factory_id = f'factory_{factory_id_num}'
+                    if factory_id_num < 0:
+                        self.log(f'No factory for player {team}, new unit {unit_id}, assigning `None` for factory_id', level=logging.WARNING)
+                        factory_id = None
+                    else:
+                        factory_id = f'factory_{factory_id_num}'
                     unit_manager = UnitManager(
                         unit=unit,
                         master_state=master_state,
                         factory_id=factory_id,
                     )
                     getattr(self, attr_key)[unit_id] = unit_manager
-                    if team == master_state.player:
+                    if team == master_state.player and factory_id is not None:
                         getattr(master_state.factories.friendly[factory_id], f'{attr_key}_units')[unit_id] = unit_manager
 
                 # Remove dead units
                 for k in set(getattr(self, attr_key).keys()) - set(units[unit_type].keys()):
                     self.log(f'Removing unit {k}, assumed dead')
-                    dead_unit = getattr(self, attr_key).pop(k)
-                    logging.info(f'{team}, {master_state.player}')
-                    if team == master_state.player:
-                        self.log(f'Removing unit {k} from factory also')
-                        getattr(master_state.factories.friendly[dead_unit.factory_id], f'{attr_key}_units').pop(k)
+                    dead_unit = getattr(self, attr_key).pop(k, None)
+                    dead_unit.dead()
 
         # Store positions of all units
         self.unit_positions = map_nested_dicts(units, lambda unit: unit.pos)
@@ -220,24 +223,28 @@ class Units:
 
 @dataclass
 class Factories:
-    player: str
     friendly: dict[str, FactoryManager]
     enemy: dict[str, FactoryManager]
+    master: MasterState = None
 
     def update(self, game_state: GameState):
         from factory_manager import FactoryManager
 
-        for player_id, factories in game_state.factories.items():
-            if player_id == self.player:
-                for factory_id, factory in factories.items():
-                    if factory_id not in self.friendly:
-                        self.friendly[factory_id] = FactoryManager(factory)
-                    self.friendly[factory_id].update(factory)
-            else:
-                for factory_id, factory in factories.items():
-                    if factory_id not in self.enemy:
-                        self.enemy[factory_id] = FactoryManager(factory)
-                    self.enemy[factory_id].update(factory)
+        for player, f_dict in zip([self.master.player, self.master.opp_player], [self.friendly, self.enemy]):
+            for player_id, factories in game_state.factories.items():
+                if player_id == player:
+                    # Add or update factories
+                    for factory_id, factory in factories.items():
+                        if factory_id not in f_dict:
+                            f_dict[factory_id] = FactoryManager(factory, master_state=self.master)
+                        else:
+                            f_dict[factory_id].update(factory)
+
+                    # Remove dead factories
+                    for k in set(f_dict.keys()) - set(factories.keys()):
+                        dead_factory = f_dict.pop(k)
+                        logging.info(f'master.player = {self.master.player}. For {player} factory {k} dead')
+                        dead_factory.dead()
 
 
 class UnitTasks(list):
@@ -354,8 +361,8 @@ class MasterState:
         self.step: int = None
         self.pathfinder: PathFinder = PathFinder()
 
-        self.units = Units(light={}, heavy={}, enemy=Units(light={}, heavy={}))
-        self.factories = Factories(player=self.player, friendly={}, enemy={})
+        self.units = Units(light={}, heavy={}, enemy=Units(light={}, heavy={}), master=self)
+        self.factories = Factories(friendly={}, enemy={}, master=self)
         self.allocations = Allocations()
         self.maps = Maps()
 

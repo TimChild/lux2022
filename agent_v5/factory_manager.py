@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Dict, TYPE_CHECKING
 import numpy as np
 import pandas as pd
+import logging
 
 from lux.kit import obs_to_game_state, GameState
 from lux.factory import Factory
@@ -52,12 +53,14 @@ class BuildHeavyRecommendation(Recommendation):
 
 
 class FactoryManager:
-    def __init__(self, factory: Factory):
+    def __init__(self, factory: Factory, master_state: MasterState):
         self.unit_id = factory.unit_id
         self.factory = factory
 
         self.light_units = {}
         self.heavy_units = {}
+
+        self.master = master_state
 
     @staticmethod
     def place_factory(game_state: GameState, player):
@@ -105,3 +108,23 @@ class FactoryManager:
 
     def update(self, factory: Factory):
         self.factory = factory
+
+    def log(self, message, level=logging.INFO):
+        logging.log(
+            level,
+            f"Step {self.master.game_state.real_env_steps}, Factory {self.unit_id}: {message}",
+        )
+
+    def dead(self):
+        """Called when factory is detected as dead"""
+        factory_player = f'player_{self.factory.team_id}'
+        if factory_player == self.master.player:
+            self.log(f'Friendly factory {self.unit_id} dead, looking for units assigned')
+            for unit_id, unit in self.master.units.friendly_units.items():
+                if unit.factory_id == self.unit_id:
+                    self.log(f'Removing {self.unit_id} assignment for unit {unit_id}')
+                    unit.factory_id = None
+        else:
+            self.log(f'Enemy factory {self.unit_id} dead, nothing else to do')
+
+

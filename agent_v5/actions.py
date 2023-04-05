@@ -74,20 +74,28 @@ def unit_should_consider_acting(unit: UnitManager, plan: MasterState) -> bool:
     power = unit.unit.power
     action_queue_cost = unit.unit_config.ACTION_QUEUE_POWER_COST
     if power < action_queue_cost:
+        # Not enough energy to update action queue, so nothing this unit can do
         return False
 
     nearest_unit_id, nearest_enemy_distance = plan.units.nearest_unit(
         unit.pos, friendly=False, enemy=True, light=True, heavy=True
     )
     if nearest_enemy_distance <= 2:
+        # Nearby enemy, unit might need to consider running away or attacking
+        return True
+
+    if unit.factory_id is None:
+        # No factory assigned to unit (factory died?), unit should do something else
         return True
 
     current_role = unit.status.role
     if current_role in []:
+        # Certain roles may no require actions
         return False
 
     current_actions = unit.unit.action_queue
     if len(current_actions) == 0:
+        # No current actions, might want to consider doing something
         return True
     return True
 

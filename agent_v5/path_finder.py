@@ -107,6 +107,7 @@ class PathFinder:
         Full A* pathing using whole grid, but slow
         Note: no check of unit collisions here, only avoids enemy factories
         """
+        logging.warning(f'Need to check this is correct.. possible the axes need to be swapped in cost_map, not sure about start/end...')
         finder = AStarFinder()
         cost_map = self.get_costmap(rubble=rubble)
         grid = Grid(matrix=cost_map)
@@ -208,7 +209,8 @@ class PathFinder:
 
             cost_map = self.get_costmap(rubble=rubble)
             for x, y in additional_blocked_cells:
-                cost_map[y, x] = -1
+                # cost_map[y, x] = -1
+                cost_map[x, y] = -1
 
             coords = np.array([start, end])
 
@@ -225,10 +227,11 @@ class PathFinder:
 
             x_range, y_range = [(lowers[i], uppers[i]) for i in range(2)]
 
-            # y, x
-            new_cost = cost_map[range(*y_range), :][:, range(*x_range)]
+            # x, y
+            new_cost = cost_map[range(*x_range), :][:, range(*y_range)]
 
             # Make small grid and set start/end
+            new_cost = np.moveaxis(new_cost, (0, 1), (1, 0))  # Required other way around for Grid
             grid = Grid(matrix=new_cost)
             start = grid.node(*[c - l for c, l in zip(start, lowers)])
             end = grid.node(*[c - l for c, l in zip(end, lowers)])

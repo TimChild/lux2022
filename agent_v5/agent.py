@@ -94,6 +94,7 @@ class Agent:
 
         # Then additional observations for factories (not things they already store)
         factory_obs = {}
+        print(self.master.factories.friendly.keys())
         for factory_id, factory in self.master.factories.friendly.items():
             if factory_should_consider_acting(factory, self.master):
                 fobs = calculate_factory_obs(factory, self.master)
@@ -111,11 +112,16 @@ class Agent:
         for unit_id in unit_obs.keys():
             unit = self.master.units.get_unit(unit_id)
             uobs = unit_obs[unit_id]
-            fobs = factory_obs[unit.factory_id]
+            if unit.factory_id:
+                fobs = factory_obs[unit.factory_id]
+                factory = self.master.factories.friendly[unit.factory_id]
+            else:
+                fobs = None
+                factory = None
             u_action = self.calculate_unit_actions(
                 unit=unit,
                 uobs=uobs,
-                factory=self.master.factories.friendly[unit.factory_id],
+                factory=factory,
                 fobs=fobs,
                 unit_recommendations=unit_recommendations[unit_id],
             )
@@ -143,8 +149,8 @@ class Agent:
         self,
         unit: UnitManager,
         uobs: UnitObs,
-        factory: FactoryManager,
-        fobs: FactoryObs,
+        factory: [None, FactoryManager],
+        fobs: [None, FactoryObs],
         unit_recommendations: dict[str, Recommendation],
     ) -> [list[np.ndarray], None]:
         def factory_has_heavy_ice_miner(factory: FactoryManager):
@@ -153,6 +159,10 @@ class Agent:
                 if unit.status.role == 'mine_ice':
                     return True
             return False
+
+        if factory is None:
+            self.log(f'{unit.unit_id} has no factory. Doing nothing')
+            return None
 
         # Make at least 1 heavy mine ice
         if (
@@ -284,7 +294,7 @@ def calculate_factory_action(
 
         # Want at least one light to do other things
         if (
-            len(factory.light_units) < 1
+            len(factory.light_units) < 0
             and factory.factory.cargo.metal > master.env_cfg.ROBOTS['LIGHT'].METAL_COST
             and factory.factory.power > master.env_cfg.ROBOTS['LIGHT'].POWER_COST
         ):
@@ -294,7 +304,7 @@ def calculate_factory_action(
     # Watering Lichen
     water_cost = factory.factory.water_cost(master.game_state)
     if (
-        factory.factory.cargo.water > 1000 or master.step > 900
+        factory.factory.cargo.water > 1000 or master.step > 800
     ):  # Either excess water or near end game
         if factory.factory.can_water(master.game_state):
             logging.info(
