@@ -39,7 +39,10 @@ class PathFinder:
         logging.log(level, f'PathFinding: {message}')
 
     def get_costmap(self, rubble=False):
-        """Power cost of travelling (not taking into account collisions, but taking into account enemy factories)"""
+        """Power cost of travelling (not taking into account collisions, but taking into account enemy factories)
+
+        Note: This is in same orientation as other maps (needs to be Transposed before passing to Pathfinder)
+        """
         if rubble:
             cost = np.ones(self.rubble.shape) * 1
             cost += self.rubble * 0.05
@@ -77,7 +80,9 @@ class PathFinder:
             'enemy': {'light': {}, 'heavy': {}},
         }
 
-        for units, player in zip([friendly_units.values(), enemy_units.values()], data.keys()):
+        for units, player in zip(
+            [friendly_units.values(), enemy_units.values()], data.keys()
+        ):
             for unit in units:
                 if unit.unit.unit_type == 'LIGHT':
                     data[player]['light'][unit.unit_id] = unit.actions_to_path()
@@ -107,9 +112,9 @@ class PathFinder:
         Full A* pathing using whole grid, but slow
         Note: no check of unit collisions here, only avoids enemy factories
         """
-        logging.warning(f'Need to check this is correct.. possible the axes need to be swapped in cost_map, not sure about start/end...')
         finder = AStarFinder()
         cost_map = self.get_costmap(rubble=rubble)
+        cost_map = cost_map.T  # Required for finder
         grid = Grid(matrix=cost_map)
         start = grid.node(*start)
         end = grid.node(*end)
@@ -209,7 +214,6 @@ class PathFinder:
 
             cost_map = self.get_costmap(rubble=rubble)
             for x, y in additional_blocked_cells:
-                # cost_map[y, x] = -1
                 cost_map[x, y] = -1
 
             coords = np.array([start, end])
@@ -231,14 +235,14 @@ class PathFinder:
             new_cost = cost_map[range(*x_range), :][:, range(*y_range)]
 
             # Make small grid and set start/end
-            new_cost = np.moveaxis(new_cost, (0, 1), (1, 0))  # Required other way around for Grid
+            new_cost = new_cost.T  # Required other way around for Grid
             grid = Grid(matrix=new_cost)
-            start = grid.node(*[c - l for c, l in zip(start, lowers)])
-            end = grid.node(*[c - l for c, l in zip(end, lowers)])
+            grid_start = grid.node(*[c - l for c, l in zip(start, lowers)])
+            grid_end = grid.node(*[c - l for c, l in zip(end, lowers)])
 
             # Find Path
             pathfinder = AStarFinder(diagonal_movement=-1)
-            path, runs = pathfinder.find_path(start, end, grid)
+            path, runs = pathfinder.find_path(grid_start, grid_end, grid)
 
             # Readjust for original map
             if len(path) > 0:
