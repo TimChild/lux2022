@@ -103,6 +103,7 @@ class Agent:
         unit_recommendations = {}
         for unit_id in unit_obs.keys():
             unit = self.master.units.friendly.get_unit(unit_id)
+            # TODO: maybe add some logic here as to whether to get recommendations??
             mining_rec = self.mining_planner.recommend(unit_manager=unit)
             unit_recommendations[unit_id] = {'mine_ice': mining_rec}
 
@@ -170,10 +171,12 @@ class Agent:
             and unit.status.role != 'mine_ice'
         ):
             self.log(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
-            unit.status.role = 'mine_ice'
-            return self.mining_planner.carry_out(
-                unit, recommendation=unit_recommendations['mine_ice']
-            )
+            mining_rec = unit_recommendations.pop('mine_ice', None)
+            if mining_rec is not None:
+                unit.status.role = 'mine_ice'
+                return self.mining_planner.carry_out(unit, recommendation=mining_rec)
+            else:
+                raise RuntimeError(f'no `mine_ice` recommendation')
 
         # Make at least one light mine rubble
         if unit.unit.unit_type == 'LIGHT' and not unit.status.role:
@@ -262,7 +265,9 @@ def calculate_unit_obs(unit: FriendlyUnitManger, plan: MasterState) -> UnitObs:
     return uobs
 
 
-def calculate_factory_obs(factory: FriendlyFactoryManager, plan: MasterState) -> FactoryObs:
+def calculate_factory_obs(
+    factory: FriendlyFactoryManager, plan: MasterState
+) -> FactoryObs:
     """Calculate observations that are specific to a particular factory"""
 
     center_tile_occupied = (

@@ -15,7 +15,7 @@ from path_finder import PathFinder
 
 if TYPE_CHECKING:
     from lux.unit import Unit
-    from unit_manager import UnitManager
+    from unit_manager import UnitManager, FriendlyUnitManger
     from factory_manager import (
         FriendlyFactoryManager,
         EnemyFactoryManager,
@@ -41,12 +41,12 @@ class Planner(abc.ABC):
     """
 
     @abc.abstractmethod
-    def recommend(self, unit: UnitManager):
+    def recommend(self, unit: FriendlyUnitManger):
         """Recommend an action for the unit (effectively make a high level obs)"""
         pass
 
     @abc.abstractmethod
-    def carry_out(self, unit: UnitManager, recommendation: Recommendation):
+    def carry_out(self, unit: FriendlyUnitManger, recommendation: Recommendation):
         """TODO: Should this be here?
         Idea would be to make the actions necessary to carry out recommendation
         The Planner instance has probably already calculated what would need to be done, so might be more efficient to ask it again?
@@ -56,7 +56,7 @@ class Planner(abc.ABC):
 
     @abc.abstractmethod
     def update(self, *args, **kwargs):
-        """Clear cached recommendations for example"""
+        """Called at beginning of turn. May want to clear some cached calculations for example"""
         pass
 
     def log(self, message, level=logging.INFO):

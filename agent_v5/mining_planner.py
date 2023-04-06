@@ -40,7 +40,6 @@ class MiningRecommendation(Recommendation):
     """Recommended mining action between a resource and factory"""
 
     role = 'miner'
-    value = 0
 
     def __init__(self, value: float, resource_pos, factory_id, resource_type: str):
         self.value = value
@@ -48,10 +47,15 @@ class MiningRecommendation(Recommendation):
         self.factory_id: str = factory_id
         self.resource_type = resource_type
 
-    def to_action_queue(self, plan: MasterState) -> list[np.ndarray]:
-        logging.error('Not Implemented')
-        print('error, MiningRecommendation.to_action_queue not implemented')
-        return []
+
+# class MiningHelperRecommendation(Recommendation):
+#     """Recommend unit helps a mining unit (i.e. provide power and take away resources)"""
+#     role = 'miner_helper'
+#
+#     def __init__(self, resource_pos, factory_id, resource_type: str):
+#         self.resource_pos: Tuple[int, int] = resource_pos
+#         self.factory_id: str = factory_id
+#         self.resource_type = resource_type
 
 
 class MiningPlanner(Planner):
@@ -80,20 +84,27 @@ class MiningPlanner(Planner):
         return self.master.maps.factory_maps.by_player[self.master.player]
 
     def update(self):
-        # For now, only calculate once
+        # For now, only calculate once on first call of .mining_routes
+        # TODO: clear _mining_routes periodically to get updated paths (i.e. for rubble cleared or added)
         # self.mining_routes = self._generate_routes()
         pass
 
-    def recommend(self, unit_manager: FriendlyUnitManger):
-        """Make recommendations for this unit to mine resources (i.e. get values of nearby routes)
-
-        TODO: Think about whether this should take into account the needs of nearby factories? That is maybe better suited to RL?
+    def recommend(
+        self, unit_manager: FriendlyUnitManger
+    ) -> [None, MiningRecommendation]:
         """
-        # TODO: Improve this
+        Make recommendations for this unit to mine resources (i.e. get values of nearby routes)
+
+        Information required to carry out this recommendation should be stored in the recommendation
+        Then to carry out the recommendation, the .carry_out(...) method will be called in the same turn
+
+        Args:
+            unit_manager: Unit to make recommendation for
+            # resource_type: which resource to look for ('ice', 'ore')
+        """
         if unit_manager.status.role == MiningRecommendation.role:
-            return MiningRecommendation(
-                value=0, resource_pos=(-1, -1), factory_id='', resource_type=ICE
-            )
+            # For now, if already a miner, don't look for more routes for this unit
+            return None
 
         pos = unit_manager.unit.pos
         # TODO: For ICE and ORE
@@ -151,7 +162,9 @@ class MiningPlanner(Planner):
 
             rec = MiningRecommendation(
                 value=next_unoccupied_value,
-                resource_pos=next_unoccupied_path[-1] if next_unoccupied_path is not None and len(next_unoccupied_path) > 0 else None,
+                resource_pos=next_unoccupied_path[-1]
+                if next_unoccupied_path is not None and len(next_unoccupied_path) > 0
+                else None,
                 factory_id=nearest_factory_id,
                 resource_type=resource,
             )

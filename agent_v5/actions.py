@@ -23,20 +23,11 @@ class HighLevelAction(abc.ABC):
         - Dig Lichen in area near X, Y
     """
 
-    @abc.abstractmethod
-    def to_action_queue(self, plan: MasterState) -> list[np.ndarray]:
-        """To action queue recognized by lux engine i.e. list[np.array(6).astype(int)]"""  # TODO: Is that right for action
-        pass
+    pass
 
 
 class Recommendation(HighLevelAction):
     role: str = 'not set'
-    value: float = 0
-
-    # @abc.abstractmethod
-    # def to_array(self):
-    #     """Turn recommendation into an array of values with standard size"""
-    #     pass
 
 
 def calculate_high_level_unit_action(
@@ -100,7 +91,9 @@ def unit_should_consider_acting(unit: FriendlyUnitManger, plan: MasterState) -> 
     return True
 
 
-def factory_should_consider_acting(factory: FriendlyUnitManger, plan: MasterState) -> bool:
+def factory_should_consider_acting(
+    factory: FriendlyUnitManger, plan: MasterState
+) -> bool:
     """Whether factory should consider acting this turn
     If no, can save the cost of calculating obs/options for that factory
     """
