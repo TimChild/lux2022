@@ -26,7 +26,7 @@ from util import (
 )
 
 if TYPE_CHECKING:
-    from unit_manager import UnitManager
+    from unit_manager import FriendlyUnitManger
 
 
 @dataclass
@@ -84,7 +84,7 @@ class MiningPlanner(Planner):
         # self.mining_routes = self._generate_routes()
         pass
 
-    def recommend(self, unit_manager: UnitManager):
+    def recommend(self, unit_manager: FriendlyUnitManger):
         """Make recommendations for this unit to mine resources (i.e. get values of nearby routes)
 
         TODO: Think about whether this should take into account the needs of nearby factories? That is maybe better suited to RL?
@@ -160,7 +160,7 @@ class MiningPlanner(Planner):
         return best_rec
 
     def carry_out(
-        self, unit_manager: UnitManager, recommendation: MiningRecommendation
+        self, unit_manager: FriendlyUnitManger, recommendation: MiningRecommendation
     ):
         # TODO: Check going to resource first (for now always going to factory first
         dig_repeats = 10

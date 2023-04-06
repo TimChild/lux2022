@@ -14,9 +14,9 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logging.info('Starting Log')
 
-from unit_manager import UnitManager
+from unit_manager import UnitManager, FriendlyUnitManger
 from master_state import MasterState
-from factory_manager import FactoryManager
+from factory_manager import FriendlyFactoryManager
 from actions import (
     unit_should_consider_acting,
     factory_should_consider_acting,
@@ -71,7 +71,7 @@ class Agent:
                 self.player
             ].factories_to_place
             if factories_to_place > 0 and my_turn_to_place:
-                action = FactoryManager.place_factory(
+                action = FriendlyFactoryManager.place_factory(
                     self.master.game_state, self.player
                 )
         self.log(f'Early setup action {action}')
@@ -87,14 +87,13 @@ class Agent:
 
         # Then additional observations for units (not things they already store)
         unit_obs: dict[str, UnitObs] = {}
-        for unit_id, unit in self.master.units.friendly_units.items():
+        for unit_id, unit in self.master.units.friendly.all.items():
             if unit_should_consider_acting(unit, self.master):
                 uobs = calculate_unit_obs(unit, self.master)
                 unit_obs[unit_id] = uobs
 
         # Then additional observations for factories (not things they already store)
         factory_obs = {}
-        print(self.master.factories.friendly.keys())
         for factory_id, factory in self.master.factories.friendly.items():
             if factory_should_consider_acting(factory, self.master):
                 fobs = calculate_factory_obs(factory, self.master)
@@ -103,14 +102,14 @@ class Agent:
         # Unit Recommendations
         unit_recommendations = {}
         for unit_id in unit_obs.keys():
-            unit = self.master.units.get_unit(unit_id)
+            unit = self.master.units.friendly.get_unit(unit_id)
             mining_rec = self.mining_planner.recommend(unit_manager=unit)
             unit_recommendations[unit_id] = {'mine_ice': mining_rec}
 
         # Unit Actions
         unit_actions = {}
         for unit_id in unit_obs.keys():
-            unit = self.master.units.get_unit(unit_id)
+            unit = self.master.units.friendly.get_unit(unit_id)
             uobs = unit_obs[unit_id]
             if unit.factory_id:
                 fobs = factory_obs[unit.factory_id]
@@ -147,13 +146,13 @@ class Agent:
 
     def calculate_unit_actions(
         self,
-        unit: UnitManager,
+        unit: FriendlyUnitManger,
         uobs: UnitObs,
-        factory: [None, FactoryManager],
+        factory: [None, FriendlyFactoryManager],
         fobs: [None, FactoryObs],
         unit_recommendations: dict[str, Recommendation],
     ) -> [list[np.ndarray], None]:
-        def factory_has_heavy_ice_miner(factory: FactoryManager):
+        def factory_has_heavy_ice_miner(factory: FriendlyFactoryManager):
             units = factory.heavy_units
             for unit_id, unit in units.items():
                 if unit.status.role == 'mine_ice':
@@ -203,7 +202,7 @@ class Agent:
             - Some additional info added based on metadata?
         """
         obs = GeneralObs(
-            num_friendly_heavy=len(self.master.units.heavy.keys()),
+            num_friendly_heavy=len(self.master.units.friendly.heavy.keys()),
         )
         return obs
 
@@ -236,7 +235,7 @@ class FactoryObs(MyObs):
     center_occupied: bool  # Center tile (i.e. where units are built)
 
 
-def calculate_unit_obs(unit: UnitManager, plan: MasterState) -> UnitObs:
+def calculate_unit_obs(unit: FriendlyUnitManger, plan: MasterState) -> UnitObs:
     """Calculate observations that are specific to a particular unit
 
     Include all the basic stuff like id etc
@@ -263,7 +262,7 @@ def calculate_unit_obs(unit: UnitManager, plan: MasterState) -> UnitObs:
     return uobs
 
 
-def calculate_factory_obs(factory: FactoryManager, plan: MasterState) -> FactoryObs:
+def calculate_factory_obs(factory: FriendlyFactoryManager, plan: MasterState) -> FactoryObs:
     """Calculate observations that are specific to a particular factory"""
 
     center_tile_occupied = (
@@ -277,7 +276,7 @@ def calculate_factory_obs(factory: FactoryManager, plan: MasterState) -> Factory
 
 
 def calculate_factory_action(
-    factory: FactoryManager, fobs: FactoryObs, master: MasterState
+    factory: FriendlyFactoryManager, fobs: FactoryObs, master: MasterState
 ) -> [np.ndarray, None]:
     # Building Units
     if (

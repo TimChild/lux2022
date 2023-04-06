@@ -7,7 +7,7 @@ import numpy as np
 if TYPE_CHECKING:
     from agent import GeneralObs, UnitObs, FactoryObs
     from master_state import MasterState
-    from unit_manager import UnitManager
+    from unit_manager import FriendlyUnitManger
     from factory_manager import FactoryManager
 
 
@@ -67,7 +67,7 @@ def calculate_high_level_factory_actions(
     return None
 
 
-def unit_should_consider_acting(unit: UnitManager, plan: MasterState) -> bool:
+def unit_should_consider_acting(unit: FriendlyUnitManger, plan: MasterState) -> bool:
     """Whether unit should consider acting this turn
     If no, can save the cost of calculating obs/options for that unit
     """
@@ -100,11 +100,8 @@ def unit_should_consider_acting(unit: UnitManager, plan: MasterState) -> bool:
     return True
 
 
-def factory_should_consider_acting(factory: FactoryManager, plan: MasterState) -> bool:
+def factory_should_consider_acting(factory: FriendlyUnitManger, plan: MasterState) -> bool:
     """Whether factory should consider acting this turn
     If no, can save the cost of calculating obs/options for that factory
     """
-    return True
-    if center_tile_occupied:
-        return False
     return True

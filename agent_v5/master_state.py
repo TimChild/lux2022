@@ -1,11 +1,9 @@
 from __future__ import annotations
 import abc
-import copy
 import logging
-from typing import Dict, TYPE_CHECKING, Tuple, List, Optional, Any
+from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 import collections
-from functools import lru_cache
 
 import numpy as np
 
@@ -14,9 +12,14 @@ from lux.kit import GameState
 from util import ORE, ICE, METAL, WATER, manhattan
 from path_finder import PathFinder
 
+
 if TYPE_CHECKING:
+    from lux.unit import Unit
     from unit_manager import UnitManager
-    from factory_manager import FactoryManager
+    from factory_manager import (
+        FriendlyFactoryManager,
+        EnemyFactoryManager,
+    )
     from actions import Recommendation
 
 
@@ -63,16 +66,16 @@ class Planner(abc.ABC):
 
 @dataclass
 class ResourceTile(dict):
-    pos: Tuple[int, int]
+    pos: tuple[int, int]
     resource_type: str
-    used_by: List[str] = field(default_factory=list)
+    used_by: list[str] = field(default_factory=list)
 
 
 @dataclass
 class FactoryTile(dict):
-    pos: Tuple[int, int]
+    pos: tuple[int, int]
     factory_id: str
-    used_by: List[str] = field(default_factory=list)
+    used_by: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -102,65 +105,111 @@ class FactoryMaps:
 
 
 @dataclass
-class Units:
-    # TODO: Make Units keep track of friendly and enemy similar to Factories. Maybe make this class UnitsContainer or something
-    light: dict[str, UnitManager]
-    heavy: dict[str, UnitManager]
-    #                  {LIGHT/HEAVY: {unit_id: pos}}
-    unit_positions: dict[str, dict[str, tuple[int, int]]] = None
-    enemy: Units = None
-    master: MasterState = None
+class UnitPositions:
+    # Unit_id, pos
+    light: dict[str, tuple[int, int]]
+    heavy: dict[str, tuple[int, int]]
 
-    @property
-    def friendly_units(self) -> dict[str, UnitManager]:
-        """Return full list of friendly units"""
-        return dict(**self.light, **self.heavy)
-
-    @property
-    def enemy_units(self) -> dict[str, UnitManager]:
-        """Return full list of enemy units"""
-        return self.enemy.friendly_units
-
-    def unit_at_position(self, pos: tuple[int, int]):
+    def unit_at_position(self, pos: tuple[int, int]) -> [None, str]:
         """Get the unit_id of unit at given position"""
-        for type, units in self.unit_positions.items():
-            for unit_id, unit_pos in units.items():
-                if tuple(pos) == tuple(unit_pos):
-                    return unit_id
+        pos = tuple(pos)
+        for unit_id, unit_pos in self.light.items():
+            if pos == tuple(unit_pos):
+                return unit_id
+        for unit_id, unit_pos in self.heavy.items():
+            if pos == tuple(unit_pos):
+                return unit_id
         return None
 
-    def log(self, message, level=logging.INFO):
-        logging.log(level=level, msg=message)
+    def update(self, light: dict[str, UnitManager], heavy: dict[str, UnitManager]):
+        """Update at beginning of turn"""
+        self.light = {unit_id: unit.pos for unit_id, unit in light.items()}
+        self.heavy = {unit_id: unit.pos for unit_id, unit in heavy.items()}
 
-    def get_unit(self, unit_id: str):
-        if unit_id in self.light:
-            return self.light[unit_id]
-        elif unit_id in self.heavy:
-            return self.heavy[unit_id]
-        elif self.enemy is not None:
-            return self.enemy.get_unit(unit_id)
+
+@dataclass
+class AllUnits:
+    friendly: FriendlyUnits
+    enemy: EnemyUnits
+    master: MasterState
+
+    def unit_at_position(self, pos: tuple[int, int]) -> [None, str]:
+        """Get the unit_id of unit at given position"""
+        unit_id = self.friendly.unit_at_position(pos)
+        if unit_id is not None:
+            return unit_id
         else:
-            raise KeyError(f'Unit {unit_id} does not exist')
+            return self.enemy.unit_at_position(pos)  # Note: None if not there either
+
+    def get_unit(self, unit_id: str) -> UnitManager:
+        unit = self.friendly.get_unit(unit_id)
+        if unit is not None:
+            return unit
+        else:
+            unit = self.enemy.get_unit(unit_id)
+        if unit is None:
+            raise KeyError(f'{unit_id} does not exist in friendly or enemy units')
 
     def nearest_unit(
         self, pos: tuple[int, int], friendly=True, enemy=True, light=True, heavy=True
     ) -> tuple[str, int]:
-        """Return the nearest unit and distance from the given position"""
-        unit_positions = {}
+        """Get unit_id, dist of nearest unit to pos
+        Note: Returns '', 999 if no unit found
+        """
+        nearest_id = ''
+        nearest_dist = 999
         if friendly:
-            if light:
-                for unit_id, unit in self.light.items():
-                    unit_positions[unit_id] = unit.pos
-            if heavy:
-                for unit_id, unit in self.heavy.items():
-                    unit_positions[unit_id] = unit.pos
+            new_id, new_dist = self.friendly.nearest_unit(pos, light=light, heavy=heavy)
+            if new_dist < nearest_dist:
+                nearest_id, nearest_dist = new_id, new_dist
         if enemy:
-            if light:
-                for unit_id, unit in self.enemy.light.items():
-                    unit_positions[unit_id] = unit.pos
-            if heavy:
-                for unit_id, unit in self.enemy.heavy.items():
-                    unit_positions[unit_id] = unit.pos
+            new_id, new_dist = self.enemy.nearest_unit(pos, light=light, heavy=heavy)
+            if new_dist < nearest_dist:
+                nearest_id, nearest_dist = new_id, new_dist
+        return nearest_id, nearest_dist
+
+    def update(self, game_state: GameState):
+        self.friendly.update(game_state.units[self.master.player])
+        self.enemy.update(game_state.units[self.master.opp_player])
+
+
+class Units(abc.ABC):
+    def __init__(self):
+        self.light: dict[str, UnitManager] = dict()
+        self.heavy: dict[str, UnitManager] = dict()
+        #                  {LIGHT/HEAVY: {unit_id: pos}}
+        self.unit_positions: UnitPositions = UnitPositions(light={}, heavy={})
+
+    @property
+    def all(self) -> dict[str, UnitManager]:
+        """Return full list of units"""
+        return dict(**self.light, **self.heavy)
+
+    def unit_at_position(self, pos: tuple[int, int]) -> [None, str]:
+        """Get the unit_id of unit at given position"""
+        if self.unit_positions is None:
+            self.log(
+                f'Requesting unit at {pos} before initializing unit_positions',
+                level=logging.ERROR,
+            )
+            raise RuntimeError(
+                f'self.unit_positions is None. Must be initialized first'
+            )
+        return self.unit_positions.unit_at_position(pos)
+
+    def nearest_unit(
+        self, pos: tuple[int, int], light=True, heavy=True
+    ) -> tuple[str, int]:
+        """Return the nearest unit and distance from the given position
+        Note: Returns '', 999 if no unit found
+        """
+        unit_positions = {}
+        if light:
+            for unit_id, unit in self.light.items():
+                unit_positions[unit_id] = unit.pos
+        if heavy:
+            for unit_id, unit in self.heavy.items():
+                unit_positions[unit_id] = unit.pos
 
         distances = {
             unit_id: manhattan(pos, other_pos)
@@ -171,150 +220,247 @@ class Units:
         nearest_id = min(distances, key=distances.get)
         return nearest_id, distances[nearest_id]
 
-    def update(self, game_state: GameState, team: str, master_state: MasterState):
+    def get_unit(self, unit_id: str) -> [None, UnitManager]:
+        if unit_id in self.light:
+            return self.light[unit_id]
+        elif unit_id in self.heavy:
+            return self.heavy[unit_id]
+        else:
+            return None
+
+    def _remove_dead(self, units):
+        # Remove dead units
+        for u_dict in (self.light, self.heavy):
+            # If anything in light/heavy list that isn't in full list, must be dead
+            for k in set(u_dict.keys()) - set(units.keys()):
+                self.log(f'Removing unit {k}, assumed dead')
+                dead_unit = u_dict.pop(k)
+                dead_unit.dead()
+
+    @abc.abstractmethod
+    def log(self, message, level=logging.INFO):
+        pass
+
+    @abc.abstractmethod
+    def update(self, unit: Unit):
+        pass
+
+
+class EnemyUnits(Units):
+    def log(self, message, level=logging.INFO):
+        logging.log(level=level, msg=f'Enemy Units: {message}')
+
+    def update(self, units: dict[str, Unit]):
         """
         Update at the beginning of turn
-        TODO: May want to do something before calling this to check what has actually changed
+        Args:
+            units: All units for this team (i.e. already decided if friendly or enemy)
         """
-        from unit_manager import UnitManager
+        from unit_manager import EnemyUnitManager  # Avoiding circular import
 
-        units = {'LIGHT': {}, 'HEAVY': {}}
-        for id, unit in game_state.units[team].items():
-            units[unit.unit_type][id] = unit
+        unit_dicts = {'LIGHT': self.light, 'HEAVY': self.heavy}
+        for unit_id, unit in units.items():
+            u_dict = unit_dicts[unit.unit_type]
 
-        for attr_key, unit_type in zip(['light', 'heavy'], ['LIGHT', 'HEAVY']):
-            for unit_id, unit in units[unit_type].items():
-                # Update existing Units
-                if unit_id in getattr(self, attr_key):
-                    getattr(self, attr_key)[unit_id].update(unit)
-                # Add new units
-                else:
-                    factory_id_num = master_state.maps.factory_maps.all[
-                        unit.pos[0], unit.pos[1]
-                    ]
-                    if factory_id_num < 0:
-                        self.log(f'No factory for player {team}, new unit {unit_id}, assigning `None` for factory_id', level=logging.WARNING)
-                        factory_id = None
-                    else:
-                        factory_id = f'factory_{factory_id_num}'
-                    unit_manager = UnitManager(
-                        unit=unit,
-                        master_state=master_state,
-                        factory_id=factory_id,
-                    )
-                    getattr(self, attr_key)[unit_id] = unit_manager
-                    if team == master_state.player and factory_id is not None:
-                        getattr(master_state.factories.friendly[factory_id], f'{attr_key}_units')[unit_id] = unit_manager
+            # Update existing
+            if unit_id in u_dict:
+                u_dict[unit_id].update(unit)
 
-                # Remove dead units
-                for k in set(getattr(self, attr_key).keys()) - set(units[unit_type].keys()):
-                    self.log(f'Removing unit {k}, assumed dead')
-                    dead_unit = getattr(self, attr_key).pop(k, None)
-                    dead_unit.dead()
+            # Add new unit
+            else:
+                u_dict[unit_id] = EnemyUnitManager(unit)
+
+        # Remove dead units
+        self._remove_dead(units)
 
         # Store positions of all units
-        self.unit_positions = map_nested_dicts(units, lambda unit: unit.pos)
+        self.unit_positions.update(self.light, self.heavy)
 
-        # Only update self.enemy if it isn't none (prevent infinite recursion)
-        if self.enemy is not None:
-            opp_team = 'player_1' if team == 'player_0' else 'player_1'
-            self.enemy.update(game_state, opp_team, master_state)
+
+class FriendlyUnits(Units):
+    def __init__(self, master: MasterState):
+        super().__init__()
+        self.master: MasterState = master
+
+    def log(self, message, level=logging.INFO):
+        logging.log(
+            level=level,
+            msg=f'{self.master.player}: Step {self.master.game_state.real_env_steps} - Friendly Units: {message}',
+        )
+
+    def update(self, units: dict[str, Unit]):
+        """
+        Update at the beginning of turn
+        Args:
+            units: All units for this team (i.e. already decided if friendly or enemy)
+        """
+        from unit_manager import FriendlyUnitManger  # Avoiding circular import
+
+        # For all units on team
+        unit_dicts = {'LIGHT': self.light, 'HEAVY': self.heavy}
+        for unit_id, unit in units.items():
+            u_dict = unit_dicts[unit.unit_type]
+
+            # Update existing
+            if unit_id in u_dict:
+                u_dict[unit_id].update(unit)
+
+            # Add new unit
+            else:
+                # Which factory produced this unit
+                factory_id_num = self.master.maps.factory_maps.all[
+                    unit.pos[0], unit.pos[1]
+                ]
+
+                # Convert to factory_id
+                if factory_id_num >= 0:
+                    factory_id = f'factory_{factory_id_num}'
+
+                else:
+                    self.log(
+                        f"No factory under new {unit_id}, assigning `None` for factory_id. Pretty sure this shouldn't "
+                        f"happen though",
+                        level=logging.ERROR,
+                    )
+                    factory_id = None
+
+                # Create and save new UnitManager
+                new_unit = FriendlyUnitManger(
+                    unit, master_state=self.master, factory_id=factory_id
+                )
+                u_dict[unit_id] = new_unit
+
+                # Add this unit to the factory list of units (light_units or heavy_units depending on unit_type
+                getattr(
+                    self.master.factories.friendly[factory_id],
+                    f'{unit.unit_type.lower()}_units',
+                )[unit_id] = new_unit
+
+        # Remove dead units
+        self._remove_dead(units)
+
+        # Store positions of all units
+        self.unit_positions.update(self.light, self.heavy)
 
 
 @dataclass
 class Factories:
-    friendly: dict[str, FactoryManager]
-    enemy: dict[str, FactoryManager]
+    friendly: dict[str, FriendlyFactoryManager]
+    enemy: dict[str, EnemyFactoryManager]
     master: MasterState = None
 
-    def update(self, game_state: GameState):
-        from factory_manager import FactoryManager
-
-        for player, f_dict in zip([self.master.player, self.master.opp_player], [self.friendly, self.enemy]):
-            for player_id, factories in game_state.factories.items():
-                if player_id == player:
-                    # Add or update factories
-                    for factory_id, factory in factories.items():
-                        if factory_id not in f_dict:
-                            f_dict[factory_id] = FactoryManager(factory, master_state=self.master)
-                        else:
-                            f_dict[factory_id].update(factory)
-
-                    # Remove dead factories
-                    for k in set(f_dict.keys()) - set(factories.keys()):
-                        dead_factory = f_dict.pop(k)
-                        logging.info(f'master.player = {self.master.player}. For {player} factory {k} dead')
-                        dead_factory.dead()
-
-
-class UnitTasks(list):
-    pass
-
-
-@dataclass
-class Allocations:
-    ice: dict[str, ResourceTile] = field(
-        default_factory=dict
-    )  # TODO: What to store here
-    ore: dict[str, ResourceTile] = field(
-        default_factory=dict
-    )  # TODO: What to store here
-    factory_tiles: dict[str, FactoryTile] = field(
-        default_factory=dict
-    )  # TODO: What to store here
-    units: dict[str, UnitTasks] = field(default_factory=dict)  # TODO: Think about this
-
-    def update(self):
-        # TODO: Implement this
-        # Remove dead units
-        # Remove completed tasks?
-        pass
-
-    def assign_unit_resource(self, unit, resource, exclusive: bool = False):
-        """Mark a resource as being used by a given unit
-        Args:
-            exclusive: Whether this resource should be marked for exclusive use by unit
-        """
-        pass
-
-    def assign_unit_factory(
-        self, unit_id: str, position: Optional[Tuple[int, int]] = None
-    ):
-        raise
-        position = tuple(position)
-        factory_id = f'factory_{self.factory_maps.all[position[0], position[1]]}'
-        if factory_id not in self.factory_allocation:
-            self.factory_allocation[factory_id] = {}
-        ft = self.factory_allocation[factory_id].get(
-            position, FactoryTile(pos=position, factory_id=factory_id)
+    def log(self, message, level=logging.INFO):
+        return logging.log(
+            level=level,
+            msg=f'{self.master.player} - step {self.master.game_state.real_env_steps}: {message}',
         )
-        ft.used_by.append(unit_id)
-        self.factory_allocation[factory_id][position] = ft
 
-    def deassign_unit_resource(self, unit_id: str, position: Tuple[int, int] = None):
-        raise
-        if position is not None:
-            position = tuple(position)
-            rts = [self.resource_allocation.get(position, [])]
-        else:
-            rts = self.unit_allocations.get(unit_id, [])
-        for rt in rts:
-            if unit_id in rt.used_by:
-                rt.used_by.remove(unit_id)
+    def update(self, game_state: GameState):
+        from factory_manager import FriendlyFactoryManager, EnemyFactoryManager
 
-    def deassign_unit_factory(self, unit_id: str, factory_id: Optional[str] = None):
-        raise
+        # Update Friendly Factories
+        factories = game_state.factories[self.master.player]
+        f_dict = self.friendly
+        for factory_id, factory in factories.items():
+            # Update existing
+            if factory_id in f_dict:
+                f_dict[factory_id].update(factory)
+            # Add new
+            else:
+                f_dict[factory_id] = FriendlyFactoryManager(
+                    factory, master_state=self.master
+                )
+        # Remove dead
+        for k in set(f_dict.keys()) - set(factories.keys()):
+            dead_factory = f_dict.pop(k)
+            self.log(f'Friendly {k} died, being removed')
+            dead_factory.dead()
 
-        def _remove_from(factory_id):
-            for pos, ft in self.factory_allocation[factory_id].items():
-                if unit_id in ft.used_by:
-                    ft.used_by.remove(unit_id)
+        # Update Enemy Factories
+        factories = game_state.factories[self.master.opp_player]
+        f_dict = self.enemy
+        for factory_id, factory in factories.items():
+            # Update existing
+            if factory_id in f_dict:
+                f_dict[factory_id].update(factory)
+            # Add new
+            else:
+                f_dict[factory_id] = EnemyFactoryManager(factory)
+        # Remove dead
+        for k in set(f_dict.keys()) - set(factories.keys()):
+            dead_factory = f_dict.pop(k)
+            self.log(f'Friendly {k} died, being removed')
+            dead_factory.dead()
 
-        if factory_id:  # Remove from specified
-            _remove_from(factory_id)
-        else:  # Remove from all
-            for f_id in self.factory_allocation.keys():
-                _remove_from(f_id)
+
+# class UnitTasks(list):
+#     pass
+#
+#
+# @dataclass
+# class Allocations:
+#     ice: dict[str, ResourceTile] = field(
+#         default_factory=dict
+#     )  # TODO: What to store here
+#     ore: dict[str, ResourceTile] = field(
+#         default_factory=dict
+#     )  # TODO: What to store here
+#     factory_tiles: dict[str, FactoryTile] = field(
+#         default_factory=dict
+#     )  # TODO: What to store here
+#     units: dict[str, UnitTasks] = field(default_factory=dict)  # TODO: Think about this
+#
+#     def update(self):
+#         # TODO: Implement this
+#         # Remove dead units
+#         # Remove completed tasks?
+#         pass
+#
+#     def assign_unit_resource(self, unit, resource, exclusive: bool = False):
+#         """Mark a resource as being used by a given unit
+#         Args:
+#             exclusive: Whether this resource should be marked for exclusive use by unit
+#         """
+#         pass
+#
+#     def assign_unit_factory(
+#         self, unit_id: str, position: Optional[Tuple[int, int]] = None
+#     ):
+#         raise
+#         position = tuple(position)
+#         factory_id = f'factory_{self.factory_maps.all[position[0], position[1]]}'
+#         if factory_id not in self.factory_allocation:
+#             self.factory_allocation[factory_id] = {}
+#         ft = self.factory_allocation[factory_id].get(
+#             position, FactoryTile(pos=position, factory_id=factory_id)
+#         )
+#         ft.used_by.append(unit_id)
+#         self.factory_allocation[factory_id][position] = ft
+#
+#     def deassign_unit_resource(self, unit_id: str, position: Tuple[int, int] = None):
+#         raise
+#         if position is not None:
+#             position = tuple(position)
+#             rts = [self.resource_allocation.get(position, [])]
+#         else:
+#             rts = self.unit_allocations.get(unit_id, [])
+#         for rt in rts:
+#             if unit_id in rt.used_by:
+#                 rt.used_by.remove(unit_id)
+#
+#     def deassign_unit_factory(self, unit_id: str, factory_id: Optional[str] = None):
+#         raise
+#
+#         def _remove_from(factory_id):
+#             for pos, ft in self.factory_allocation[factory_id].items():
+#                 if unit_id in ft.used_by:
+#                     ft.used_by.remove(unit_id)
+#
+#         if factory_id:  # Remove from specified
+#             _remove_from(factory_id)
+#         else:  # Remove from all
+#             for f_id in self.factory_allocation.keys():
+#                 _remove_from(f_id)
 
 
 class Maps:
@@ -361,9 +507,11 @@ class MasterState:
         self.step: int = None
         self.pathfinder: PathFinder = PathFinder()
 
-        self.units = Units(light={}, heavy={}, enemy=Units(light={}, heavy={}), master=self)
+        self.units = AllUnits(
+            friendly=FriendlyUnits(master=self), enemy=EnemyUnits(), master=self
+        )
         self.factories = Factories(friendly={}, enemy={}, master=self)
-        self.allocations = Allocations()
+        # self.allocations = Allocations()
         self.maps = Maps()
 
     def update(self, game_state: GameState):
@@ -373,11 +521,11 @@ class MasterState:
         else:
             self._update_units(game_state)
             self._update_factories(game_state)
-            self._update_allocations(game_state)
+            # self._update_allocations(game_state)
             self.pathfinder.update(
                 rubble=self.maps.rubble,
-                friendly_units=self.units.friendly_units,
-                enemy_units=self.units.enemy_units,
+                friendly_units=self.units.friendly.all,
+                enemy_units=self.units.enemy.all,
                 enemy_factories=self.factories.enemy,
             )
 
@@ -390,7 +538,7 @@ class MasterState:
 
         Track new factories
         """
-        pass
+        self.factories.update(game_state)
 
     def _update_units(self, game_state: GameState):
         """
@@ -398,7 +546,7 @@ class MasterState:
         If there are new units, add them to tracked units
         If units have died, remove them from tracked units and remove any allocations for them
         """
-        self.units.update(game_state, self.player, master_state=self)
+        self.units.update(game_state)
         pass
 
     def _update_factories(self, game_state: GameState):
@@ -409,5 +557,5 @@ class MasterState:
         self.factories.update(game_state)
         pass
 
-    def _update_allocations(self, game_state: GameState):
-        pass
+    # def _update_allocations(self, game_state: GameState):
+    #     pass

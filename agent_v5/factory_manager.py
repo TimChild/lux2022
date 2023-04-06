@@ -53,20 +53,36 @@ class BuildHeavyRecommendation(Recommendation):
 
 
 class FactoryManager:
-    def __init__(self, factory: Factory, master_state: MasterState):
+    def __init__(self, factory: Factory):
         self.unit_id = factory.unit_id
         self.factory = factory
+
+    def update(self, factory: Factory):
+        self.factory = factory
+
+
+class EnemyFactoryManager(FactoryManager):
+    def log(self, message, level=logging.INFO):
+        logging.log(
+            level,
+            f"Enemy {self.unit_id}: {message}",
+        )
+
+    def dead(self):
+        self.log(f'dead, nothing else to do')
+
+
+class FriendlyFactoryManager(FactoryManager):
+    def __init__(self, factory: Factory, master_state: MasterState):
+        super().__init__(factory)
+        self.master = master_state
 
         self.light_units = {}
         self.heavy_units = {}
 
-        self.master = master_state
-
     @staticmethod
     def place_factory(game_state: GameState, player):
         """Place factory in early_setup"""
-        # TODO: Add some other considerations (i.e. near low rubble, far from enemy, near ore)
-
         # how many factories you have left to place
         factories_to_place = game_state.teams[player].factories_to_place
 
@@ -106,25 +122,17 @@ class FactoryManager:
 
         return dict(spawn=df.iloc[0].pos, metal=150, water=150)
 
-    def update(self, factory: Factory):
-        self.factory = factory
-
     def log(self, message, level=logging.INFO):
         logging.log(
             level,
-            f"Step {self.master.game_state.real_env_steps}, Factory {self.unit_id}: {message}",
+            f"Step {self.master.game_state.real_env_steps}, {self.unit_id}: {message}",
         )
 
     def dead(self):
         """Called when factory is detected as dead"""
-        factory_player = f'player_{self.factory.team_id}'
-        if factory_player == self.master.player:
-            self.log(f'Friendly factory {self.unit_id} dead, looking for units assigned')
-            for unit_id, unit in self.master.units.friendly_units.items():
-                if unit.factory_id == self.unit_id:
-                    self.log(f'Removing {self.unit_id} assignment for unit {unit_id}')
-                    unit.factory_id = None
-        else:
-            self.log(f'Enemy factory {self.unit_id} dead, nothing else to do')
+        self.log(f'dead, looking for assigned units')
 
-
+        for unit_id, unit in self.master.units.friendly.all.items():
+            if unit.factory_id == self.unit_id:
+                self.log(f'Removing {self.unit_id} assignment for unit {unit_id}')
+                unit.factory_id = None
