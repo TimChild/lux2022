@@ -381,7 +381,7 @@ def stretch_middle_of_factory_array(array):
     assert shape[0] == shape[1]
     assert shape[0] % 2 == 1
 
-    mid_index = np.ceil(array.shape[0] / 2).astype(int)
+    mid_index = np.floor(array.shape[0] / 2).astype(int)
 
     # y-direction
     array = np.insert(array, mid_index, array[mid_index, :], axis=0)
