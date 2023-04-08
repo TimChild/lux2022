@@ -112,6 +112,7 @@ class PathFinder:
         Full A* pathing using whole grid, but slow
         Note: no check of unit collisions here, only avoids enemy factories
         """
+        # TODO: Remove the use of step... this can just have access to master if necessary
         finder = AStarFinder()
         cost_map = self.get_costmap(rubble=rubble)
         cost_map = cost_map.T  # Required for finder
