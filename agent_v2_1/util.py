@@ -4,6 +4,7 @@ import sys
 
 from typing import Tuple, List, Union, Optional, TYPE_CHECKING
 import logging
+import copy
 from scipy import ndimage
 from scipy.signal import convolve2d
 import dataclasses
@@ -22,18 +23,15 @@ from itertools import product
 from luxai_s2 import LuxAI_S2
 from luxai_s2.unit import UnitType
 
-
 from lux.kit import obs_to_game_state, GameState, to_json
 from lux.config import UnitConfig, EnvConfig
 from lux.utils import direction_to
 from lux.unit import Unit
 from lux.cargo import UnitCargo
 
-
 if TYPE_CHECKING:
     from path_finder import PathFinder, CollisionParams
     from unit_manager import FriendlyUnitManger
-
 
 UTIL_VERSION = 'AGENT_V2'
 
@@ -95,6 +93,114 @@ RECHARGE = 5
 
 
 ################# General #################
+def update_logging_level(level):
+    """Updates the logging level"""
+    root = logging.getLogger()
+    if root.handlers:
+        for handler in root.handlers:
+            root.removeHandler(handler)
+    logging.basicConfig(
+        format="%(levelname)-5.5s:%(module)-10.10s.%(name)-10.10s:%(lineno)-4d:%(funcName)-20.20s: %(message)s",
+        level=level,
+    )
+
+
+class MyEnv:
+    def __init__(self, seed: int, Agent, OtherAgent):
+        self.seed = seed
+
+        self.env = LuxAI_S2()
+        self.obs = self.env.reset(self.seed)
+        self.env_step = 0
+        self.real_env_steps = 0
+
+        self.agent = Agent("player_0", self.env.env_cfg)
+        self.other_agent = OtherAgent("player_1", self.env.env_cfg)
+        self.agents = {a.player: a for a in [self.agent, self.other_agent]}
+
+    def run_early_setup(self):
+        """Run through the placing factories stage"""
+        # Reset
+        self.obs = self.env.reset(self.seed)
+        self.env_step = 0
+        self.real_env_steps = 0
+
+        # Run placing factory actions
+        while self.env.state.real_env_steps < 0:
+            actions = self.get_early_actions()
+            self.env_step += 1
+            self.real_env_steps = self.env.state.real_env_steps
+            self.obs, rewards, dones, infos = self.env.step(actions)
+
+    def get_early_actions(self):
+        """Get next early setup actions"""
+        actions = {}
+        for player in self.env.agents:
+            o = self.obs[player]
+            acts = self.agents[player].early_setup(self.env_step, o)
+            actions[player] = acts
+        return actions
+
+    def step(self):
+        """Progress a single step"""
+        logging.info(
+            f"Carrying out real step {self.real_env_steps}, env step {self.env_step}"
+        )
+
+        def reset_to_previous_state():
+            self.env_step, self.real_env_steps, self.obs, self.env = (
+                step,
+                real_steps,
+                obs,
+                env,
+            )
+
+        step, real_steps, obs, env = (
+            self.env_step,
+            self.real_env_steps,
+            self.obs,
+            copy.copy(self.env),
+        )
+
+        try:
+            actions = self.get_actions()
+            self.env_step += 1
+            self.real_env_steps = self.env.state.real_env_steps
+            self.obs, rewards, dones, infos = self.env.step(actions)
+            if any(dones.values()) and self.env_step < 1000:
+                logging.warning(
+                    f'One of the players dones came back True, previous state restored, use myenv.get_actions() to '
+                    f'repeat gathering latest turns actions'
+                )
+                reset_to_previous_state()
+                return False
+        except Exception as e:
+            logging.warning(
+                f'Error caught while running step, previous state restored, use myenv.get_actions() to '
+                f'repeat gathering actions'
+            )
+            reset_to_previous_state()
+            raise e
+        return True
+
+    def get_actions(self):
+        """Get next normal step actions"""
+        actions = {
+            player: agent.act(self.env_step, self.obs[player])
+            for player, agent in self.agents.items()
+        }
+        return actions
+
+    def run_to_step(self, real_env_step: int):
+        """Keep running until reaching real_env_step"""
+        while self.real_env_steps < real_env_step:
+            success = self.step()
+            if not success:
+                break
+
+    def show(self) -> go.Figure:
+        """Display the current env state"""
+        return show_env(self.env)
 
 
 def nearest_non_zero(
@@ -920,7 +1026,7 @@ def initialize_step_fig(env):
     steps = [
         dict(
             method="update",
-            label=f"{env.env_steps-5}",
+            label=f"{env.env_steps - 5}",
             args=[
                 {"visible": [True] * len(fig.data)},  # Update Datas
                 {"shapes": shapes},
@@ -947,7 +1053,7 @@ def _add_env_state(fig, env):
     steps.append(
         dict(
             method="update",
-            label=f"{env.env_steps-5}",
+            label=f"{env.env_steps - 5}",
             args=[
                 {
                     "visible": [False] * datas_before + [True] * new_datas
