@@ -162,7 +162,9 @@ class MiningRoutePlanner:
                     ),
                 )
                 if len(direct_path_to_factory) > 0:
-                    self.unit.action_queue.extend(path_to_actions(direct_path_to_factory))
+                    self.unit.action_queue.extend(
+                        path_to_actions(direct_path_to_factory)
+                    )
                     self.unit.pos = direct_path_to_factory[-1]
 
         if len(self.unit.action_queue) < self.target_queue_length:
@@ -197,12 +199,16 @@ class MiningRoutePlanner:
             ),
         )
         if len(path_from_resource_to_factory) > 0:
-            self.unit.action_queue.extend(path_to_actions(path_from_resource_to_factory))
+            self.unit.action_queue.extend(
+                path_to_actions(path_from_resource_to_factory)
+            )
             self.unit.pos = path_from_resource_to_factory[-1]
 
         # Transfer resources to factory
         self.unit.action_queue.append(
-            self.unit.transfer(CENTER, self.resource_type, self.unit.unit_cfg.CARGO_SPACE)
+            self.unit.transfer(
+                CENTER, self.resource_type, self.unit.unit_cfg.CARGO_SPACE
+            )
         )
 
         # Set unit power zero (should be used up by here)
@@ -239,7 +245,13 @@ class MiningRoutePlanner:
         )
         target_digs = int(max(10, 5 * travel_cost / self.unit.unit_cfg.DIG_COST))
         # Make sure not exceeding batter capacity
-        target_digs = int(min(target_digs, (self.unit.unit_cfg.BATTERY_CAPACITY-travel_cost)/self.unit.unit_cfg.DIG_COST))
+        target_digs = int(
+            min(
+                target_digs,
+                (self.unit.unit_cfg.BATTERY_CAPACITY - travel_cost)
+                / self.unit.unit_cfg.DIG_COST,
+            )
+        )
         target_power = travel_cost + target_digs * self.unit.unit_cfg.DIG_COST
 
         # If action queue is short, assume factory won't have more energy, if long, assume it will
@@ -254,9 +266,7 @@ class MiningRoutePlanner:
             self.log(f'picking up desired power to achieve target of {target_power}')
             power_to_pickup = target_power - available_power
             if power_to_pickup > 0:
-                self.unit.action_queue.append(
-                    self.unit.pickup(POWER, power_to_pickup)
-                )
+                self.unit.action_queue.append(self.unit.pickup(POWER, power_to_pickup))
             n_digs = target_digs
         elif factory_power + available_power > self.unit.unit_cfg.DIG_COST * 3:
             self.log(f'picking up available power {factory_power}')
@@ -298,7 +308,9 @@ class MiningRoutePlanner:
 
         # Add transfer
         self.unit.action_queue.append(
-            self.unit.transfer(CENTER, self.resource_type, self.unit.unit_cfg.CARGO_SPACE)
+            self.unit.transfer(
+                CENTER, self.resource_type, self.unit.unit_cfg.CARGO_SPACE
+            )
         )
 
         # Assume power been used up by now for any further calculations
