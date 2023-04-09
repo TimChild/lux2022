@@ -62,14 +62,8 @@ class FactoryManager:
 
 
 class EnemyFactoryManager(FactoryManager):
-    def log(self, message, level=logging.INFO):
-        logging.log(
-            level,
-            f"Enemy {self.unit_id}: {message}",
-        )
-
     def dead(self):
-        self.log(f'dead, nothing else to do')
+        logging.info(f'dead, nothing else to do')
 
 
 class FriendlyFactoryManager(FactoryManager):
@@ -129,17 +123,11 @@ class FriendlyFactoryManager(FactoryManager):
 
         return dict(spawn=df.iloc[0].pos, metal=150, water=150)
 
-    def log(self, message, level=logging.INFO):
-        logging.log(
-            level,
-            f"Step {self.master.game_state.real_env_steps}, {self.unit_id}: {message}",
-        )
-
     def dead(self):
         """Called when factory is detected as dead"""
-        self.log(f'dead, looking for assigned units')
+        logging.info(f'dead, looking for assigned units')
 
         for unit_id, unit in self.master.units.friendly.all.items():
             if unit.factory_id == self.unit_id:
-                self.log(f'Removing {self.unit_id} assignment for unit {unit_id}')
+                logging.info(f'Removing {self.unit_id} assignment for unit {unit_id}')
                 unit.factory_id = None

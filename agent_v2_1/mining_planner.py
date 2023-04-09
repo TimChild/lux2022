@@ -109,9 +109,6 @@ class MiningRoutePlanner:
         self.unit.unit_id = unit_id
         self.unit.action_queue = []
 
-    def log(self, message, level=logging.INFO):
-        return logging.log(level=level, msg=f'MiningRoutePlanner: {message}')
-
     def _path_to_and_from_resource(self):
         path_to_resource = self._path_to_resource(
             collision_params=CollisionParams(
@@ -151,7 +148,7 @@ class MiningRoutePlanner:
                 self._resource_then_factory(path_to_resource, power_remaining)
             else:
                 # Go to factory first
-                self.log('pathing to factory first')
+                logging.info('pathing to factory first')
                 direct_path_to_factory = self._path_to_factory(
                     self.resource_pos,
                     collision_params=CollisionParams(
@@ -173,7 +170,7 @@ class MiningRoutePlanner:
         return self.unit.action_queue[: self.target_queue_length]
 
     def _resource_then_factory(self, path_to_resource, power_remaining_after_moves):
-        self.log('pathing to resource first')
+        logging.info('pathing to resource first')
         # Move to resource
         if len(path_to_resource):
             self.unit.action_queue.extend(path_to_actions(path_to_resource))
@@ -186,7 +183,7 @@ class MiningRoutePlanner:
         if n_digs >= 1:
             self.unit.action_queue.append(self.unit.dig(n=n_digs))
         else:
-            self.log(f'n_digs = {n_digs}, should always be greater than 1')
+            logging.info(f'n_digs = {n_digs}, should always be greater than 1')
 
         # Move to factory
         path_from_resource_to_factory = self._path_to_factory(
@@ -263,13 +260,15 @@ class MiningRoutePlanner:
 
         # Pickup power and update n_digs
         if factory_power > target_power - available_power:
-            self.log(f'picking up desired power to achieve target of {target_power}')
+            logging.info(
+                f'picking up desired power to achieve target of {target_power}'
+            )
             power_to_pickup = target_power - available_power
             if power_to_pickup > 0:
                 self.unit.action_queue.append(self.unit.pickup(POWER, power_to_pickup))
             n_digs = target_digs
         elif factory_power + available_power > self.unit.unit_cfg.DIG_COST * 3:
-            self.log(f'picking up available power {factory_power}')
+            logging.info(f'picking up available power {factory_power}')
             self.unit.action_queue.append(self.unit.pickup(POWER, factory_power))
             n_digs = int(
                 np.floor(
@@ -290,7 +289,7 @@ class MiningRoutePlanner:
         if n_digs >= 1:
             self.unit.action_queue.append(self.unit.dig(n=n_digs))
         else:
-            self.log(f'n_digs = {n_digs}, should always be greater than 1')
+            logging.info(f'n_digs = {n_digs}, should always be greater than 1')
 
         # Add return journey
         return_path = self._path_to_factory(
@@ -338,9 +337,8 @@ class MiningRoutePlanner:
             max_delay_by_move_center=5,
         )
         if path is None:
-            self.log(
+            logging.error(
                 'Apparently no way to get to the edge of the factory without colliding',
-                level=logging.ERROR,
             )
             raise RuntimeError(
                 'Apparently no way to get to the edge of the factory without colliding'
@@ -467,7 +465,7 @@ class MiningPlanner(Planner):
                     next_unoccupied_value = routes.values[i]
                     break
             else:
-                self.log(f'No unoccupied routes left for {nearest_factory_id}')
+                logging.info(f'No unoccupied routes left for {nearest_factory_id}')
                 return MiningRecommendation(
                     value=-100, resource_pos=(-1, -1), factory_id='', resource_type=ICE
                 )
@@ -688,7 +686,7 @@ class MiningPlanner(Planner):
                     for path in paths:
                         if len(path) < 1:
                             costs.append(0)
-                            self.log(
+                            logging.info(
                                 f'Path len 0 for {resource}, {unit_type}, {factory.factory.unit_id}'
                             )
                             continue

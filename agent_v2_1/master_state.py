@@ -60,10 +60,6 @@ class Planner(abc.ABC):
         """Called at beginning of turn. May want to clear some cached calculations for example"""
         pass
 
-    def log(self, message, level=logging.INFO):
-        """Record a logging message in a way that I can easily change the behaviour later"""
-        logging.log(level, message)
-
 
 @dataclass
 class ResourceTile(dict):
@@ -189,9 +185,8 @@ class Units(abc.ABC):
     def unit_at_position(self, pos: tuple[int, int]) -> [None, str]:
         """Get the unit_id of unit at given position"""
         if self.unit_positions is None:
-            self.log(
+            logging.error(
                 f'Requesting unit at {pos} before initializing unit_positions',
-                level=logging.ERROR,
             )
             raise RuntimeError(
                 f'self.unit_positions is None. Must be initialized first'
@@ -234,13 +229,9 @@ class Units(abc.ABC):
         for u_dict in (self.light, self.heavy):
             # If anything in light/heavy list that isn't in full list, must be dead
             for k in set(u_dict.keys()) - set(units.keys()):
-                self.log(f'Removing unit {k}, assumed dead')
+                logging.info(f'Removing unit {k}, assumed dead')
                 dead_unit = u_dict.pop(k)
                 dead_unit.dead()
-
-    @abc.abstractmethod
-    def log(self, message, level=logging.INFO):
-        pass
 
     @abc.abstractmethod
     def update(self, unit: Unit):
@@ -248,9 +239,6 @@ class Units(abc.ABC):
 
 
 class EnemyUnits(Units):
-    def log(self, message, level=logging.INFO):
-        logging.log(level=level, msg=f'Enemy Units: {message}')
-
     def update(self, units: dict[str, Unit]):
         """
         Update at the beginning of turn
@@ -283,12 +271,6 @@ class FriendlyUnits(Units):
         super().__init__()
         self.master: MasterState = master
 
-    def log(self, message, level=logging.INFO):
-        logging.log(
-            level=level,
-            msg=f'{self.master.player}: Step {self.master.game_state.real_env_steps} - Friendly Units: {message}',
-        )
-
     def update(self, units: dict[str, Unit]):
         """
         Update at the beginning of turn
@@ -318,10 +300,9 @@ class FriendlyUnits(Units):
                     factory_id = f'factory_{factory_id_num}'
 
                 else:
-                    self.log(
+                    logging.error(
                         f"No factory under new {unit_id}, assigning `None` for factory_id. Pretty sure this shouldn't "
                         f"happen though",
-                        level=logging.ERROR,
                     )
                     factory_id = None
 
@@ -350,12 +331,6 @@ class Factories:
     enemy: dict[str, EnemyFactoryManager]
     master: MasterState = None
 
-    def log(self, message, level=logging.INFO):
-        return logging.log(
-            level=level,
-            msg=f'{self.master.player} - step {self.master.game_state.real_env_steps}: {message}',
-        )
-
     def update(self, game_state: GameState):
         from factory_manager import FriendlyFactoryManager, EnemyFactoryManager
 
@@ -374,7 +349,7 @@ class Factories:
         # Remove dead
         for k in set(f_dict.keys()) - set(factories.keys()):
             dead_factory = f_dict.pop(k)
-            self.log(f'Friendly {k} died, being removed')
+            logging.info(f'Friendly {k} died, being removed')
             dead_factory.dead()
 
         # Update Enemy Factories
@@ -390,7 +365,7 @@ class Factories:
         # Remove dead
         for k in set(f_dict.keys()) - set(factories.keys()):
             dead_factory = f_dict.pop(k)
-            self.log(f'Friendly {k} died, being removed')
+            logging.info(f'Friendly {k} died, being removed')
             dead_factory.dead()
 
 

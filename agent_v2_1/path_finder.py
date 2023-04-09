@@ -50,9 +50,6 @@ class PathFinder:
             self._get_existing_paths
         )
 
-    def log(self, message: str, level=logging.INFO):
-        logging.log(level, f'PathFinding: {message}')
-
     def get_costmap(self, rubble: Union[bool, np.ndarray] = False):
         """Power cost of travelling (not taking into account collisions, but taking into account enemy factories)
 
@@ -273,7 +270,7 @@ class PathFinder:
                 attempts += 1
                 path = _path(blocked_cells)
                 if len(path) == 0:
-                    self.log(f'No paths found without collisions')
+                    logging.info(f'No paths found without collisions')
                     break
                 collision_pos = self.check_collisions(
                     path, collision_params=collision_params
@@ -282,6 +279,6 @@ class PathFinder:
                     break
                 blocked_cells.append(collision_pos)
             else:
-                self.log(f'No paths found without collisions after many attempts')
+                logging.info(f'No paths found without collisions after many attempts')
                 return np.array([start])
         return path

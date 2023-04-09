@@ -254,9 +254,6 @@ class RubbleRoutePlanner:
         self._future_rubble = self.rubble.copy()
         self._future_value = self.rubble_value_map.copy()
 
-    def log(self, message, level=logging.INFO):
-        return logging.log(level=level, msg=f'RubbleRoutePlanner: {message}')
-
     def make_route(self):
         if self._unit_starting_on_factory():
             success = self._from_factory_actions()
@@ -313,7 +310,7 @@ class RubbleRoutePlanner:
         value_to_move: float,
     ):
         # If better to mine in current location, mine as much as power allows
-        self.log(f"Value at pos={value_at_pos}, value to move={value_to_move}")
+        logging.info(f"Value at pos={value_at_pos}, value to move={value_to_move}")
         if value_at_pos >= value_to_move and value_at_pos > 0:
             pos_rubble = self._future_rubble[self.unit.pos[0], self.unit.pos[1]]
             digs_required = np.ceil(
@@ -326,7 +323,7 @@ class RubbleRoutePlanner:
             rubble_after = int(
                 max(0, pos_rubble - n * self.unit.unit_cfg.DIG_RUBBLE_REMOVED)
             )
-            self.log(f"digs_required={digs_required}, digs planned (n)={n}")
+            logging.info(f"digs_required={digs_required}, digs planned (n)={n}")
             self._future_rubble[self.unit.pos[0], self.unit.pos[1]] = rubble_after
             if rubble_after == 0:
                 self._future_value[
@@ -336,23 +333,22 @@ class RubbleRoutePlanner:
 
         # Otherwise move to next best spot
         elif value_to_move > 0:
-            self.log(f'adding move to better location')
+            logging.info(f'adding move to better location')
             best_direction = calc_best_direction(self.unit.pos, value_array)
             self.unit.action_queue.append(self.unit.move(best_direction, n=1))
             self.unit.pos = add_direction_to_pos(self.unit.pos, best_direction)
 
         # Not near any high value, shouldn't get here
         else:
-            self.log(
+            logging.error(
                 f'While calculating next action, values were all zero. (adding move center)',
-                level=logging.ERROR,
             )
             self.unit.action_queue.append(self.unit.move(CENTER, n=1))  # Do nothing
 
     def _from_factory_actions(self) -> bool:
         """Generate starting actions assuming starting on factory"""
         if self.unit.power < self.unit.unit_cfg.BATTERY_CAPACITY:
-            self.log(f"topping up battery")
+            logging.info(f"topping up battery")
             power_to_pickup = self.unit.unit_cfg.BATTERY_CAPACITY - self.unit.power
             if power_to_pickup > 0:
                 self.unit.action_queue.append(self.unit.pickup(POWER, power_to_pickup))
@@ -361,7 +357,7 @@ class RubbleRoutePlanner:
         max_value_coord = np.unravel_index(
             np.argmax(boundary_values), boundary_values.shape
         )
-        self.log(f"unit moving to {max_value_coord}")
+        logging.info(f"unit moving to {max_value_coord}")
         path = self.pathfinder.path_fast(
             self.unit.pos,
             max_value_coord,
@@ -379,9 +375,8 @@ class RubbleRoutePlanner:
             self.unit.pos = path[-1]  # Update position of unit
             return True
         else:
-            self.log(
+            logging.warning(
                 f'No path to {max_value_coord} from {self.unit.pos}, moving center',
-                level=logging.WARNING,
             )
             self.unit.action_queue.append(self.unit.move(CENTER))
             return False
@@ -432,15 +427,6 @@ class RubbleClearingPlanner(Planner):
 
         self._factory_value_maps = {}
 
-    def log(self, message, level=logging.INFO):
-        return logging.log(
-            level=level,
-            msg=f'{self.master.player}, Step{self.master.game_state.real_env_steps}, '
-            f'RubbleClearingPlanner: {message}',
-        )
-
-    50
-
     def recommend(self, unit: FriendlyUnitManger):
         """
         Make recommendation for this unit to clear rubble around factory
@@ -472,9 +458,7 @@ class RubbleClearingPlanner(Planner):
             actions = route_planner.make_route()
             return actions[:20]
         else:
-            self.log(
-                f'in carry out, {unit.unit_id} has not factory_id', level=logging.ERROR
-            )
+            logging.error(f'in carry out, {unit.unit_id} has not factory_id')
             return [unit.unit.move(CENTER)]
 
     def update(self, *args, **kwargs):

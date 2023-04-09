@@ -50,9 +50,6 @@ class Agent:
         self.mining_planner = MiningPlanner(self.master)
         self.rubble_clearing_planner = RubbleClearingPlanner(self.master)
 
-    # def log(self, message, level=logging.INFO, **kwargs):
-    #     logging.log(level, f'{self.player} {message}', **kwargs)
-
     def bid(self, obs):
         """Bid for starting factory (default to 0)"""
         return dict(faction="TheBuilders", bid=0)

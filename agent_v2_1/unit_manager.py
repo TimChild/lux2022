@@ -51,14 +51,8 @@ class UnitManager(abc.ABC):
 
 
 class EnemyUnitManager(UnitManager):
-    def log(self, message, level=logging.INFO):
-        logging.log(
-            level,
-            f"Enemy {self.unit_id}: {message}",
-        )
-
     def dead(self):
-        self.log(f'Enemy unit {self.unit_id} dead, nothing more to do')
+        logging.info(f'Enemy unit {self.unit_id} dead, nothing more to do')
 
 
 class FriendlyUnitManger(UnitManager):
@@ -68,15 +62,9 @@ class FriendlyUnitManger(UnitManager):
         self.master: MasterState = master_state
         self.status: Status = Status(role=None, current_action='', recommendation=None)
 
-    def log(self, message, level=logging.INFO):
-        logging.log(
-            level,
-            f"Step {self.master.game_state.real_env_steps}, Unit {self.unit_id}: {message}",
-        )
-
     def dead(self):
         """Called when unit is detected as dead"""
-        self.log(
+        logging.info(
             f'Friendly unit {self.unit_id} dead, removing from {self.factory_id} units also'
         )
         fkey = 'light' if self.unit.unit_type == 'LIGHT' else 'heavy'
