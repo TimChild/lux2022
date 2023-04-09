@@ -17,24 +17,25 @@ if TYPE_CHECKING:
     from lux.factory import Factory
 
 
-@dataclass(frozen=True)
-class CollisionParams:
-    look_ahead_turns: int
-    ignore_ids: Tuple[str, ...]
-    friendly_light: bool = True
-    friendly_heavy: bool = True
-    enemy_light: bool = True
-    enemy_heavy: bool = True
-    starting_step: int = (
-        0  # E.g. 0 for starting this turn, 1 if one action before this pathing
-    )
+# @dataclass(frozen=True)
+# class CollisionParams:
+#     look_ahead_turns: int
+#     ignore_ids: Tuple[str, ...]
+#     friendly_light: bool = True
+#     friendly_heavy: bool = True
+#     enemy_light: bool = True
+#     enemy_heavy: bool = True
+#     starting_step: int = (
+#         0  # E.g. 0 for starting this turn, 1 if one action before this pathing
+#     )
+#
+#     def __post_init__(self):
+#         # Ensure ignore_ids is a tuple even if provided as a list
+#         object.__setattr__(self, 'ignore_ids', tuple(self.ignore_ids))
+#
 
-    def __post_init__(self):
-        # Ensure ignore_ids is a tuple even if provided as a list
-        object.__setattr__(self, 'ignore_ids', tuple(self.ignore_ids))
 
-
-class PathFinder:
+class NewPathFinder:
     def __init__(self):
         self.rubble: np.ndarray = None
         self.friendly_light_paths: dict = None

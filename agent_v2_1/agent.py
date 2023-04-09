@@ -1,6 +1,6 @@
 from __future__ import annotations
 import abc
-from typing import TYPE_CHECKING, List, Dict
+from typing import TYPE_CHECKING, List, Dict, Tuple
 import pandas as pd
 from dataclasses import dataclass, field
 import numpy as np
@@ -10,7 +10,7 @@ from lux.kit import obs_to_game_state
 from lux.config import EnvConfig
 from lux.utils import my_turn_to_place_factory
 
-from unit_manager import UnitManager, FriendlyUnitManger
+from unit_manager import UnitManager, FriendlyUnitManger, EnemyUnitManager
 from master_state import MasterState
 from factory_manager import FriendlyFactoryManager
 from actions import (
@@ -23,6 +23,8 @@ from mining_planner import MiningPlanner
 from rubble_clearing_planner import RubbleClearingPlanner
 from factory_manager import BuildHeavyRecommendation
 
+import util
+
 # logging.basicConfig(filename='agent_log.log', level=logging.INFO)
 logging.basicConfig(level=logging.INFO)
 logging.info('Starting Log')
@@ -30,21 +32,83 @@ logging.info('Starting Log')
 if TYPE_CHECKING:
     from .master_state import Recommendation
 
+    # from .path_finder import PathFinder
+    from .new_path_finder import NewPathFinder
+
 
 @dataclass
 class UnitsToAct:
     needs_to_act: List[FriendlyUnitManger]
     should_not_act: List[FriendlyUnitManger]
-    done_acting: List[FriendlyUnitManger] = list
+    has_updated_actions: List[FriendlyUnitManger] = list
+
+
+@dataclass
+class Collision:
+    """First collision only"""
+    unit_id: str
+    other_unit_id: str
+    pos: Tuple[int, int]
+    step: int
+
+
+@dataclass
+class Collisions:
+    friendly: Dict[str, Collision]  # Collisions with friendly unit
+    enemy: Dict[str, Collision]  # Collisions with enemy units
+
+
+@dataclass
+class CloseEnemies:
+    """All nearby enemies"""
+    unit_id: str
+    unit_pos: Tuple[int, int]
+    enemy_id: List[str]
+    enemy_pos: List[Tuple[int, int]]
+    distance: List[int]
+
+
+@dataclass
+class UnitPaths(abc.ABC):
+    light: Dict[str, np.ndarray] = dict
+    heavy: Dict[str, np.ndarray] = dict
+
+
+@dataclass
+class FriendlyUnitPaths(UnitPaths):
+    pass
+
+
+@dataclass
+class EnemyUnitPaths(UnitPaths):
+    pass
+
+
+@dataclass
+class AllUnitPaths:
+    friendly: FriendlyUnitPaths = FriendlyUnitPaths
+    enemy: EnemyUnitPaths = EnemyUnitPaths
 
 
 class TurnPlanner:
-    def __init__(self, master):
+    search_dist = 10
+
+    def __init__(self, master: MasterState, pathfinder: NewPathFinder):
+        """Assuming this is called after beginning of turn update"""
         self.master = master
+        self.pathfinder = pathfinder
+
+        # Changed during turn planning
+        self.unit_paths = AllUnitPaths()  # Begins empty
+
+        # Caching
+        self._costmap: np.ndarray = None
+        self._upcoming_collisions: Collisions = None
+        self._close_enemies: Dict[str, CloseEnemies] = {}
 
     def units_should_consider_acting(
         self, units: List[FriendlyUnitManger]
-    ) -> Dict[str, List[FriendlyUnitManger]]:
+    ) -> UnitsToAct:
         """
         Determines which units should potentially act this turn, and which should continue with current actions
         Does this based on:
@@ -56,8 +120,51 @@ class TurnPlanner:
             units: list of friendly units
 
         Returns:
-            dictionary of
+            Instance of UnitsToAct
         """
+        upcoming_collisions = self.calculate_collisions()
+        close_to_enemy = self.calculate_close_enemies()
+        needs_to_act = []
+        should_not_act = []
+        for unit in units:
+            should_act = False
+            # If no queue
+            if len(unit.unit.action_queue) == 0:
+                logging.info(f'no actions -- {unit.unit_id} should consider acting')
+                should_act = True
+            elif unit.unit_id in upcoming_collisions.friendly:
+                logging.info(
+                    f'collision with friendly -- {unit.unit_id} should consider acting'
+                )
+                should_act = True
+            elif unit.unit_id in upcoming_collisions.enemy:
+                logging.info(
+                    f'collision with friendly -- {unit.unit_id} should consider acting'
+                )
+                should_act = True
+            elif unit.unit_id in close_to_enemy:
+                logging.info(f'close to enemy -- {unit.unit_id} should consider acting')
+                should_act = True
+
+            if should_act:
+                needs_to_act.append(unit)
+            else:
+                should_not_act.append(unit)
+        return UnitsToAct(needs_to_act=needs_to_act, should_not_act=should_not_act)
+
+    def calculate_collisions(self, check_steps=2) -> Collisions:
+        """Calculates the upcoming collisions based on action queues of all units"""
+        if self._upcoming_collisions is None:
+            pass
+            self._upcoming_collisions = None
+        return self._upcoming_collisions
+
+    def calculate_close_enemies(self) -> Dict[str, CloseEnemies]:
+        """Calculates which units are close to enemies"""
+        if self._close_enemies is None:
+            pass
+            self._close_enemies = None
+        return self._close_enemies
 
     def collect_unit_data(self, units: List[FriendlyUnitManger]) -> pd.DataFrame:
         """
@@ -71,21 +178,33 @@ class TurnPlanner:
         """
         data = []
         for unit in units:
+            unit_distance_map = util.pad_and_crop(
+                util.manhattan_kernel(self.search_dist),
+                large_arr=self.master.maps.rubble,
+                x1=unit.pos[0],
+                y1=unit.pos[1],
+                fill_value=self.search_dist,
+            )
+            unit_factory = self.master.factories.friendly.get(unit.factory_id, None)
+
             data.append(
-                [
-                    unit.distance_to_factory(),
-                    unit.has_enough_power(),
-                    unit.power,
-                    unit.ice,
-                    unit.ore,
-                ]
+                {
+                    'distance_to_factory': unit_distance_map[
+                        unit_factory.factory.pos[0], unit_factory.factory.pos[1]
+                    ]
+                    if unit_factory
+                    else np.nan,
+                    'is_heavy': unit.unit.unit_type == 'HEAVY',
+                    'enough_power_to_move': unit.unit.power
+                    > unit.unit_config.MOVE_COST
+                    + unit.unit_config.ACTION_QUEUE_POWER_COST,
+                    'power': unit.unit.power,
+                    'ice': unit.unit.cargo.ice,
+                    'ore': unit.unit.cargo.ore,
+                }
             )
 
-        df = pd.DataFrame(
-            data,
-            columns=['distance_to_factory', 'has_enough_power', 'power', 'ice', 'ore'],
-        )
-
+        df = pd.DataFrame(data)
         return df
 
     def sort_units_by_priority(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -99,68 +218,112 @@ class TurnPlanner:
             A sorted pandas dataframe with units ordered by priority.
         """
         sorted_df = df.sort_values(
-            by=['has_enough_power', 'power', 'ice', 'ore'],
-            ascending=[False, True, False, True],
+            by=['is_heavy', 'enough_power_to_move', 'power', 'ice', 'ore'],
+            ascending=[True, False, True, False, True],
         )
 
         return sorted_df
 
-    def create_costmap(self) -> np.ndarray:
+    def base_costmap(self) -> np.ndarray:
         """
-        Calculates the costmap based on the rubble array.
+        Calculates the base costmap based on:
+            - rubble array
+            - most travelled?
 
         Returns:
             A numpy array representing the costmap.
         """
-        # costmap = calculate_costmap(rubble_array)
-        pass
+        if self._costmap is None:
+            costmap = self.pathfinder.get_costmap(self.master.maps.rubble)
+            self._costmap = costmap
+        return self._costmap
 
-    def update_costmap_with_paths(self, costmap: np.ndarray, units: List[FriendlyUnitManger]) -> None:
+    def get_costmap_with_paths(
+        self, base_costmap: np.ndarray, unit: FriendlyUnitManger
+    ) -> np.ndarray:
         """
-        Updates the costmap with the paths of the units that have no more actions this turn.
-
-        Args:
-            costmap: A numpy array representing the costmap.
-            units: List of FriendlyUnitManger objects with no more actions this turn.
-        """
-        # for unit in units:
-        #     update_costmap_with_gaussian_paths(costmap, unit)
-        pass
-
-    def choose_path(self, unit: FriendlyUnitManger, costmap: np.ndarray) -> None:
-        """
-        Chooses the path for the unit based on the updated costmap.
+        Updates the costmap with the paths of the units that have determined paths this turn (not acting, done acting, or enemy)
 
         Args:
-            unit: A FriendlyUnitManger object that needs to choose a path.
-            costmap: A numpy array representing the updated costmap.
+            base_costmap: A numpy array representing the costmap.
+            unit: Unit to get the costmap for (i.e. distances calculated relative to this unit)
         """
-        # path = find_optimal_path(unit, costmap)
-        pass
+        new_cost = base_costmap.copy()
+        # Add enemy paths
+        for unit_id, path in self.unit_paths.enemy.heavy.items():
+            # if current unit is heavy and enemy has signficantly lower energy
+            # make lower cost
+            # update_costmap_with_gaussian_paths(base_costmap, unit)
+            # else:
+            # make higher cost
+            pass
+        for unit_id, path in self.unit_paths.enemy.light.items():
+            # if current unit is heavy or enemy has signficantly lower energy
+            # make lower cost
+            # else:
+            # make higher cost
+            pass
+
+        # Add friendly paths
+        for unit_id, path in self.unit_paths.friendly.heavy.items():
+            # high cost (really want to avoid collision with own units that have set paths already)
+            pass
+        for unit_id, path in self.unit_paths.friendly.light.items():
+            # high cost (really want to avoid collision with own units that have set paths already)
+            pass
+
+        return new_cost
+
+    def update_pathfinder(self, unit: FriendlyUnitManger) -> NewPathFinder:
+        """Update the shared pathfinder with the specific costmap for the current unit"""
+        base_costmap = self.base_costmap()
+        # TODO: Could do more to the base costmap here (make areas higher or lower)
+        new_costmap = self.get_costmap_with_paths(
+            base_costmap=base_costmap, unit=unit
+        )
+        # TODO: or here
+        self.pathfinder.costmap = new_costmap
+        return self.pathfinder
 
     def process_units(
-        self, units_to_act: List[FriendlyUnitManger], units_no_actions: List[FriendlyUnitManger]
-    ) -> None:
+        self,
+        friendly_units: List[FriendlyUnitManger],
+        enemy_units: List[EnemyUnitManager],
+    ) -> Dict[str, List[np.ndarray]]:
         """
         Processes the units by choosing the paths for units that need to act this turn.
 
         Args:
-            units_to_act: List of FriendlyUnitManger objects that need to act this turn.
-            units_no_actions: List of FriendlyUnitManger objects that have no more actions this turn.
+            friendly_units: All friendly units after beginning of turn update
+            enemy_units: All enemy units after beginning of turn update
+
+        Returns:
+            Actions to update units with
         """
+        units_to_act = self.units_should_consider_acting(self.master.units.friendly.all)
         unit_data = self.collect_unit_data(units_to_act)
         sorted_units = self.sort_units_by_priority(unit_data)
 
-        costmap = self.create_costmap()
+        base_costmap = self.base_costmap()
 
         for unit in sorted_units.itertuples():
-            costmap_copy = np.copy(costmap)
+            unit: FriendlyUnitManger
+            pathfinder = self.update_pathfinder(unit)
 
-            self.update_costmap_with_paths(costmap_copy, units_no_actions)
+            actions_before = unit.unit.action_queue
+            # Figure out new actions for unit  (i.e. RoutePlanners)
+            pass
 
-            self.choose_path(unit, costmap_copy)
+            if unit.unit.action_queue == actions_before:
+                units_to_act.should_not_act.append(unit)
+            else:
+                units_to_act.has_updated_actions.append(unit)
 
-            units_no_actions.append(unit)
+        actions = {}
+        for unit in units_to_act.has_updated_actions:
+            if len(unit.unit.action_queue) > 0:
+                actions[unit.unit_id] = unit.unit.action_queue
+        return actions
 
 
 class Agent:

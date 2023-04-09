@@ -234,7 +234,12 @@ class Units(abc.ABC):
                 dead_unit.dead()
 
     @abc.abstractmethod
-    def update(self, unit: Unit):
+    def update(self, units: dict[str, Unit]):
+        """
+        Update at the beginning of turn
+        Args:
+            units: All units for friendly/enemy team (i.e. when called it will already be decided if friendly or enemy)
+        """
         pass
 
 
