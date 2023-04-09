@@ -1,18 +1,14 @@
 from __future__ import annotations
 import abc
-from typing import TYPE_CHECKING
-
-from lux.kit import obs_to_game_state
-from lux.config import EnvConfig
-from lux.utils import my_turn_to_place_factory
-
+from typing import TYPE_CHECKING, List, Dict
+import pandas as pd
 from dataclasses import dataclass, field
 import numpy as np
 import logging
 
-# logging.basicConfig(filename='agent_log.log', level=logging.INFO)
-logging.basicConfig(level=logging.INFO)
-logging.info('Starting Log')
+from lux.kit import obs_to_game_state
+from lux.config import EnvConfig
+from lux.utils import my_turn_to_place_factory
 
 from unit_manager import UnitManager, FriendlyUnitManger
 from master_state import MasterState
@@ -23,14 +19,148 @@ from actions import (
     calculate_high_level_unit_action,
     calculate_high_level_factory_actions,
 )
-
 from mining_planner import MiningPlanner
 from rubble_clearing_planner import RubbleClearingPlanner
 from factory_manager import BuildHeavyRecommendation
 
+# logging.basicConfig(filename='agent_log.log', level=logging.INFO)
+logging.basicConfig(level=logging.INFO)
+logging.info('Starting Log')
 
 if TYPE_CHECKING:
     from .master_state import Recommendation
+
+
+@dataclass
+class UnitsToAct:
+    needs_to_act: List[FriendlyUnitManger]
+    should_not_act: List[FriendlyUnitManger]
+    done_acting: List[FriendlyUnitManger] = list
+
+
+class TurnPlanner:
+    def __init__(self, master):
+        self.master = master
+
+    def units_should_consider_acting(
+        self, units: List[FriendlyUnitManger]
+    ) -> Dict[str, List[FriendlyUnitManger]]:
+        """
+        Determines which units should potentially act this turn, and which should continue with current actions
+        Does this based on:
+            - collisions in next couple of turns
+            - enemies nearby
+            - empty action queue
+
+        Args:
+            units: list of friendly units
+
+        Returns:
+            dictionary of
+        """
+
+    def collect_unit_data(self, units: List[FriendlyUnitManger]) -> pd.DataFrame:
+        """
+        Collects data from units and stores it in a pandas dataframe.
+
+        Args:
+            units: List of FriendlyUnitManger objects.
+
+        Returns:
+            A pandas dataframe containing the unit data.
+        """
+        data = []
+        for unit in units:
+            data.append(
+                [
+                    unit.distance_to_factory(),
+                    unit.has_enough_power(),
+                    unit.power,
+                    unit.ice,
+                    unit.ore,
+                ]
+            )
+
+        df = pd.DataFrame(
+            data,
+            columns=['distance_to_factory', 'has_enough_power', 'power', 'ice', 'ore'],
+        )
+
+        return df
+
+    def sort_units_by_priority(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Sorts units by priority based on the provided dataframe.
+
+        Args:
+            df: A pandas dataframe containing the unit data.
+
+        Returns:
+            A sorted pandas dataframe with units ordered by priority.
+        """
+        sorted_df = df.sort_values(
+            by=['has_enough_power', 'power', 'ice', 'ore'],
+            ascending=[False, True, False, True],
+        )
+
+        return sorted_df
+
+    def create_costmap(self) -> np.ndarray:
+        """
+        Calculates the costmap based on the rubble array.
+
+        Returns:
+            A numpy array representing the costmap.
+        """
+        # costmap = calculate_costmap(rubble_array)
+        pass
+
+    def update_costmap_with_paths(self, costmap: np.ndarray, units: List[FriendlyUnitManger]) -> None:
+        """
+        Updates the costmap with the paths of the units that have no more actions this turn.
+
+        Args:
+            costmap: A numpy array representing the costmap.
+            units: List of FriendlyUnitManger objects with no more actions this turn.
+        """
+        # for unit in units:
+        #     update_costmap_with_gaussian_paths(costmap, unit)
+        pass
+
+    def choose_path(self, unit: FriendlyUnitManger, costmap: np.ndarray) -> None:
+        """
+        Chooses the path for the unit based on the updated costmap.
+
+        Args:
+            unit: A FriendlyUnitManger object that needs to choose a path.
+            costmap: A numpy array representing the updated costmap.
+        """
+        # path = find_optimal_path(unit, costmap)
+        pass
+
+    def process_units(
+        self, units_to_act: List[FriendlyUnitManger], units_no_actions: List[FriendlyUnitManger]
+    ) -> None:
+        """
+        Processes the units by choosing the paths for units that need to act this turn.
+
+        Args:
+            units_to_act: List of FriendlyUnitManger objects that need to act this turn.
+            units_no_actions: List of FriendlyUnitManger objects that have no more actions this turn.
+        """
+        unit_data = self.collect_unit_data(units_to_act)
+        sorted_units = self.sort_units_by_priority(unit_data)
+
+        costmap = self.create_costmap()
+
+        for unit in sorted_units.itertuples():
+            costmap_copy = np.copy(costmap)
+
+            self.update_costmap_with_paths(costmap_copy, units_no_actions)
+
+            self.choose_path(unit, costmap_copy)
+
+            units_no_actions.append(unit)
 
 
 class Agent:
