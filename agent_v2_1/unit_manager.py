@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 import numpy as np
 import abc
 from dataclasses import dataclass
@@ -32,6 +32,7 @@ class UnitManager(abc.ABC):
         self.start_of_turn_pos = unit.pos
 
     def update(self, unit: Unit):
+        """Beginning of turn update"""
         self.unit = unit
         self.start_of_turn_pos = unit.pos
 
@@ -56,14 +57,14 @@ class UnitManager(abc.ABC):
     def pos(self, value):
         self.unit.pos = value
 
-    def actions_to_path(self, actions=None):
+    def actions_to_path(self, actions: [None, List[np.ndarray]]=None) -> np.ndarray:
         """
         Return a list of coordinates of the path the actions represent starting from unit.pos
         (which may have been updated since beginning of turn)
         """
         if actions is None:
             actions = self.unit.action_queue
-        return actions_to_path(self.unit, actions)
+        return util.new_actions_to_path(self.unit.pos, actions)
 
     @abc.abstractmethod
     def dead(self):
