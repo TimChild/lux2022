@@ -291,8 +291,10 @@ class RubbleRoutePlanner:
                     value_to_move=value_to_move,
                 )
             else:
-                self.unit.action_queue.extend(path_to_actions(path_to_factory))
-                break
+                if len(path_to_factory) > 0:
+                    self.unit.action_queue.extend(path_to_actions(path_to_factory))
+                    self.unit.pos = path_to_factory[-1]
+                    break
         return self.unit.action_queue[: self.target_queue_length]
 
     def _unit_starting_on_factory(self) -> bool:
@@ -372,7 +374,7 @@ class RubbleRoutePlanner:
                 starting_step=num_turns_of_actions(self.unit.action_queue),
             ),
         )
-        if len(path) > 1:
+        if len(path) > 0:
             self.unit.action_queue.extend(path_to_actions(path))
             self.unit.pos = path[-1]  # Update position of unit
             return True

@@ -161,8 +161,9 @@ class MiningRoutePlanner:
                         starting_step=0,
                     ),
                 )
-                self.unit.action_queue.extend(path_to_actions(direct_path_to_factory))
-                self.unit.pos = direct_path_to_factory[-1]
+                if len(direct_path_to_factory) > 0:
+                    self.unit.action_queue.extend(path_to_actions(direct_path_to_factory))
+                    self.unit.pos = direct_path_to_factory[-1]
 
         if len(self.unit.action_queue) < self.target_queue_length:
             # Then loop from factory
@@ -172,8 +173,9 @@ class MiningRoutePlanner:
     def _resource_then_factory(self, path_to_resource, power_remaining_after_moves):
         self.log('pathing to resource first')
         # Move to resource
-        self.unit.action_queue.extend(path_to_actions(path_to_resource))
-        self.unit.pos = path_to_resource[-1]
+        if len(path_to_resource):
+            self.unit.action_queue.extend(path_to_actions(path_to_resource))
+            self.unit.pos = path_to_resource[-1]
 
         # Dig as many times as possible
         n_digs = int(
@@ -194,8 +196,9 @@ class MiningRoutePlanner:
                 starting_step=num_turns_of_actions(self.unit.action_queue),
             ),
         )
-        self.unit.action_queue.extend(path_to_actions(path_from_resource_to_factory))
-        self.unit.pos = path_from_resource_to_factory[-1]
+        if len(path_from_resource_to_factory) > 0:
+            self.unit.action_queue.extend(path_to_actions(path_from_resource_to_factory))
+            self.unit.pos = path_from_resource_to_factory[-1]
 
         # Transfer resources to factory
         self.unit.action_queue.append(
@@ -269,8 +272,9 @@ class MiningRoutePlanner:
             return None
 
         # Add journey out
-        self.unit.action_queue.extend(path_to_actions(path_to_resource))
-        self.unit.pos = path_to_resource[-1]
+        if len(path_to_resource) > 0:
+            self.unit.action_queue.extend(path_to_actions(path_to_resource))
+            self.unit.pos = path_to_resource[-1]
 
         # Add digs
         if n_digs >= 1:
@@ -288,8 +292,9 @@ class MiningRoutePlanner:
                 starting_step=num_turns_of_actions(self.unit.action_queue),
             ),
         )
-        self.unit.action_queue.extend(path_to_actions(return_path))
-        self.unit.pos = return_path[-1]
+        if len(return_path) > 0:
+            self.unit.action_queue.extend(path_to_actions(return_path))
+            self.unit.pos = return_path[-1]
 
         # Add transfer
         self.unit.action_queue.append(
