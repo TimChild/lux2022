@@ -79,6 +79,7 @@ class Agent:
 
     def act(self, step: int, obs, remainingOverageTime: int = 60):
         """Required API for Agent. This is called every turn after early_setup is complete"""
+        self.log(f'======== Start of turn for {self.player} ============')
         self._beginning_of_step_update(step, obs, remainingOverageTime)
 
         # Get processed observations (i.e. the obs that I will use to train a PPO agent)
@@ -166,9 +167,10 @@ class Agent:
 
         # Make at least 1 heavy mine ice
         if (
-            not factory_has_heavy_ice_miner(factory)
+                (not factory_has_heavy_ice_miner(factory)
             and unit.unit.unit_type == 'HEAVY'
-            and unit.status.role != 'mine_ice'
+            and unit.status.role != 'mine_ice') or
+                (unit.status.role == 'mine_ice' and len(unit.unit.action_queue) == 0)
         ):
             self.log(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
             mining_rec = unit_recommendations.pop('mine_ice', None)

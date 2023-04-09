@@ -80,6 +80,13 @@ class FriendlyFactoryManager(FactoryManager):
         self.light_units = {}
         self.heavy_units = {}
 
+    @property
+    def factory_loc(self) -> np.ndarray:
+        """Return an array with shape of map with 1s where factory is"""
+        arr = np.zeros_like(self.master.maps.rubble, dtype=int)
+        arr[self.factory.pos_slice] = 1
+        return arr
+
     @staticmethod
     def place_factory(game_state: GameState, player):
         """Place factory in early_setup"""

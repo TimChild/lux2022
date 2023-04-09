@@ -88,7 +88,8 @@ def unit_should_consider_acting(unit: FriendlyUnitManger, plan: MasterState) -> 
     if len(current_actions) == 0:
         # No current actions, might want to consider doing something
         return True
-    return True
+
+    return False
 
 
 def factory_should_consider_acting(

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 
 from typing import Tuple, List, Union, Optional, TYPE_CHECKING
@@ -19,17 +21,19 @@ from itertools import product
 
 from luxai_s2 import LuxAI_S2
 from luxai_s2.unit import UnitType
-from lux.kit import obs_to_game_state, GameState, to_json, from_json
+
+
+from lux.kit import obs_to_game_state, GameState, to_json
 from lux.config import UnitConfig, EnvConfig
-from lux.utils import direction_to, my_turn_to_place_factory
-from lux.unit import Unit, move_deltas
+from lux.utils import direction_to
+from lux.unit import Unit
 from lux.cargo import UnitCargo
 
-from pathfinding.core.grid import Grid
-from pathfinding.finder.a_star import AStarFinder
 
 if TYPE_CHECKING:
+    from path_finder import PathFinder, CollisionParams
     from unit_manager import FriendlyUnitManger
+
 
 UTIL_VERSION = 'AGENT_V2'
 
@@ -79,7 +83,7 @@ ACT_DIRECTION = 1
 ACT_RESOURCE = 2
 ACT_AMOUNT = 3
 ACT_REPEAT = 4
-ACT_START_N = 5
+ACT_N = 5
 
 # Types:
 MOVE = 0
@@ -106,25 +110,31 @@ def nearest_non_zero(
     return tuple(closest)
 
 
-def power_cost_of_actions(state: GameState, unit: Unit, actions: List[np.ndarray]):
+def num_turns_of_actions(actions: Union[np.ndarray, List[np.ndarray]]) -> int:
+    """Calculate how many turns the actions will take including their n values"""
+    if len(actions) == 0:
+        return 0
+    actions = np.array(actions)
+    durations = actions[:, ACT_N]
+    return int(np.sum(durations))
+
+
+def power_cost_of_actions(rubble: np.ndarray, unit: Unit, actions: List[np.ndarray]):
     """Power requirements of a list of actions
 
     Note: Does not check for invalid moves or actions
     """
-    # step = state.real_env_steps
-
-    unit_cfg = unit.unit_cfg
+    unit_cfg: UnitConfig = unit.unit_cfg
 
     pos = unit.pos
 
     cost = 0
     for action in actions:
-        print(action)
-        for _ in range(action[ACT_START_N]):
+        for _ in range(action[ACT_N]):
             act_type = action[ACT_TYPE]
             if act_type == MOVE:
                 pos = pos + MOVE_DELTAS[ACT_DIRECTION]
-                rubble_at_target = state.board.rubble[pos[0], pos[1]]
+                rubble_at_target = rubble[pos[0], pos[1]]
                 cost += math.ceil(
                     unit_cfg.MOVE_COST
                     + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_target
@@ -134,7 +144,7 @@ def power_cost_of_actions(state: GameState, unit: Unit, actions: List[np.ndarray
             ):
                 pass  # No cost
             elif act_type == PICKUP and action[ACT_RESOURCE] == POWER:
-                cost += action[ACT_AMOUNT]  # pickup has negative value
+                cost -= action[ACT_AMOUNT]
             elif act_type == DESTRUCT:
                 cost += unit_cfg.SELF_DESTRUCT_COST
             elif act_type == RECHARGE:
@@ -234,7 +244,7 @@ def pad_and_crop(small_arr, large_arr, x1, y1, fill_value=0):
 
 
 def connected_factory_zeros(rubble, factory_pos) -> np.ndarray:
-    """Figure out what area of zeros is connected to factory"""
+    """Figure out what area of zeros is connected to factory and return that array"""
     struct = ndimage.generate_binary_structure(rank=2, connectivity=1)
     # Note:
     # rank 2 = image dimensions
@@ -279,15 +289,17 @@ def append_zeros(arr, side):
         )
 
 
-def create_boundary_array(arr):
-    """Creates array of boundaries around zero areas where the boundary value is equal to the size of the zero area"""
+def create_boundary_array(arr, boundary_num=0):
+    """Creates array of boundaries around boundary_num areas where the boundary value is equal to the size of the boundary_num area"""
     arr = np.array(arr)  # Convert input to numpy array if not already
-    zero_areas = arr == 0  # Create a boolean array where True represents zeros
+    boundary_areas = (
+        arr == boundary_num
+    )  # Create a boolean array where True represents boundary_num
 
     # Create a binary structure to label connected zero areas not including diagonal connections
     s = ndimage.generate_binary_structure(2, 1)
     labeled_array, num_features = ndimage.label(
-        zero_areas, structure=s
+        boundary_areas, structure=s
     )  # Label connected zero areas
 
     result = np.zeros_like(
@@ -340,10 +352,6 @@ class SubsetExtractor:
         """
         Returns a subset of a 2D numpy array based on a given coordinate and radius.
 
-        Args:
-            pos: position of center of the subset (x, y) using lux ordering arr[x, y]
-            radius: distance from the center of the subset to its edge.
-
         Returns:
             np.ndarray: Subset of the input array.
         """
@@ -365,7 +373,7 @@ class SubsetExtractor:
         Converts a coordinate from the original array to the corresponding coordinate in the subset array.
 
         Args:
-            pos: position in the original array (x, y) using lux ordering arr[x, y]
+            original_coord: position in the original array (x, y) using lux ordering arr[x, y]
 
         Returns:
             Tuple[int, int]: Corresponding position in the subset array.
@@ -470,39 +478,90 @@ def manhattan(a, b):
     return sum(abs(val1 - val2) for val1, val2 in zip(a, b))
 
 
-class PathFinder:
-    def __init__(self, cost_map):
-        self.cost_map = cost_map
-        self.grid = Grid(matrix=cost_map)
+# class PathFinder:
+#     def __init__(self, cost_map):
+#         self.cost_map = cost_map
+#         self.grid = Grid(matrix=cost_map)
+#
+#     def path(self, start, end):
+#         finder = AStarFinder()
+#         start = self.grid.node(*start)
+#         end = self.grid.node(*end)
+#         path, runs = finder.find_path(start, end, self.grid)
+#         path = np.array(path)
+#         return path
 
-    def path(self, start, end):
-        finder = AStarFinder()
-        start = self.grid.node(*start)
-        end = self.grid.node(*end)
-        path, runs = finder.find_path(start, end, self.grid)
-        path = np.array(path)
-        return path
+
+def count_consecutive(lst: Union[List[int], np.ndarray]) -> Tuple[List[int], List[int]]:
+    """
+    Compute the unique values and the number of consecutive occurrences of each value in a list.
+
+    Args:
+        lst: The input list.
+
+    Returns:
+        A tuple (values, counts), where `values` is a list of unique values from the input list,
+        and `counts` is a list of the number of consecutive occurrences of each value in the input list.
+        The i-th element of `counts` corresponds to the i-th element of `values`.
+    """
+    values = []
+    counts = []
+    current_value = None
+    current_count = 0
+    for x in lst:
+        if x != current_value:
+            if current_value is not None:
+                values.append(current_value)
+                counts.append(current_count)
+            current_value = x
+            current_count = 1
+        else:
+            current_count += 1
+    if current_value is not None:
+        values.append(current_value)
+        counts.append(current_count)
+    return values, counts
+
+
+def list_of_tuples_to_array(lst: List[List[Tuple[int, int]]]) -> np.ndarray:
+    """
+    Convert a list of sublists of tuples to a 3D NumPy array.
+    For converting a list of paths to a single array of paths
+
+    Args:
+        lst: The input list of sublists of tuples.
+
+    Returns:
+        A 3D NumPy array with shape (len(lst), max_len, 2), where max_len is the maximum length
+        of the sublists, and missing values are filled with NaN.
+    """
+    max_len = max(len(sublst) for sublst in lst)
+    result = np.full((len(lst), max_len, 2), np.nan)
+    for i, sublst in enumerate(lst):
+        for j, tup in enumerate(sublst):
+            result[i, j, :] = tup
+    return result
 
 
 def path_to_actions(path):
+    """Converts path to actions (combines same direction moves by setting higher n)"""
     pos = path[0]
-    actions = []
+    directions = []
     for p in path[1:]:
-        actions.append(
-            LIGHT_UNIT.move(direction_to(pos, p))
-        )  # Note: UnitType doesn't matter
-        pos = p
+        d = direction_to(pos, p)
+        pos = add_direction_to_pos(pos, d)
+        directions.append(d)
+
+    directions, ns = count_consecutive(directions)
+
+    actions = []
+    for d, n in zip(directions, ns):
+        actions.append(LIGHT_UNIT.move(d, n=n))  # Note: UnitType doesn't matter
     return actions
 
 
 def actions_to_path(unit, actions):
-    deltas = {
-        0: (0, 0),
-        1: (0, -1),
-        2: (1, 0),
-        3: (0, 1),
-        4: (-1, 0),
-    }
+    """Convert list of actions to path for unit (considers other actions as move center)"""
     pos = np.array(unit.pos)
     path = [pos]
     for action in actions:
@@ -510,21 +569,21 @@ def actions_to_path(unit, actions):
             direction = action[1]
         else:
             direction = CENTER
-        pos = pos + deltas[direction]
+        pos = pos + MOVE_DELTAS[direction] * action[ACT_N]
         path.append(pos)
     return np.array(path)
 
 
 ################### Plotting #################
-def get_test_env(path=None):
-    if path is None:
-        path = "test_state.pkl"
-    with open(path, "rb") as f:
-        state = pickle.load(f)
-    env = LuxAI_S2()
-    _ = env.reset(state.seed)
-    env.set_state(state)
-    return env
+# def get_test_env(path=None):
+#     if path is None:
+#         path = "test_state.pkl"
+#     with open(path, "rb") as f:
+#         state = pickle.load(f)
+#     env = LuxAI_S2()
+#     _ = env.reset(state.seed)
+#     env.set_state(state)
+#     return env
 
 
 def game_state_from_env(env: LuxAI_S2):
@@ -533,95 +592,95 @@ def game_state_from_env(env: LuxAI_S2):
     )
 
 
-def run(
-    agent1,
-    agent2,
-    map_seed=None,
-    save_state_at=None,
-    max_steps=1000,
-    return_type='replay',
-):
-    make_fig = False
-    if return_type == 'figure':
-        make_fig = True
-    elif return_type == 'replay':
-        pass
-    else:
-        raise ValueError(f'return_type={return_type} not valid')
-
-    env = LuxAI_S2()
-    # This code is partially based on the luxai2022 CLI:
-    # https://github.com/Lux-AI-Challenge/Lux-Design-2022/blob/main/luxai_runner/episode.py
-
-    obs = env.reset(seed=map_seed)
-    state_obs = env.state.get_compressed_obs()
-
-    agents = {
-        "player_0": agent1("player_0", env.state.env_cfg),
-        "player_1": agent2("player_1", env.state.env_cfg),
-    }
-
-    game_done = False
-    rewards, dones, infos = {}, {}, {}
-
-    for agent_id in agents:
-        rewards[agent_id] = 0
-        dones[agent_id] = 0
-        infos[agent_id] = {"env_cfg": dataclasses.asdict(env.state.env_cfg)}
-
-    replay = {"observations": [state_obs], "actions": [{}]}
-
-    if make_fig:
-        fig = initialize_step_fig(env)
-    i = 0
-    while not game_done and i < max_steps:
-        i += 1
-        if save_state_at and env.state.real_env_steps == save_state_at:
-            print(f'Saving State at Real Env Step :{env.state.real_env_steps}')
-            import pickle
-
-            with open('test_state.pkl', 'wb') as f:
-                pickle.dump(env.get_state(), f)
-
-        actions = {}
-        for agent_id, agent in agents.items():
-            agent_obs = obs[agent_id]
-
-            if env.state.real_env_steps < 0:
-                agent_actions = agent.early_setup(env.env_steps, agent_obs)
-            else:
-                agent_actions = agent.act(env.env_steps, agent_obs)
-
-            for key, value in agent_actions.items():
-                if isinstance(value, list):
-                    agent_actions[key] = np.array(value, dtype=int)
-
-            actions[agent_id] = agent_actions
-
-        new_state_obs, rewards, dones, infos = env.step(actions)
-
-        change_obs = env.state.get_change_obs(state_obs)
-        state_obs = new_state_obs["player_0"]
-        obs = new_state_obs
-
-        replay["observations"].append(change_obs)
-        replay["actions"].append(actions)
-
-        players_left = len(dones)
-        for key in dones:
-            if dones[key]:
-                players_left -= 1
-
-        if players_left < 2:
-            game_done = True
-
-    if make_fig:
-        add_env_step(fig, env)
-    if make_fig:
-        return fig
-    else:
-        replay = to_json(replay)
-    return replay
+# def run(
+#     agent1,
+#     agent2,
+#     map_seed=None,
+#     save_state_at=None,
+#     max_steps=1000,
+#     return_type='replay',
+# ):
+#     make_fig = False
+#     if return_type == 'figure':
+#         make_fig = True
+#     elif return_type == 'replay':
+#         pass
+#     else:
+#         raise ValueError(f'return_type={return_type} not valid')
+#
+#     env = LuxAI_S2()
+#     # This code is partially based on the luxai2022 CLI:
+#     # https://github.com/Lux-AI-Challenge/Lux-Design-2022/blob/main/luxai_runner/episode.py
+#
+#     obs = env.reset(seed=map_seed)
+#     state_obs = env.state.get_compressed_obs()
+#
+#     agents = {
+#         "player_0": agent1("player_0", env.state.env_cfg),
+#         "player_1": agent2("player_1", env.state.env_cfg),
+#     }
+#
+#     game_done = False
+#     rewards, dones, infos = {}, {}, {}
+#
+#     for agent_id in agents:
+#         rewards[agent_id] = 0
+#         dones[agent_id] = 0
+#         infos[agent_id] = {"env_cfg": dataclasses.asdict(env.state.env_cfg)}
+#
+#     replay = {"observations": [state_obs], "actions": [{}]}
+#
+#     if make_fig:
+#         fig = initialize_step_fig(env)
+#     i = 0
+#     while not game_done and i < max_steps:
+#         i += 1
+#         if save_state_at and env.state.real_env_steps == save_state_at:
+#             print(f'Saving State at Real Env Step :{env.state.real_env_steps}')
+#             import pickle
+#
+#             with open('test_state.pkl', 'wb') as f:
+#                 pickle.dump(env.get_state(), f)
+#
+#         actions = {}
+#         for agent_id, agent in agents.items():
+#             agent_obs = obs[agent_id]
+#
+#             if env.state.real_env_steps < 0:
+#                 agent_actions = agent.early_setup(env.env_steps, agent_obs)
+#             else:
+#                 agent_actions = agent.act(env.env_steps, agent_obs)
+#
+#             for key, value in agent_actions.items():
+#                 if isinstance(value, list):
+#                     agent_actions[key] = np.array(value, dtype=int)
+#
+#             actions[agent_id] = agent_actions
+#
+#         new_state_obs, rewards, dones, infos = env.step(actions)
+#
+#         change_obs = env.state.get_change_obs(state_obs)
+#         state_obs = new_state_obs["player_0"]
+#         obs = new_state_obs
+#
+#         replay["observations"].append(change_obs)
+#         replay["actions"].append(actions)
+#
+#         players_left = len(dones)
+#         for key in dones:
+#             if dones[key]:
+#                 players_left -= 1
+#
+#         if players_left < 2:
+#             game_done = True
+#
+#     if make_fig:
+#         add_env_step(fig, env)
+#     if make_fig:
+#         return fig
+#     else:
+#         replay = to_json(replay)
+#     return replay
 
 
 def show_env(env, mode="plotly", fig=None):
@@ -1283,3 +1342,157 @@ def figures_to_subplots(
         height=300 * rows,
     )
     return full_fig
+
+
+def calc_path_to_factory(
+    pathfinder: PathFinder,
+    pos: Tuple[int, int],
+    factory_loc: np.ndarray,
+    rubble: Union[bool, np.ndarray] = False,
+    margin=2,
+    collision_params: CollisionParams = None,
+) -> np.ndarray:
+    """Calculate path from pos to the nearest point on factory that will be unoccupied on arrival
+    Args:
+        pathfinder: Usually agents pathfinding instance
+        pos: Position to path from
+        factory_loc: array with ones where factory is
+        rubble: False = ignore rubble costs, True = beginning of turn rubble costs, Array = use array rubble costs
+        margin: How far outside the bounding box of pos/factory to search for best path (higher => slower)
+    """
+    factory_loc = factory_loc.copy()
+    original_nearest_location = nearest_non_zero(factory_loc, pos)
+
+    attempts = 0
+    # Try path to the nearest factory tile that will be unoccupied at arrival
+    while attempts < 9:
+        attempts += 1
+        nearest_factory = nearest_non_zero(factory_loc, pos)
+        if nearest_factory is not None:
+            path = pathfinder.path_fast(
+                pos,
+                nearest_factory,
+                rubble=rubble,
+                margin=margin,
+                collision_params=collision_params,
+            )
+            if len(path) > 0:
+                return path
+            factory_loc[nearest_factory[0], nearest_factory[1]] = 0
+    # Path to the nearest tile anyway
+    else:
+        logging.warning(
+            f'No path to any factory tile without collisions, returning path without considering collisions'
+        )
+        path = pathfinder.path_fast(
+            pos,
+            original_nearest_location,
+            rubble=rubble,
+            margin=margin,
+            collision_params=None,
+        )
+        return path
+
+
+def set_middle_of_factory_loc_zero(factory_loc: np.ndarray):
+    """Returns an array where the usual factory_loc that contains a 3x3 block of ones is replaced with a zero in the middle"""
+    arr = factory_loc.copy()
+    # Find the indices of non-zero elements
+    indices = np.argwhere(arr == 1)
+
+    # Calculate the center of the 3x3 block
+    center = indices.mean(axis=0).astype(int)
+
+    # Set the middle element of the 3x3 block to zero
+    arr[tuple(center)] = 0
+    return arr
+
+
+def path_to_factory_edge_nearest_pos(
+    pathfinder: PathFinder,
+    factory_loc: np.ndarray,
+    collision_params: CollisionParams,
+    pos: Tuple[int, int],
+    pos_to_be_near: Tuple[int, int],
+    rubble=True,
+    margin=1,
+    max_delay_by_move_center=0,
+) -> Union[np.ndarray, None]:
+    """Path to the best location on the factory edge without collision
+    Args:
+        factory_loc: array with 1s where factory is
+        pos: target position to try get nearest edge to
+    """
+    if np.sum(factory_loc) == 9:
+        factory_loc = set_middle_of_factory_loc_zero(factory_loc)
+    assert np.sum(factory_loc) == 8
+
+    original_factory_loc = factory_loc
+    factory_loc = factory_loc.copy()
+
+    attempts = 0
+    # Try path to the factory tile nearest target
+    while attempts < 8:
+        attempts += 1
+        nearest_factory = nearest_non_zero(factory_loc, pos_to_be_near)
+        if nearest_factory is None:
+            break
+        elif tuple(nearest_factory) == tuple(pos):
+            return np.array([])
+        else:
+            path = pathfinder.path_fast(
+                pos,
+                nearest_factory,
+                rubble=rubble,
+                margin=margin,
+                collision_params=collision_params,
+            )
+            if len(path) > 0:
+                return path
+        factory_loc[nearest_factory[0], nearest_factory[1]] = 0
+    if max_delay_by_move_center > 0:
+        from path_finder import CollisionParams  # Avoiding circular import
+
+        logging.info(f'Adding delay to finding path to edge of factory')
+        new_collision_params = CollisionParams(
+            look_ahead_turns=collision_params.look_ahead_turns,
+            ignore_ids=collision_params.ignore_ids,
+            friendly_light=collision_params.friendly_light,
+            friendly_heavy=collision_params.friendly_heavy,
+            enemy_light=collision_params.enemy_light,
+            enemy_heavy=collision_params.enemy_heavy,
+            starting_step=collision_params.starting_step + 1,
+        )
+        next_path = path_to_factory_edge_nearest_pos(
+            pathfinder,
+            factory_loc,
+            new_collision_params,
+            pos,
+            pos_to_be_near,
+            rubble,
+            margin,
+            max_delay_by_move_center=max_delay_by_move_center - 1,
+        )
+        return np.concatenate((np.array([pos]), next_path))
+    else:
+        logging.warning(f'No path to edge of factory found without collisions')
+        return None
+
+
+def power_cost_of_path(path, rubble: np.ndarray, unit_type="LIGHT") -> int:
+    """Cost to move along path including rubble
+    Note: Assumes first path is current location (i.e. not part of cost)
+    """
+    assert unit_type in ["LIGHT", "HEAVY"]
+    unit_cfg = LIGHT_UNIT.unit_cfg if unit_type == "LIGHT" else HEAVY_UNIT.unit_cfg
+
+    if len(path) == 0:
+        return 0
+    cost = 0
+    for pos in path[1:]:
+        rubble_at_pos = rubble[pos[0], pos[1]]
+        cost += math.ceil(
+            unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_pos
+        )
+        # cost -= unit_cfg.CHARGE  # Charging only happens during DAY
+    return cost

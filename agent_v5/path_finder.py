@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Tuple, List, TYPE_CHECKING, Iterable, Dict, Optional
+import functools
+from dataclasses import dataclass, field, InitVar
+from typing import Tuple, List, TYPE_CHECKING, Iterable, Dict, Optional, Union
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
 import numpy as np
 from lux.utils import direction_to
+
+from util import list_of_tuples_to_array
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager
@@ -14,14 +17,21 @@ if TYPE_CHECKING:
     from lux.factory import Factory
 
 
-@dataclass
+@dataclass(frozen=True)
 class CollisionParams:
-    turns: int
+    look_ahead_turns: int
+    ignore_ids: Tuple[str, ...]
     friendly_light: bool = True
     friendly_heavy: bool = True
     enemy_light: bool = True
     enemy_heavy: bool = True
-    ignore_ids: List[str] = field(default_factory=list)
+    starting_step: int = (
+        0  # E.g. 0 for starting this turn, 1 if one action before this pathing
+    )
+
+    def __post_init__(self):
+        # Ensure ignore_ids is a tuple even if provided as a list
+        object.__setattr__(self, 'ignore_ids', tuple(self.ignore_ids))
 
 
 class PathFinder:
@@ -35,28 +45,41 @@ class PathFinder:
         self.enemy_factories: dict = None  # Not traversable
         self.enemy_factories_array: np.array = None
 
+        # for caching
+        self._cached_get_existing_paths = functools.lru_cache(maxsize=10)(
+            self._get_existing_paths
+        )
+
     def log(self, message: str, level=logging.INFO):
         logging.log(level, f'PathFinding: {message}')
 
-    def get_costmap(self, rubble=False):
+    def get_costmap(self, rubble: Union[bool, np.ndarray] = False):
         """Power cost of travelling (not taking into account collisions, but taking into account enemy factories)
 
         Note: This is in same orientation as other maps (needs to be Transposed before passing to Pathfinder)
         """
+        if isinstance(rubble, np.ndarray):
+            rubble_array = rubble
+            rubble = True
+        else:
+            rubble_array = self.rubble
+
         if rubble:
-            cost = np.ones(self.rubble.shape) * 1
-            cost += self.rubble * 0.05
+            cost = np.ones(rubble_array.shape) * 1
+            cost += rubble_array * 0.05
             # TODO: Technically this is for light units, heavy units should be 20x higher
             # TODO: which will make a slight difference when np.floor is executed
             # TODO: For now I'll slightly overestimate movement cost of units so that light/heavy are similar
             # TODO: cost = np.floor(cost)
             cost[self.enemy_factories_array == 1] = -1  # Not traversable
         else:
-            cost = np.ones(self.rubble.shape) * 10
+            cost = np.ones(rubble_array.shape) * 10
             cost[self.enemy_factories_array == 1] = -1  # Not traversable
         return cost
 
     def update_unit_path(self, unit: UnitManager, path: np.ndarray):
+        """Update a units path after the initial update (i.e. new calculated routes for unit should be updated here)"""
+        self._cached_get_existing_paths.cache_clear()
         path = np.asanyarray(path, dtype=int)
         if unit.unit.unit_type == 'LIGHT':
             self.friendly_light_paths[unit.unit_id] = path
@@ -72,6 +95,7 @@ class PathFinder:
         enemy_units: Dict[str, UnitManager],
         enemy_factories: Dict[str, FactoryManager],
     ):
+        self._cached_get_existing_paths.cache_clear()
         self.rubble = rubble
 
         # Update Units
@@ -107,12 +131,11 @@ class PathFinder:
             arr[s] = 1.0
         self.enemy_factories_array = arr
 
-    def path(self, start, end, step=0, rubble=False):
+    def path(self, start, end, rubble: Union[bool, np.ndarray] = False):
         """
         Full A* pathing using whole grid, but slow
         Note: no check of unit collisions here, only avoids enemy factories
         """
-        # TODO: Remove the use of step... this can just have access to master if necessary
         finder = AStarFinder()
         cost_map = self.get_costmap(rubble=rubble)
         cost_map = cost_map.T  # Required for finder
@@ -123,68 +146,56 @@ class PathFinder:
         path = np.array(path)
         return path
 
-    def get_existing_paths(self, collision_params: CollisionParams):
-        """Return the existing paths of other units taking into account collision_params"""
-        # TODO: Do some sort of caching of this to make things faster
-        # TODO: Note: still needs to be easy to update specific paths (add/remove) when doing this...
-        paths = []
-        if collision_params.friendly_light:
-            paths.extend(
-                [
-                    p
-                    for k, p in self.friendly_light_paths.items()
-                    if k not in collision_params.ignore_ids
-                ]
-            )
-        if collision_params.friendly_heavy:
-            paths.extend(
-                [
-                    p
-                    for k, p in self.friendly_heavy_paths.items()
-                    if k not in collision_params.ignore_ids
-                ]
-            )
-        if collision_params.enemy_light:
-            paths.extend(
-                [
-                    p
-                    for k, p in self.enemy_light_paths.items()
-                    if k not in collision_params.ignore_ids
-                ]
-            )
-        if collision_params.enemy_heavy:
-            paths.extend(
-                [
-                    p
-                    for k, p in self.enemy_heavy_paths.items()
-                    if k not in collision_params.ignore_ids
-                ]
-            )
+    def _get_existing_paths(
+        self, collision_params: CollisionParams
+    ) -> Dict[str, List[Tuple[int, int]]]:
+        """Return the existing paths of other units taking into account collision_params
+        Note: This method is cached in the __init__ and should be called through self.get_existing_paths
+        """
+        paths = {}
+        for attr in ['friendly_light', 'friendly_heavy', 'enemy_light', 'enemy_heavy']:
+            if getattr(collision_params, attr):
+                for unit_id, path in getattr(self, f'{attr}_paths').items():
+                    paths[unit_id] = path
+        for k in collision_params.ignore_ids:
+            paths.pop(k, None)
         return paths
 
-    def check_collisions(self, path: np.ndarray, collision_params: CollisionParams):
+    def get_existing_paths(
+        self, collision_params: CollisionParams
+    ) -> Dict[str, List[Tuple[int, int]]]:
+        """Return the existing paths of other units taking into account collision_params"""
+        return self._cached_get_existing_paths(collision_params)
+
+    def check_collisions(
+        self, path: np.ndarray, collision_params: CollisionParams
+    ) -> Union[None, Tuple[int, int]]:
         """Returns first collision coordinate if collision, else None"""
         path = np.asanyarray(path, dtype=int)
-        paths = self.get_existing_paths(collision_params)
+        other_paths_dict = self.get_existing_paths(collision_params)
+        other_paths = list_of_tuples_to_array(list(other_paths_dict.values()))
 
-        for i, coord in enumerate(path):
-            if i >= collision_params.turns:
+        for i, pos in enumerate(path):
+            step = collision_params.starting_step + i
+            if step >= collision_params.look_ahead_turns:
                 return None
-            # TODO: Is this checking for step position?
-            for p in paths:
-                if np.all(coord == p):  # Collision
-                    return p
+            pos = np.array(pos)
+            if step < other_paths.shape[1]:
+                others_positions_at_step = other_paths[:, step, :]
+                if np.any(np.all(others_positions_at_step == pos, axis=1)):
+                    return tuple(pos)
+            else:
+                return None
         return None
 
     def path_fast(
         self,
         start,
         end,
-        step=0,
-        rubble=False,
+        rubble: Union[bool, np.ndarray] = False,
         margin=1,
         collision_params: Optional[CollisionParams] = None,
-    ):
+    ) -> np.ndarray:
         """Faster A* pathing by only considering a box around the start/end coord (with additional margin)
 
         If collision_params passed in, this will try to avoid collisions.
@@ -209,6 +220,7 @@ class PathFinder:
 
         def _path(additional_blocked_cells=None):
             nonlocal start, end
+
             additional_blocked_cells = (
                 additional_blocked_cells if additional_blocked_cells else []
             )
@@ -219,20 +231,21 @@ class PathFinder:
 
             coords = np.array([start, end])
 
-            # x, y
+            # Bounds of start, end (x, y)
             mins = np.min(coords, axis=0)
             maxs = np.max(coords, axis=0)
 
-            # x, y
+            # Bounds including margin (x, y)
             lowers = [max(0, v - margin) for v in mins]
             uppers = [
                 min(s - 1, v + margin) + 1
                 for s, v in zip(reversed(cost_map.shape), maxs)
             ]  # +1 for range
 
+            # Ranges
             x_range, y_range = [(lowers[i], uppers[i]) for i in range(2)]
 
-            # x, y
+            # Reduced size cost map
             new_cost = cost_map[range(*x_range), :][:, range(*y_range)]
 
             # Make small grid and set start/end
@@ -257,14 +270,19 @@ class PathFinder:
             blocked_cells = []
             attempts = 0
             while attempts < 20:
+                attempts += 1
                 path = _path(blocked_cells)
                 if len(path) == 0:
                     self.log(f'No paths found without collisions')
                     break
-                pos = self.check_collisions(path, collision_params=collision_params)
-                if pos is None:
+                collision_pos = self.check_collisions(
+                    path, collision_params=collision_params
+                )
+                if collision_pos is None:
                     break
-                blocked_cells.append(pos)
+                blocked_cells.append(collision_pos)
             else:
-                self.log(f'No paths found without collisions')
+                self.log(f'No paths found without collisions after many attempts')
+                # TODO: Remove this raise
+                raise RuntimeError
         return path

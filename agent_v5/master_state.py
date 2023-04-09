@@ -1,7 +1,7 @@
 from __future__ import annotations
 import abc
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 from dataclasses import dataclass, field
 import collections
 
@@ -46,11 +46,12 @@ class Planner(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def carry_out(self, unit: FriendlyUnitManger, recommendation: Recommendation):
-        """TODO: Should this be here?
+    def carry_out(
+        self, unit: FriendlyUnitManger, recommendation: Recommendation
+    ) -> List[np.ndarray]:
+        """
         Idea would be to make the actions necessary to carry out recommendation
-        The Planner instance has probably already calculated what would need to be done, so might be more efficient to ask it again?
-        Then clear it's cache at the beginning of each turn?
+        The Planner instance has probably already calculated a lot of what would need to be done, so efficient to ask it again
         """
         pass
 
