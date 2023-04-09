@@ -50,8 +50,8 @@ class Agent:
         self.mining_planner = MiningPlanner(self.master)
         self.rubble_clearing_planner = RubbleClearingPlanner(self.master)
 
-    def log(self, message, level=logging.INFO, **kwargs):
-        logging.log(level, f'{self.player} {message}', **kwargs)
+    # def log(self, message, level=logging.INFO, **kwargs):
+    #     logging.log(level, f'{self.player} {message}', **kwargs)
 
     def bid(self, obs):
         """Bid for starting factory (default to 0)"""
@@ -76,12 +76,12 @@ class Agent:
                 action = FriendlyFactoryManager.place_factory(
                     self.master.game_state, self.player
                 )
-        self.log(f'Early setup action {action}')
+        logging.info(f'Early setup action {action}')
         return action
 
     def act(self, step: int, obs, remainingOverageTime: int = 60):
         """Required API for Agent. This is called every turn after early_setup is complete"""
-        self.log(f'======== Start of turn for {self.player} ============')
+        logging.info(f'======== Start of turn for {self.player} ============')
         self._beginning_of_step_update(step, obs, remainingOverageTime)
 
         # Get processed observations (i.e. the obs that I will use to train a PPO agent)
@@ -146,10 +146,8 @@ class Agent:
             if f_action is not None:
                 factory_actions[factory_id] = f_action
 
-        self.log(f'{self.player} Unit actions: {unit_actions}', level=logging.DEBUG)
-        self.log(
-            f'{self.player} Factory actions: {factory_actions}', level=logging.INFO
-        )
+        logging.debug(f'{self.player} Unit actions: {unit_actions}')
+        logging.info(f'{self.player} Factory actions: {factory_actions}')
         return dict(**unit_actions, **factory_actions)
 
     def calculate_unit_actions(
@@ -168,7 +166,7 @@ class Agent:
             return False
 
         if factory is None:
-            self.log(f'{unit.unit_id} has no factory. Doing nothing')
+            logging.info(f'{unit.unit_id} has no factory. Doing nothing')
             return None
 
         # Make at least 1 heavy mine ice
@@ -177,7 +175,7 @@ class Agent:
             and unit.unit.unit_type == 'HEAVY'
             and unit.status.role != 'mine_ice'
         ) or (unit.status.role == 'mine_ice' and len(unit.unit.action_queue) == 0):
-            self.log(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
+            logging.info(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
             mining_rec = unit_recommendations.pop('mine_ice', None)
             if mining_rec is not None:
                 unit.status.role = 'mine_ice'
@@ -189,7 +187,9 @@ class Agent:
         if (unit.unit.unit_type == 'LIGHT' and not unit.status.role) or (
             unit.status.role == 'clear_rubble' and len(unit.unit.action_queue) == 0
         ):
-            self.log(f'{unit.unit_id} assigned to clear_rubble (for {unit.factory_id})')
+            logging.info(
+                f'{unit.unit_id} assigned to clear_rubble (for {unit.factory_id})'
+            )
 
             rubble_clearing_rec = unit_recommendations.pop('clear_rubble', None)
             if rubble_clearing_rec is not None:
@@ -204,7 +204,7 @@ class Agent:
         self, step: int, obs: dict, remainingOverageTime: int
     ):
         """Use the step and obs to update any turn based info (e.g. map changes)"""
-        self.log(f'Beginning of step update for step {step}')
+        logging.info(f'Beginning of step update for step {step}')
         game_state = obs_to_game_state(step, self.env_cfg, obs)
         # TODO: Use last obs to see what has changed to optimize update? Or master does this?
         self.master.update(game_state)
