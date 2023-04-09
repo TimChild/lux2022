@@ -9,7 +9,7 @@ from pathfinding.finder.a_star import AStarFinder
 import numpy as np
 from lux.utils import direction_to
 
-from util import list_of_tuples_to_array
+import util
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager
@@ -34,162 +34,72 @@ if TYPE_CHECKING:
 #         object.__setattr__(self, 'ignore_ids', tuple(self.ignore_ids))
 #
 
+if TYPE_CHECKING:
+    from agent import AllUnitPaths
 
-class NewPathFinder:
-    def __init__(self):
-        self.rubble: np.ndarray = None
-        self.friendly_light_paths: dict = None
-        self.friendly_heavy_paths: dict = None
-        self.enemy_light_paths: dict = None
-        self.enemy_heavy_paths: dict = None
 
-        self.enemy_factories: dict = None  # Not traversable
-        self.enemy_factories_array: np.array = None
+def _get_sub_area(costmap: np.ndarray, lowers, uppers):
+    """Reduces area of map"""
+    # Ranges
+    x_range, y_range = [(lowers[i], uppers[i]) for i in range(2)]
 
-        # for caching
-        self._cached_get_existing_paths = functools.lru_cache(maxsize=10)(
-            self._get_existing_paths
-        )
+    # Reduced size cost map
+    new_cost = costmap[range(*x_range), :][:, range(*y_range)]
+    return new_cost
 
-    def get_costmap(self, rubble: Union[bool, np.ndarray] = False):
-        """Power cost of travelling (not taking into account collisions, but taking into account enemy factories)
 
-        Note: This is in same orientation as other maps (needs to be Transposed before passing to Pathfinder)
-        """
-        if isinstance(rubble, np.ndarray):
-            rubble_array = rubble
-            rubble = True
-        else:
-            rubble_array = self.rubble
+def _adjust_coords(start, end, lowers) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+    """Adjust coords to new reduced area map"""
+    new_start = [c - l for c, l in zip(start, lowers)]
+    new_end = [c - l for c, l in zip(end, lowers)]
+    return tuple(new_start), tuple(new_end)  # Complaining about unknown length of tuples
 
-        if rubble:
-            cost = np.ones(rubble_array.shape) * 1
-            cost += rubble_array * 0.05
-            cost[self.enemy_factories_array == 1] = -1  # Not traversable
-        else:
-            cost = np.ones(rubble_array.shape) * 10
-            cost[self.enemy_factories_array == 1] = -1  # Not traversable
-        return cost
 
-    def update_unit_path(self, unit: UnitManager, path: np.ndarray):
-        """Update a units path after the initial update (i.e. new calculated routes for unit should be updated here)"""
-        self._cached_get_existing_paths.cache_clear()
-        path = np.asanyarray(path, dtype=int)
-        if unit.unit.unit_type == 'LIGHT':
-            self.friendly_light_paths[unit.unit_id] = path
-        elif unit.unit.unit_type == 'HEAVY':
-            self.friendly_heavy_paths[unit.unit_id] = path
-        else:
-            raise TypeError(f'unit not correct type {unit}')
+def _adjust_path_back(path: np.ndarray, lowers):
+    """Adjust path back to the original array coords"""
+    if len(path) > 0:
+        path = np.array(path, dtype=int) + np.array(lowers, dtype=int)
+    return path
 
-    def update(
+
+def _get_bounds(start, end, margin, map_shape):
+    """Get bound of reduced area map"""
+    # Convert to coords array
+    coords = np.array([start, end])
+
+    # Bounds of start, end (x, y)
+    mins = np.min(coords, axis=0)
+    maxs = np.max(coords, axis=0)
+
+    # Bounds including margin (x, y)
+    lowers = [max(0, v - margin) for v in mins]
+    uppers = [
+        min(s - 1, v + margin) + 1
+        for s, v in zip(reversed(map_shape), maxs)
+    ]  # +1 for range
+    return lowers, uppers
+
+
+class Pather:
+    """Calculates paths and generates actions for paths, updating the current paths when actions are generated"""
+
+    def __init__(
         self,
-        rubble: np.ndarray,
-        friendly_units: Dict[str, UnitManager],
-        enemy_units: Dict[str, UnitManager],
-        enemy_factories: Dict[str, FactoryManager],
+        unit_paths: AllUnitPaths,
+        base_costmap: np.ndarray,
+        full_costmap: np.ndarray = None,
     ):
-        self._cached_get_existing_paths.cache_clear()
-        self.rubble = rubble
+        self.unit_paths = unit_paths
+        self.base_costmap = base_costmap
+        self.full_costmap = full_costmap if full_costmap else base_costmap
 
-        # Update Units
-        data = {
-            'friendly': {'light': {}, 'heavy': {}},
-            'enemy': {'light': {}, 'heavy': {}},
-        }
-
-        for units, player in zip(
-            [friendly_units.values(), enemy_units.values()], data.keys()
-        ):
-            for unit in units:
-                if unit.unit.unit_type == 'LIGHT':
-                    data[player]['light'][unit.unit_id] = unit.actions_to_path()
-                elif unit.unit.unit_type == 'HEAVY':
-                    data[player]['heavy'][unit.unit_id] = unit.actions_to_path()
-                else:
-                    raise RuntimeError
-
-        self.all_paths = data
-        self.friendly_light_paths = data['friendly']['light']
-        self.friendly_heavy_paths = data['friendly']['heavy']
-        self.enemy_light_paths = data['enemy']['light']
-        self.enemy_heavy_paths = data['enemy']['heavy']
-
-        # Update Enemy Factories
-        self.enemy_factories = {
-            factory_id: factory.factory.pos_slice
-            for factory_id, factory in enemy_factories.items()
-        }
-        arr = np.zeros(rubble.shape)
-        for s in self.enemy_factories.values():
-            arr[s] = 1.0
-        self.enemy_factories_array = arr
-
-    def path(self, start, end, rubble: Union[bool, np.ndarray] = False):
-        """
-        Full A* pathing using whole grid, but slow
-        Note: no check of unit collisions here, only avoids enemy factories
-        """
-        finder = AStarFinder()
-        cost_map = self.get_costmap(rubble=rubble)
-        cost_map = cost_map.T  # Required for finder
-        grid = Grid(matrix=cost_map)
-        start = grid.node(*start)
-        end = grid.node(*end)
-        path, runs = finder.find_path(start, end, grid)
-        path = np.array(path)
-        return path
-
-    def _get_existing_paths(
-        self, collision_params: CollisionParams
-    ) -> Dict[str, List[Tuple[int, int]]]:
-        """Return the existing paths of other units taking into account collision_params
-        Note: This method is cached in the __init__ and should be called through self.get_existing_paths
-        """
-        paths = {}
-        for attr in ['friendly_light', 'friendly_heavy', 'enemy_light', 'enemy_heavy']:
-            if getattr(collision_params, attr):
-                for unit_id, path in getattr(self, f'{attr}_paths').items():
-                    paths[unit_id] = path
-        for k in collision_params.ignore_ids:
-            paths.pop(k, None)
-        return paths
-
-    def get_existing_paths(
-        self, collision_params: CollisionParams
-    ) -> Dict[str, List[Tuple[int, int]]]:
-        """Return the existing paths of other units taking into account collision_params"""
-        return self._cached_get_existing_paths(collision_params)
-
-    def check_collisions(
-        self, path: np.ndarray, collision_params: CollisionParams
-    ) -> Union[None, Tuple[int, int]]:
-        """Returns first collision coordinate if collision, else None"""
-        path = np.asanyarray(path, dtype=int)
-        other_paths_dict = self.get_existing_paths(collision_params)
-        other_paths = list_of_tuples_to_array(list(other_paths_dict.values()))
-
-        for i, pos in enumerate(path):
-            step = collision_params.starting_step + i
-            if step >= collision_params.look_ahead_turns:
-                return None
-            pos = np.array(pos)
-            if step < other_paths.shape[1]:
-                others_positions_at_step = other_paths[:, step, :]
-                if np.any(np.all(others_positions_at_step == pos, axis=1)):
-                    return tuple(pos)
-            else:
-                return None
-        return None
-
-    def path_fast(
+    def fast_path(
         self,
-        start,
-        end,
-        rubble: Union[bool, np.ndarray] = False,
-        margin=1,
-        collision_params: Optional[CollisionParams] = None,
-    ) -> np.ndarray:
+        start_pos: Tuple[int, int],
+        end_pos: Tuple[int, int],
+        costmap=None,
+        margin=2,
+    ):
         """Faster A* pathing by only considering a box around the start/end coord (with additional margin)
 
         If collision_params passed in, this will try to avoid collisions.
@@ -211,71 +121,57 @@ class NewPathFinder:
             # # # e #
             # # # # #
         """
+        costmap = costmap if costmap is not None else self.full_costmap
+        lowers, uppers = _get_bounds(start_pos, end_pos, margin, costmap.shape)
+        sub_costmap = _get_sub_area(costmap, lowers, uppers)
+        new_start, new_end = _adjust_coords(start_pos, end_pos, lowers)
+        sub_path = self.slow_path(new_start, new_end, sub_costmap)
+        path = _adjust_path_back(sub_path, lowers)
+        return path
 
-        def _path(additional_blocked_cells=None):
-            nonlocal start, end
+    def append_path_to_actions(
+            self, unit: UnitManager, path: Union[List[Tuple[int, int]], np.ndarray]
+    ) -> None:
+        """
+        Turns the path into actions that are appended to unit. This is how path should ALWAYS be updated
+        """
+        # TODO: Modify previous actions n if first new action is same direction (just a slight optimization)
+        actions = util.path_to_actions(path)
+        unit.action_queue.extend(actions)
+        if len(path) > 0:
+            unit.pos = path[-1]
+        self.unit_paths.update_path(unit)
 
-            additional_blocked_cells = (
-                additional_blocked_cells if additional_blocked_cells else []
-            )
+    def append_direction_to_actions(self, unit: UnitManager, direction: int):
+        """Turn the direction into actions that are appended to unit"""
+        path = [unit.pos, util.add_direction_to_pos(unit.pos, direction)]
+        self.append_path_to_actions(unit, path)
 
-            cost_map = self.get_costmap(rubble=rubble)
-            for x, y in additional_blocked_cells:
-                cost_map[x, y] = -1
+    def slow_path(
+        self, start_pos: Tuple[int, int], end_pos: Tuple[int, int], costmap=None
+    ) -> np.ndarray:
+        """
+        Find A* path from start to end (does not update anything)
+        Note: self.full_costmap (or provided costmap) should be such that collisions impossible for first 1 or 2 turns
 
-            coords = np.array([start, end])
+        Args:
+            start_pos: start of path coord
+            end_pos: end of path coord
+            base_cost_only: Set to True to use only the base costmap
 
-            # Bounds of start, end (x, y)
-            mins = np.min(coords, axis=0)
-            maxs = np.max(coords, axis=0)
+        Returns:
+            array shape (len, 2) for path
+            Note: If start==end path has len 1
+            Note: If fails to find path, len 0
+        """
+        costmap = costmap if costmap is not None else self.full_costmap
 
-            # Bounds including margin (x, y)
-            lowers = [max(0, v - margin) for v in mins]
-            uppers = [
-                min(s - 1, v + margin) + 1
-                for s, v in zip(reversed(cost_map.shape), maxs)
-            ]  # +1 for range
-
-            # Ranges
-            x_range, y_range = [(lowers[i], uppers[i]) for i in range(2)]
-
-            # Reduced size cost map
-            new_cost = cost_map[range(*x_range), :][:, range(*y_range)]
-
-            # Make small grid and set start/end
-            new_cost = new_cost.T  # Required other way around for Grid
-            grid = Grid(matrix=new_cost)
-            grid_start = grid.node(*[c - l for c, l in zip(start, lowers)])
-            grid_end = grid.node(*[c - l for c, l in zip(end, lowers)])
-
-            # Find Path
-            pathfinder = AStarFinder(diagonal_movement=-1)
-            path, runs = pathfinder.find_path(grid_start, grid_end, grid)
-
-            # Readjust for original map
-            if len(path) > 0:
-                path = np.array(path, dtype=int) + np.array(lowers, dtype=int)
-            return path
-
-        path = []
-        if collision_params is None:
-            path = _path()
-        else:
-            blocked_cells = []
-            attempts = 0
-            while attempts < 20:
-                attempts += 1
-                path = _path(blocked_cells)
-                if len(path) == 0:
-                    logging.info(f'No paths found without collisions')
-                    break
-                collision_pos = self.check_collisions(
-                    path, collision_params=collision_params
-                )
-                if collision_pos is None:
-                    break
-                blocked_cells.append(collision_pos)
-            else:
-                logging.info(f'No paths found without collisions after many attempts')
-                return np.array([start])
+        # Run A* pathfinder
+        finder = AStarFinder()
+        costmap = costmap.T  # Required for finder
+        grid = Grid(matrix=costmap)
+        start = grid.node(*start_pos)
+        end = grid.node(*end_pos)
+        path, runs = finder.find_path(start, end, grid)
+        path = np.array(path, dtype=int)
         return path

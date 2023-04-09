@@ -1,4 +1,5 @@
 from typing import Optional, Tuple
+import numpy as np
 import abc
 from dataclasses import dataclass
 from typing import Union
@@ -6,9 +7,7 @@ import logging
 
 from lux.unit import Unit
 from lux.config import UnitConfig
-from util import (
-    actions_to_path,
-)
+import util
 
 from master_state import MasterState
 from actions import Recommendation
@@ -29,16 +28,38 @@ class UnitManager(abc.ABC):
         self.unit = unit
         self.unit_config: UnitConfig = unit.unit_cfg
 
+        # Keep track of pos a start of turn because pos will be updated while planning what to do next
+        self.start_of_turn_pos = unit.pos
+
     def update(self, unit: Unit):
         self.unit = unit
+        self.start_of_turn_pos = unit.pos
+
+    @property
+    def current_path(self) -> np.ndarray:
+        """Return current path from start of turn based on current action queue"""
+        return util.new_actions_to_path(self.start_of_turn_pos, self.action_queue)
+
+    @property
+    def action_queue(self):
+        return self.unit.action_queue
+
+    @action_queue.setter
+    def action_queue(self, value):
+        self.unit.action_queue = value
 
     @property
     def pos(self):
         return self.unit.pos
 
+    @pos.setter
+    def pos(self, value):
+        self.unit.pos = value
+
     def actions_to_path(self, actions=None):
         """
-        Return a list of coordinates of the path the actions represent
+        Return a list of coordinates of the path the actions represent starting from unit.pos
+        (which may have been updated since beginning of turn)
         """
         if actions is None:
             actions = self.unit.action_queue

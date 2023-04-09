@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from .master_state import Recommendation
 
     # from .path_finder import PathFinder
-    from .new_path_finder import NewPathFinder
+    from .new_path_finder import Pather
 
 
 @dataclass
@@ -46,6 +46,7 @@ class UnitsToAct:
 @dataclass
 class Collision:
     """First collision only"""
+
     unit_id: str
     other_unit_id: str
     pos: Tuple[int, int]
@@ -61,6 +62,7 @@ class Collisions:
 @dataclass
 class CloseEnemies:
     """All nearby enemies"""
+
     unit_id: str
     unit_pos: Tuple[int, int]
     enemy_id: List[str]
@@ -89,17 +91,30 @@ class AllUnitPaths:
     friendly: FriendlyUnitPaths = FriendlyUnitPaths
     enemy: EnemyUnitPaths = EnemyUnitPaths
 
+    def __post_init__(self):
+        self.unit_location_dict = {
+            unit_id: d for d in [self.friendly.light, self.friendly.heavy, self.enemy.light, self.enemy.heavy] for unit_id in d
+        }
+
+    def update_path(self, unit: UnitManager):
+        """Update the path of a unit that is already in AllUnitPaths"""
+        unit_id, path = unit.unit_id, unit.current_path
+        if unit_id not in self.unit_location_dict:
+            raise KeyError(f'{unit_id} is not in the AllUnitPaths. Only have {self.unit_location_dict.keys()}')
+        self.unit_location_dict[unit_id][unit_id] = path
+
+
 
 class TurnPlanner:
     search_dist = 10
 
-    def __init__(self, master: MasterState, pathfinder: NewPathFinder):
+    def __init__(self, master: MasterState):
         """Assuming this is called after beginning of turn update"""
         self.master = master
-        self.pathfinder = pathfinder
 
         # Changed during turn planning
         self.unit_paths = AllUnitPaths()  # Begins empty
+        self.pathfinder = Pather(unit_paths=self.unit_paths)
 
         # Caching
         self._costmap: np.ndarray = None
@@ -155,6 +170,8 @@ class TurnPlanner:
     def calculate_collisions(self, check_steps=2) -> Collisions:
         """Calculates the upcoming collisions based on action queues of all units"""
         if self._upcoming_collisions is None:
+            pathfinder = Pather()
+
             pass
             self._upcoming_collisions = None
         return self._upcoming_collisions
@@ -274,13 +291,11 @@ class TurnPlanner:
 
         return new_cost
 
-    def update_pathfinder(self, unit: FriendlyUnitManger) -> NewPathFinder:
+    def update_pathfinder(self, unit: FriendlyUnitManger) -> Pather:
         """Update the shared pathfinder with the specific costmap for the current unit"""
         base_costmap = self.base_costmap()
         # TODO: Could do more to the base costmap here (make areas higher or lower)
-        new_costmap = self.get_costmap_with_paths(
-            base_costmap=base_costmap, unit=unit
-        )
+        new_costmap = self.get_costmap_with_paths(base_costmap=base_costmap, unit=unit)
         # TODO: or here
         self.pathfinder.costmap = new_costmap
         return self.pathfinder

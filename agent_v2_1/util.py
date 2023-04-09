@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 
+from deprecation import deprecated
 from typing import Tuple, List, Union, Optional, TYPE_CHECKING
 import logging
 import copy
@@ -32,6 +33,10 @@ from lux.cargo import UnitCargo
 if TYPE_CHECKING:
     from path_finder import PathFinder, CollisionParams
     from unit_manager import FriendlyUnitManger
+
+POS_TYPE = Union[Tuple[int, int], np.ndarray]
+PATH_TYPE = Union[List[Tuple[int, int]], np.ndarray]
+
 
 UTIL_VERSION = 'AGENT_V2'
 
@@ -669,10 +674,8 @@ def path_to_actions(path):
     return actions
 
 
-def actions_to_path(unit, actions):
-    """Convert list of actions to path for unit (considers other actions as move center)"""
-    pos = np.array(unit.pos)
-    path = [pos]
+def new_actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray]) -> np.ndarray:
+    path = [start_pos]
     for action in actions:
         if action[0] == MOVE:
             direction = action[1]
@@ -681,6 +684,13 @@ def actions_to_path(unit, actions):
         pos = pos + MOVE_DELTAS[direction] * action[ACT_N]
         path.append(pos)
     return np.array(path)
+
+
+@deprecated(deprecated_in='2.1.0', details='use new_actions_to_path instead, and provide the start pos (unit.pos for '
+                                           'backwards compatability)')
+def actions_to_path(unit, actions):
+    """Convert list of actions to path for unit (considers other actions as move center)"""
+    return new_actions_to_path(unit.pos, actions)
 
 
 ################### Plotting #################
