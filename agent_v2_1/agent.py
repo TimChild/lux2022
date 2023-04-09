@@ -11,7 +11,7 @@ from lux.config import EnvConfig
 from lux.utils import my_turn_to_place_factory
 
 from unit_manager import UnitManager, FriendlyUnitManger, EnemyUnitManager
-from master_state import MasterState
+from master_state import MasterState, AllUnits
 from factory_manager import FriendlyFactoryManager
 from actions import (
     unit_should_consider_acting,
@@ -36,6 +36,153 @@ if TYPE_CHECKING:
     from .new_path_finder import Pather
 
 
+def find_collisions1(all_unit_paths: AllUnitPaths) -> List[Collision]:
+    """
+    Find collisions between friendly units and all units (friendly and enemy) in the given paths.
+
+    Args:
+        all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
+
+    Returns:
+        A list of Collision objects containing information about each detected collision.
+    """
+    collisions = []
+
+    friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
+    enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
+
+    for unit_id, unit_path in friendly_units.items():
+        for other_unit_id, other_unit_path in {**friendly_units, **enemy_units}.items():
+            # Skip self-comparison
+            if unit_id == other_unit_id:
+                continue
+
+            # Find the minimum path length to avoid index out of range errors
+            min_path_length = min(len(unit_path), len(other_unit_path))
+
+            # Check if there's a collision at any step
+            for step in range(min_path_length):
+                if np.array_equal(unit_path[step], other_unit_path[step]):
+                    collision = Collision(
+                        unit_id=unit_id,
+                        other_unit_id=other_unit_id,
+                        pos=tuple(unit_path[step]),
+                        step=step,
+                    )
+                    collisions.append(collision)
+
+    return collisions
+
+
+def find_collisions2(all_unit_paths: AllUnitPaths) -> List[Collision]:
+    """
+    Find collisions between friendly units and all units (friendly and enemy) in the given paths.
+
+    Args:
+        all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
+
+    Returns:
+        A list of Collision objects containing information about each detected collision.
+    """
+    collisions = []
+
+    friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
+    enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
+    all_units = {**friendly_units, **enemy_units}
+
+    for unit_id, unit_path in friendly_units.items():
+        for other_unit_id, other_unit_path in all_units.items():
+            # Skip self-comparison
+            if unit_id == other_unit_id:
+                continue
+
+            # Broadcast and compare the paths to find collisions
+            unit_path_broadcasted = unit_path[:, np.newaxis]
+            other_unit_path_broadcasted = other_unit_path[np.newaxis, :]
+
+            # Calculate the differences in positions at each step
+            diff = np.abs(unit_path_broadcasted - other_unit_path_broadcasted)
+
+            # Find the indices where both x and y differences are zero (i.e., collisions)
+            collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
+
+            # Create Collision objects for each detected collision
+            for index in collision_indices:
+                collision = Collision(
+                    unit_id=unit_id,
+                    other_unit_id=other_unit_id,
+                    pos=tuple(unit_path[index[0]]),
+                    step=index[0],
+                )
+                collisions.append(collision)
+
+    return collisions
+
+
+def find_collisions3(all_unit_paths: AllUnitPaths) -> List[Collision]:
+    """
+    Find collisions between friendly units and all units (friendly and enemy) in the given paths.
+
+    Args:
+        all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
+
+    Returns:
+        A list of Collision objects containing information about each detected collision.
+    """
+    def pad_paths(paths_dict: Dict[str, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
+        max_path_length = max([path.shape[0] for path in paths_dict.values()])
+        padded_paths = []
+        unit_ids = []
+
+        for unit_id, path in paths_dict.items():
+            padding_length = max_path_length - path.shape[0]
+            padded_path = np.pad(
+                path,
+                ((0, padding_length), (0, 0)),
+                mode='constant',
+                constant_values=np.nan,
+            )
+            padded_paths.append(padded_path)
+            unit_ids.append(unit_id)
+
+        return np.array(padded_paths), unit_ids
+
+    collisions = []
+
+    friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
+    enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
+    all_units = {**friendly_units, **enemy_units}
+
+    friendly_paths, friendly_ids = pad_paths(friendly_units)
+    enemy_paths, enemy_ids = pad_paths(enemy_units)
+    all_paths, all_ids = pad_paths(all_units)
+
+    # Broadcast and compare the friendly paths with all paths to find collisions
+    diff = np.abs(friendly_paths[:, :, np.newaxis] - all_paths[np.newaxis, :, :])
+
+    # Find the indices where both x and y differences are zero (i.e., collisions)
+    collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
+
+    # Create Collision objects for each detected collision
+    for index in collision_indices:
+        unit_id = friendly_ids[index[0]]
+        other_unit_id = all_ids[index[2]]
+
+        # Skip self-comparison
+        if unit_id == other_unit_id:
+            continue
+
+        collision = Collision(
+            unit_id=unit_id,
+            other_unit_id=other_unit_id,
+            pos=tuple(friendly_paths[index[0], index[1]]),
+            step=index[1],
+        )
+        collisions.append(collision)
+
+    return collisions
+
+
 @dataclass
 class UnitsToAct:
     needs_to_act: List[FriendlyUnitManger]
@@ -49,6 +196,7 @@ class Collision:
 
     unit_id: str
     other_unit_id: str
+    other_unit_is_enemy: bool
     pos: Tuple[int, int]
     step: int
 
@@ -93,28 +241,49 @@ class AllUnitPaths:
 
     def __post_init__(self):
         self.unit_location_dict = {
-            unit_id: d for d in [self.friendly.light, self.friendly.heavy, self.enemy.light, self.enemy.heavy] for unit_id in d
+            unit_id: d
+            for d in [
+                self.friendly.light,
+                self.friendly.heavy,
+                self.enemy.light,
+                self.enemy.heavy,
+            ]
+            for unit_id in d
         }
 
     def update_path(self, unit: UnitManager):
         """Update the path of a unit that is already in AllUnitPaths"""
         unit_id, path = unit.unit_id, unit.current_path
         if unit_id not in self.unit_location_dict:
-            raise KeyError(f'{unit_id} is not in the AllUnitPaths. Only have {self.unit_location_dict.keys()}')
+            raise KeyError(
+                f'{unit_id} is not in the AllUnitPaths. Only have {self.unit_location_dict.keys()}'
+            )
         self.unit_location_dict[unit_id][unit_id] = path
 
+    def calculate_collisions(self, check_steps: int = 2) -> Collisions:
+        """Calculate first collisions in the next <check_steps> for all units"""
+        collisions = find_collisions3(self)
+        Collisions(friendly={collision.unit_id: collision for collision in collisions})
+        pass
+        # Collisions(
+        #     friendly={
+        #         unit_id: Collision(
+        #             unit_id=unit_id,
+        #             other_unit_id=other_unit_id,
+        #             pos=collision_pos,
+        #             step=collision_step,
+        #         )
+        #     }
+        # )
 
 
 class TurnPlanner:
     search_dist = 10
 
-    def __init__(self, master: MasterState):
+    def __init__(self, master: MasterState, units: AllUnits):
         """Assuming this is called after beginning of turn update"""
         self.master = master
-
-        # Changed during turn planning
-        self.unit_paths = AllUnitPaths()  # Begins empty
-        self.pathfinder = Pather(unit_paths=self.unit_paths)
+        self.all_units = units
 
         # Caching
         self._costmap: np.ndarray = None
@@ -170,10 +339,30 @@ class TurnPlanner:
     def calculate_collisions(self, check_steps=2) -> Collisions:
         """Calculates the upcoming collisions based on action queues of all units"""
         if self._upcoming_collisions is None:
-            pathfinder = Pather()
-
-            pass
-            self._upcoming_collisions = None
+            units = self.all_units
+            friendly_paths = FriendlyUnitPaths(
+                light={
+                    unit_id: unit.current_path
+                    for unit_id, unit in units.friendly.light.items()
+                },
+                heavy={
+                    unit_id: unit.current_path
+                    for unit_id, unit in units.friendly.heavy.items()
+                },
+            )
+            enemy_paths = EnemyUnitPaths(
+                light={
+                    unit_id: unit.current_path
+                    for unit_id, unit in units.enemy.light.items()
+                },
+                heavy={
+                    unit_id: unit.current_path
+                    for unit_id, unit in units.enemy.heavy.items()
+                },
+            )
+            all_unit_paths = AllUnitPaths(friendly=friendly_paths, enemy=enemy_paths)
+            collisions = all_unit_paths.calculate_collisions(check_steps=check_steps)
+            self._upcoming_collisions = collisions
         return self._upcoming_collisions
 
     def calculate_close_enemies(self) -> Dict[str, CloseEnemies]:
@@ -206,6 +395,7 @@ class TurnPlanner:
 
             data.append(
                 {
+                    'unit': unit,
                     'distance_to_factory': unit_distance_map[
                         unit_factory.factory.pos[0], unit_factory.factory.pos[1]
                     ]
@@ -291,14 +481,14 @@ class TurnPlanner:
 
         return new_cost
 
-    def update_pathfinder(self, unit: FriendlyUnitManger) -> Pather:
+    def get_full_costmap(
+        self, unit: FriendlyUnitManger, base_costmap: np.ndarray
+    ) -> np.ndarray:
         """Update the shared pathfinder with the specific costmap for the current unit"""
-        base_costmap = self.base_costmap()
         # TODO: Could do more to the base costmap here (make areas higher or lower)
         new_costmap = self.get_costmap_with_paths(base_costmap=base_costmap, unit=unit)
         # TODO: or here
-        self.pathfinder.costmap = new_costmap
-        return self.pathfinder
+        return new_costmap
 
     def process_units(
         self,
@@ -316,14 +506,21 @@ class TurnPlanner:
             Actions to update units with
         """
         units_to_act = self.units_should_consider_acting(self.master.units.friendly.all)
-        unit_data = self.collect_unit_data(units_to_act)
-        sorted_units = self.sort_units_by_priority(unit_data)
+        unit_data_df = self.collect_unit_data(units_to_act.needs_to_act)
+        sorted_data_df = self.sort_units_by_priority(unit_data_df)
 
         base_costmap = self.base_costmap()
 
-        for unit in sorted_units.itertuples():
+        for row in sorted_data_df.itertuples():
+            # Row is a NamedTuple with column names
+            unit = row.unit
             unit: FriendlyUnitManger
-            pathfinder = self.update_pathfinder(unit)
+            full_costmap = self.get_full_costmap(unit, base_costmap)
+            self.master.pathfinder = Pather(
+                unit_paths=self.unit_paths,
+                base_costmap=base_costmap,
+                full_costmap=full_costmap,
+            )
 
             actions_before = unit.unit.action_queue
             # Figure out new actions for unit  (i.e. RoutePlanners)
@@ -670,7 +867,6 @@ parts of game)
     - Not fixed length...
     - Could give positions at least as an array of values size of map (but that is a lot!)
 """
-
 
 # if __name__ == '__main__':
 #     obs = GeneralObs()
