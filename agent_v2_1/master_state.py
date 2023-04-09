@@ -80,24 +80,26 @@ class FactoryMaps:
     """-1 where no factory, factory_id_num where factory"""
 
     all: np.ndarray
-    by_player: dict[str, np.ndarray]
+    friendly: np.ndarray
+    enemy: np.ndarray
 
     @classmethod
-    def from_game_state(cls, game_state: GameState):
-        # TODO: This came from MasterState, needs to be implemented here instead I think
+    def from_game_state(cls, game_state: GameState, player: str):
         factory_map = game_state.board.factory_occupancy_map
         factories = game_state.factories
 
-        by_player_maps = {}
+        by_team = {}
         for team in game_state.teams:
             fs = factories[team]
             arr = np.ones(factory_map.shape, dtype=int) * -1
             for f in fs.values():
                 f_num = int(f.unit_id[-1])
                 arr[factory_map == f_num] = f_num
-            by_player_maps[team] = arr
+            by_team[team] = arr
 
-        factory_maps = cls(all=factory_map, by_player=by_player_maps)
+        friendly = by_team[player]
+        enemy = by_team['player_0' if player == 'player_1' else 'player_1']
+        factory_maps = cls(all=factory_map, friendly=friendly, enemy=enemy)
         return factory_maps
 
 
@@ -454,7 +456,7 @@ class Maps:
 
         self.first_update = False
 
-    def update(self, game_state: GameState):
+    def update(self, game_state: GameState, player: str):
         board = game_state.board
         if not self.first_update:
             self.ice = board.ice
@@ -462,7 +464,9 @@ class Maps:
             self.first_update = True
         self.rubble = board.rubble
         self.lichen = board.lichen
-        self.factory_maps = FactoryMaps.from_game_state(game_state=game_state)
+        self.factory_maps = FactoryMaps.from_game_state(
+            game_state=game_state, player=player
+        )
         # self.unit_map = game_state.units.
 
     def resource_at_tile(self, pos) -> int:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import abc
+import functools
 from typing import TYPE_CHECKING, List, Dict, Tuple
 import pandas as pd
 from dataclasses import dataclass, field
@@ -16,16 +17,12 @@ from factory_manager import FriendlyFactoryManager
 from actions import (
     unit_should_consider_acting,
     factory_should_consider_acting,
-    calculate_high_level_unit_action,
-    calculate_high_level_factory_actions,
 )
 from mining_planner import MiningPlanner
 from rubble_clearing_planner import RubbleClearingPlanner
-from factory_manager import BuildHeavyRecommendation
 
 import util
 
-# logging.basicConfig(filename='agent_log.log', level=logging.INFO)
 logging.basicConfig(level=logging.INFO)
 logging.info('Starting Log')
 
@@ -36,7 +33,9 @@ if TYPE_CHECKING:
     from .new_path_finder import Pather
 
 
-def find_collisions1(all_unit_paths: AllUnitPaths) -> List[Collision]:
+def find_collisions1(
+    all_unit_paths: AllUnitPaths, check_num_steps: int = None
+) -> List[Collision]:
     """
     Find collisions between friendly units and all units (friendly and enemy) in the given paths.
 
@@ -60,12 +59,22 @@ def find_collisions1(all_unit_paths: AllUnitPaths) -> List[Collision]:
             # Find the minimum path length to avoid index out of range errors
             min_path_length = min(len(unit_path), len(other_unit_path))
 
-            # Check if there's a collision at any step
-            for step in range(min_path_length):
+            # Optionally only check fewer steps
+            check_num_steps = (
+                min_path_length
+                if check_num_steps is None
+                else min(min_path_length, check_num_steps)
+            )
+
+            # Check if there's a collision at any step up to check_num_steps
+            for step in range(check_num_steps):
                 if np.array_equal(unit_path[step], other_unit_path[step]):
                     collision = Collision(
                         unit_id=unit_id,
                         other_unit_id=other_unit_id,
+                        other_unit_is_enemy=False
+                        if other_unit_id in friendly_units
+                        else True,
                         pos=tuple(unit_path[step]),
                         step=step,
                     )
@@ -84,6 +93,7 @@ def find_collisions2(all_unit_paths: AllUnitPaths) -> List[Collision]:
     Returns:
         A list of Collision objects containing information about each detected collision.
     """
+    raise NotImplementedError('Need to make some modifications first')
     collisions = []
 
     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
@@ -129,11 +139,11 @@ def find_collisions3(all_unit_paths: AllUnitPaths) -> List[Collision]:
     Returns:
         A list of Collision objects containing information about each detected collision.
     """
+
     def pad_paths(paths_dict: Dict[str, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
         max_path_length = max([path.shape[0] for path in paths_dict.values()])
         padded_paths = []
         unit_ids = []
-
         for unit_id, path in paths_dict.items():
             padding_length = max_path_length - path.shape[0]
             padded_path = np.pad(
@@ -147,6 +157,7 @@ def find_collisions3(all_unit_paths: AllUnitPaths) -> List[Collision]:
 
         return np.array(padded_paths), unit_ids
 
+    raise NotImplementedError('Need to make some modifications first')
     collisions = []
 
     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
@@ -208,14 +219,34 @@ class Collisions:
 
 
 @dataclass
-class CloseEnemies:
-    """All nearby enemies"""
+class CloseUnits:
+    """Record nearby units"""
 
     unit_id: str
     unit_pos: Tuple[int, int]
-    enemy_id: List[str]
-    enemy_pos: List[Tuple[int, int]]
-    distance: List[int]
+    other_unit_ids: List[str] = list
+    other_unit_positions: List[Tuple[int, int]] = list
+    other_unit_distances: List[int] = list
+
+
+@dataclass
+class CloseEnemies(CloseUnits):
+    """Record nearby enemy units"""
+
+    pass
+
+
+@dataclass
+class CloseFriendlies(CloseUnits):
+    """Record nearby friendly units"""
+
+    pass
+
+
+@dataclass
+class AllCloseUnits:
+    close_to_friendly: Dict[str, CloseFriendlies]
+    close_to_enemy: Dict[str, CloseEnemies]
 
 
 @dataclass
@@ -262,23 +293,26 @@ class AllUnitPaths:
 
     def calculate_collisions(self, check_steps: int = 2) -> Collisions:
         """Calculate first collisions in the next <check_steps> for all units"""
-        collisions = find_collisions3(self)
-        Collisions(friendly={collision.unit_id: collision for collision in collisions})
-        pass
-        # Collisions(
-        #     friendly={
-        #         unit_id: Collision(
-        #             unit_id=unit_id,
-        #             other_unit_id=other_unit_id,
-        #             pos=collision_pos,
-        #             step=collision_step,
-        #         )
-        #     }
-        # )
+        collisions = find_collisions1(self, check_num_steps=check_steps)
+        friendly = []
+        enemy = []
+        for collision in collisions:
+            if collision.other_unit_is_enemy:
+                enemy.append(collision)
+            else:
+                friendly.append(collision)
+        collisions = Collisions(
+            friendly={collision.unit_id: collision for collision in friendly},
+            enemy={collision.unit_id: collision for collision in enemy},
+        )
+        return collisions
 
 
 class TurnPlanner:
-    search_dist = 10
+    search_dist = 6
+    close_threshold = 5
+    check_collision_steps = 2
+    kernel_dist = 5
 
     def __init__(self, master: MasterState, units: AllUnits):
         """Assuming this is called after beginning of turn update"""
@@ -288,7 +322,7 @@ class TurnPlanner:
         # Caching
         self._costmap: np.ndarray = None
         self._upcoming_collisions: Collisions = None
-        self._close_enemies: Dict[str, CloseEnemies] = {}
+        self._close_units: Dict[str, CloseEnemies] = {}
 
     def units_should_consider_acting(
         self, units: List[FriendlyUnitManger]
@@ -336,41 +370,89 @@ class TurnPlanner:
                 should_not_act.append(unit)
         return UnitsToAct(needs_to_act=needs_to_act, should_not_act=should_not_act)
 
-    def calculate_collisions(self, check_steps=2) -> Collisions:
+    def get_unit_paths(self) -> AllUnitPaths:
+        """Gets the current unit paths"""
+        units = self.all_units
+        # Collect all current paths of units
+        friendly_paths = FriendlyUnitPaths(
+            light={
+                unit_id: unit.current_path
+                for unit_id, unit in units.friendly.light.items()
+            },
+            heavy={
+                unit_id: unit.current_path
+                for unit_id, unit in units.friendly.heavy.items()
+            },
+        )
+        enemy_paths = EnemyUnitPaths(
+            light={
+                unit_id: unit.current_path
+                for unit_id, unit in units.enemy.light.items()
+            },
+            heavy={
+                unit_id: unit.current_path
+                for unit_id, unit in units.enemy.heavy.items()
+            },
+        )
+        all_unit_paths = AllUnitPaths(friendly=friendly_paths, enemy=enemy_paths)
+        return all_unit_paths
+
+    def calculate_collisions(self) -> Collisions:
         """Calculates the upcoming collisions based on action queues of all units"""
-        if self._upcoming_collisions is None:
-            units = self.all_units
-            friendly_paths = FriendlyUnitPaths(
-                light={
-                    unit_id: unit.current_path
-                    for unit_id, unit in units.friendly.light.items()
-                },
-                heavy={
-                    unit_id: unit.current_path
-                    for unit_id, unit in units.friendly.heavy.items()
-                },
+        # if self._upcoming_collisions is None:
+        if True:  # TODO: Can I cache this?
+            all_unit_paths = self.get_unit_paths()
+            collisions = all_unit_paths.calculate_collisions(
+                check_steps=self.check_collision_steps
             )
-            enemy_paths = EnemyUnitPaths(
-                light={
-                    unit_id: unit.current_path
-                    for unit_id, unit in units.enemy.light.items()
-                },
-                heavy={
-                    unit_id: unit.current_path
-                    for unit_id, unit in units.enemy.heavy.items()
-                },
-            )
-            all_unit_paths = AllUnitPaths(friendly=friendly_paths, enemy=enemy_paths)
-            collisions = all_unit_paths.calculate_collisions(check_steps=check_steps)
             self._upcoming_collisions = collisions
         return self._upcoming_collisions
 
-    def calculate_close_enemies(self) -> Dict[str, CloseEnemies]:
+    def calculate_close_units(self) -> AllCloseUnits:
         """Calculates which units are close to enemies"""
-        if self._close_enemies is None:
-            pass
-            self._close_enemies = None
-        return self._close_enemies
+        if self._close_units is None:
+            friendly = {}
+            enemy = {}
+            for all_close, other_units in zip(
+                [friendly, enemy],
+                [self.all_units.friendly.all, self.all_units.enemy.all],
+            ):
+                all_close = {}
+                for unit_id, unit in self.all_units.friendly.all.items():
+                    unit_distance_map = self._unit_distance_map(unit_id)
+                    close = CloseEnemies(unit_id=unit_id, unit_pos=unit.pos)
+                    for other_id, other_unit in other_units.items():
+                        if other_id == unit_id:  # Don't compare to self
+                            continue
+                        dist = unit_distance_map[other_unit.pos[0], other_unit.pos[1]]
+                        if dist <= self.close_threshold:
+                            close.other_unit_ids.append(other_id)
+                            close.other_unit_positions.append(other_unit.pos)
+                            close.other_unit_distances.append(dist)
+                    if len(close.other_unit_ids) > 0:
+                        all_close[unit_id] = close
+            all_close_units = AllCloseUnits(
+                close_to_friendly=friendly, close_to_enemy=enemy
+            )
+            self._close_units = all_close_units
+        return self._close_units
+
+    def calculate_close_enemies(self) -> Dict[str, CloseEnemies]:
+        close_units = self.calculate_close_units()
+        return close_units.close_to_enemy
+
+    @functools.lru_cache(maxsize=128)
+    def _unit_distance_map(self, unit_id: str) -> np.ndarray:
+        """Calculate the distance map for the given unit"""
+        unit = self.all_units.get_unit(unit_id)
+        unit_distance_map = util.pad_and_crop(
+            util.manhattan_kernel(self.search_dist),
+            large_arr=self.master.maps.rubble,
+            x1=unit.pos[0],
+            y1=unit.pos[1],
+            fill_value=self.search_dist,
+        )
+        return unit_distance_map
 
     def collect_unit_data(self, units: List[FriendlyUnitManger]) -> pd.DataFrame:
         """
@@ -384,14 +466,8 @@ class TurnPlanner:
         """
         data = []
         for unit in units:
-            unit_distance_map = util.pad_and_crop(
-                util.manhattan_kernel(self.search_dist),
-                large_arr=self.master.maps.rubble,
-                x1=unit.pos[0],
-                y1=unit.pos[1],
-                fill_value=self.search_dist,
-            )
             unit_factory = self.master.factories.friendly.get(unit.factory_id, None)
+            unit_distance_map = self._unit_distance_map(unit.unit_id)
 
             data.append(
                 {
@@ -441,12 +517,181 @@ class TurnPlanner:
             A numpy array representing the costmap.
         """
         if self._costmap is None:
-            costmap = self.pathfinder.get_costmap(self.master.maps.rubble)
+            costmap = self.master.maps.rubble
+            enemy_factory_map = self.master.maps.factory_maps.enemy
+            costmap[enemy_factory_map >= 0] = -1  # Not traversable
             self._costmap = costmap
         return self._costmap
 
+    def update_costmap_with_path(
+        self,
+        costmap: np.ndarray,
+        unit_pos: util.POS_TYPE,
+        other_path: util.PATH_TYPE,
+        weighting: float = 1,
+        allow_collision: bool = False,
+    ) -> np.ndarray:
+        """
+        Add, reduce, or don't change cost of travelling near other_path based on weighting (+ve, 0, -ve)
+        +ve weighting disallows collision in next turn or two
+        -ve weighting allows collision (assuming that the aim anyway)
+        """
+
+        def generate_collision_likelihood_array(distances: np.ndarray) -> np.ndarray:
+            index_positions = np.arange(len(distances))
+            distance_diffs = np.abs(index_positions - distances)
+
+            # Gaussian-like function (you can adjust the scale and exponent as needed)
+            likelihood_array = np.exp(-0.5 * (distance_diffs**1))
+
+            return likelihood_array
+
+        if weighting > 1 or weighting < -1:
+            raise ValueError(f'got {weighting}. weighting must be between -1 and 1')
+        weighting *= 0.9  # So don't end up multiplying by 0
+        weighting += 1  # So can just multiply arrays by this
+
+        other_path_distance = [util.manhattan(p, unit_pos) for p in other_path]
+        if weighting != 0:
+            amplitudes = generate_collision_likelihood_array(
+                np.array(other_path_distance)
+            )
+            kernels = [
+                # decreasing away from middle (and with distance) * weighting
+                amp ** util.manhattan_kernel(max_dist=self.kernel_dist) * weighting
+                for i, amp in amplitudes
+            ]
+            masks = [
+                util.pad_and_crop(
+                    kernel,
+                    costmap,
+                    p[0],
+                    p[1],
+                    fill_value=1,
+                )
+                for kernel, p in zip(kernels, other_path)
+            ]
+            mask = np.mean(masks, axis=0)
+            costmap *= mask
+        if allow_collision is False:
+            # Block next X steps in other path that are equal in distance to turns (or close)
+            for p, d in zip(other_path[:5], other_path_distance):
+                # Allow a buffer of 1 in case pathing goes differently
+                if abs(d) <= 1:
+                    costmap[p[0], p[1]] = -1
+
+        # If current location becomes blocked, unblock it
+        if costmap[unit_pos[0], unit_pos[1]] == -1:
+            logging.warning(
+                f'{unit_pos} got blocked even though that is the units current position'
+            )
+            costmap[unit_pos[0], unit_pos[1]] = 1  # is not an obstacle (zero is)
+
+        return costmap
+
+    def update_costmap_with_unit(
+        self,
+        costmap: np.ndarray,
+        this_unit: FriendlyUnitManger,
+        other_unit: [FriendlyUnitManger, EnemyUnitManager],
+        other_is_enemy: bool,
+    ) -> np.ndarray:
+        """Add or removes cost from cost map based on distance and path of nearby unit"""
+
+        def handle_collision_case(
+            unit, other_unit, is_enemy, power_threshold_low, power_threshold_high
+        ) -> Tuple[float, bool]:
+            """
+            Handle collision cases based on unit types and their friendly or enemy status.
+
+            Args:
+                unit: A Unit object representing the primary unit.
+                other_unit: A Unit object representing the other unit to compare against.
+                power_threshold_low: A numeric value representing the lower threshold for the power difference between the two units.
+                power_threshold_high: A numeric value representing the upper threshold for the power difference between the two units.
+
+            Returns:
+                tuple of float, bool for weighting and allowing collisions (weighting means prefer move towards -ve or away +ve)
+            """
+            unit_type = unit.unit_type  # "LIGHT" or "HEAVY"
+            other_unit_type = other_unit.unit_type  # "LIGHT" or "HEAVY"
+
+            power_difference = unit.power - other_unit.power
+
+            if unit_type == "HEAVY":
+                if other_unit_type == "HEAVY":
+                    if is_enemy:
+                        if power_difference > power_threshold_high:
+                            # Path toward and try to collide
+                            return -1, True
+                        elif power_difference < power_threshold_low:
+                            # Path away and avoid colliding
+                            return 1, False
+                        else:
+                            # Just avoid colliding
+                            return 0, False
+                    else:  # other_unit is friendly
+                        # Just avoid colliding
+                        return 0, False
+                elif other_unit_type == "LIGHT":
+                    if is_enemy:
+                        # Ignore the other unit completely
+                        return 0, True
+                    else:  # other_unit is friendly
+                        # Avoid colliding
+                        return 0, False
+            elif unit_type == "LIGHT":
+                if other_unit_type == "HEAVY" and is_enemy:
+                    # Path away and avoid colliding
+                    return 1, False
+                elif other_unit_type == "LIGHT" and is_enemy:
+                    if power_difference > power_threshold_high:
+                        # Path toward and try to collide
+                        return -1, True
+                    elif power_difference < power_threshold_low:
+                        # Path away and avoid colliding
+                        return 1, False
+                    else:
+                        # Just avoid colliding
+                        return 0, False
+                else:  # other_unit is friendly
+                    # Just avoid colliding
+                    return 0, False
+            raise RuntimeError(f"Shouldn't reach here")
+
+        if this_unit.unit_type == 'LIGHT':
+            # If we have 10 more energy, prefer moving toward
+            low_power_diff, high_power_diff = -1, 10
+        else:
+            low_power_diff, high_power_diff = -1, 100
+
+        weighting, allow_collision = handle_collision_case(
+            this_unit,
+            other_unit,
+            is_enemy=other_is_enemy,
+            power_threshold_low=low_power_diff,
+            power_threshold_high=high_power_diff,
+        )
+        if not weighting == 0 and allow_collision is True:
+            other_path = other_unit.current_path
+            costmap = self.update_costmap_with_path(
+                costmap,
+                this_unit.pos,
+                other_path,
+                weighting=weighting,
+                allow_collision=allow_collision,
+            )
+        else:
+            # Ignore unit
+            pass
+        return costmap
+
     def get_costmap_with_paths(
-        self, base_costmap: np.ndarray, unit: FriendlyUnitManger
+        self,
+        base_costmap: np.ndarray,
+        all_unit_paths: AllUnitPaths,
+        units_to_act: UnitsToAct,
+        unit: FriendlyUnitManger,
     ) -> np.ndarray:
         """
         Updates the costmap with the paths of the units that have determined paths this turn (not acting, done acting, or enemy)
@@ -456,28 +701,35 @@ class TurnPlanner:
             unit: Unit to get the costmap for (i.e. distances calculated relative to this unit)
         """
         new_cost = base_costmap.copy()
-        # Add enemy paths
-        for unit_id, path in self.unit_paths.enemy.heavy.items():
-            # if current unit is heavy and enemy has signficantly lower energy
-            # make lower cost
-            # update_costmap_with_gaussian_paths(base_costmap, unit)
-            # else:
-            # make higher cost
-            pass
-        for unit_id, path in self.unit_paths.enemy.light.items():
-            # if current unit is heavy or enemy has signficantly lower energy
-            # make lower cost
-            # else:
-            # make higher cost
-            pass
 
-        # Add friendly paths
-        for unit_id, path in self.unit_paths.friendly.heavy.items():
-            # high cost (really want to avoid collision with own units that have set paths already)
-            pass
-        for unit_id, path in self.unit_paths.friendly.light.items():
-            # high cost (really want to avoid collision with own units that have set paths already)
-            pass
+        all_close_units = self.calculate_close_units()
+        units_yet_to_act = [u.unit_id for u in units_to_act.needs_to_act]
+
+        # If close to enemy, add those paths
+        if unit.unit_id in all_close_units.close_to_enemy:
+            close_units = all_close_units.close_to_enemy[unit.unit_id]
+            # For each nearby enemy unit
+            for other_id in close_units.other_unit_ids:
+                other_unit = self.all_units.enemy.get_unit(other_id)
+                new_cost = self.update_costmap_with_unit(
+                    new_cost, this_unit=unit, other_unit=other_unit, other_is_enemy=True
+                )
+
+        # If close to friendly, add those paths
+        if unit.unit_id in all_close_units.close_to_friendly:
+            close_units = all_close_units.close_to_friendly[unit.unit_id]
+            # For each friendly unit if it has already acted or is not acting this turn (others can get out of the way)
+            for other_id in close_units.other_unit_ids:
+                if other_id in units_yet_to_act:
+                    # That other unit can get out of the way
+                    continue
+                other_unit = self.all_units.friendly.get_unit(other_id)
+                new_cost = self.update_costmap_with_unit(
+                    new_cost,
+                    this_unit=unit,
+                    other_unit=other_unit,
+                    other_is_enemy=False,
+                )
 
         return new_cost
 
@@ -492,15 +744,9 @@ class TurnPlanner:
 
     def process_units(
         self,
-        friendly_units: List[FriendlyUnitManger],
-        enemy_units: List[EnemyUnitManager],
     ) -> Dict[str, List[np.ndarray]]:
         """
-        Processes the units by choosing the paths for units that need to act this turn.
-
-        Args:
-            friendly_units: All friendly units after beginning of turn update
-            enemy_units: All enemy units after beginning of turn update
+        Processes the units by choosing the actions the units should take this turn in order of priority
 
         Returns:
             Actions to update units with
@@ -511,13 +757,15 @@ class TurnPlanner:
 
         base_costmap = self.base_costmap()
 
+        all_unit_paths = self.get_unit_paths()
+
         for row in sorted_data_df.itertuples():
             # Row is a NamedTuple with column names
             unit = row.unit
             unit: FriendlyUnitManger
             full_costmap = self.get_full_costmap(unit, base_costmap)
             self.master.pathfinder = Pather(
-                unit_paths=self.unit_paths,
+                unit_paths=all_unit_paths,
                 base_costmap=base_costmap,
                 full_costmap=full_costmap,
             )
@@ -530,6 +778,7 @@ class TurnPlanner:
                 units_to_act.should_not_act.append(unit)
             else:
                 units_to_act.has_updated_actions.append(unit)
+                all_unit_paths.update_path(unit)
 
         actions = {}
         for unit in units_to_act.has_updated_actions:

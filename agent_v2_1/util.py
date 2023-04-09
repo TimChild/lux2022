@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import sys
 
 from deprecation import deprecated
@@ -280,6 +281,7 @@ def count_connected_values(arr: np.ndarray, value: int = 0) -> np.ndarray:
     return count_arr
 
 
+@functools.lru_cache(maxsize=128)
 def manhattan_kernel(max_dist: int) -> np.ndarray:
     """
     Make a kernel with manhattan distance weightings
@@ -686,8 +688,11 @@ def new_actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray]) -> np.nd
     return np.array(path)
 
 
-@deprecated(deprecated_in='2.1.0', details='use new_actions_to_path instead, and provide the start pos (unit.pos for '
-                                           'backwards compatability)')
+@deprecated(
+    deprecated_in='2.1.0',
+    details='use new_actions_to_path instead, and provide the start pos (unit.pos for '
+    'backwards compatability)',
+)
 def actions_to_path(unit, actions):
     """Convert list of actions to path for unit (considers other actions as move center)"""
     return new_actions_to_path(unit.pos, actions)

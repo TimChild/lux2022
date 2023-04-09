@@ -42,7 +42,7 @@ class UnitManager(abc.ABC):
         return util.new_actions_to_path(self.start_of_turn_pos, self.action_queue)
 
     @property
-    def action_queue(self):
+    def action_queue(self) -> List[np.ndarray]:
         return self.unit.action_queue
 
     @action_queue.setter
@@ -50,14 +50,26 @@ class UnitManager(abc.ABC):
         self.unit.action_queue = value
 
     @property
-    def pos(self):
+    def pos(self) -> util.POS_TYPE:
         return self.unit.pos
 
     @pos.setter
     def pos(self, value):
         self.unit.pos = value
 
-    def actions_to_path(self, actions: [None, List[np.ndarray]]=None) -> np.ndarray:
+    @property
+    def unit_type(self) -> str:
+        return self.unit.unit_type
+
+    @property
+    def power(self) -> int:
+        return self.unit.power
+
+    @pos.setter
+    def power(self, value):
+        self.unit.power = value
+
+    def actions_to_path(self, actions: [None, List[np.ndarray]] = None) -> np.ndarray:
         """
         Return a list of coordinates of the path the actions represent starting from unit.pos
         (which may have been updated since beginning of turn)
