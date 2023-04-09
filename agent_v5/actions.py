@@ -27,7 +27,7 @@ class HighLevelAction(abc.ABC):
 
 
 class Recommendation(HighLevelAction):
-    role: str = 'not set'
+    role: str = None
 
 
 def calculate_high_level_unit_action(

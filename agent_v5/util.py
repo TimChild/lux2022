@@ -545,6 +545,9 @@ def list_of_tuples_to_array(lst: List[List[Tuple[int, int]]]) -> np.ndarray:
 
 def path_to_actions(path):
     """Converts path to actions (combines same direction moves by setting higher n)"""
+    if len(path) == 0:
+        logging.warning(f'path_to_actions got empty path {path}')
+        return []
     pos = path[0]
     directions = []
     for p in path[1:]:
@@ -1368,6 +1371,8 @@ def calc_path_to_factory(
     while attempts < 9:
         attempts += 1
         nearest_factory = nearest_non_zero(factory_loc, pos)
+        if tuple(nearest_factory) == tuple(pos):
+            return np.array(pos)
         if nearest_factory is not None:
             path = pathfinder.path_fast(
                 pos,
@@ -1382,7 +1387,7 @@ def calc_path_to_factory(
     # Path to the nearest tile anyway
     else:
         logging.warning(
-            f'No path to any factory tile without collisions, returning path without considering collisions'
+            f'No path to any factory tile without collisions from {pos}  (best factory loc would be {original_nearest_location}), returning path without considering collisions'
         )
         path = pathfinder.path_fast(
             pos,

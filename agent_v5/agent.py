@@ -25,6 +25,7 @@ from actions import (
 )
 
 from mining_planner import MiningPlanner
+from rubble_clearing_planner import RubbleClearingPlanner
 from factory_manager import BuildHeavyRecommendation
 
 
@@ -47,6 +48,7 @@ class Agent:
         )
 
         self.mining_planner = MiningPlanner(self.master)
+        self.rubble_clearing_planner = RubbleClearingPlanner(self.master)
 
     def log(self, message, level=logging.INFO, **kwargs):
         logging.log(level, f'{self.player} {message}', **kwargs)
@@ -106,7 +108,11 @@ class Agent:
             unit = self.master.units.friendly.get_unit(unit_id)
             # TODO: maybe add some logic here as to whether to get recommendations??
             mining_rec = self.mining_planner.recommend(unit_manager=unit)
-            unit_recommendations[unit_id] = {'mine_ice': mining_rec}
+            rubble_clearing_rec = self.rubble_clearing_planner.recommend(unit=unit)
+            unit_recommendations[unit_id] = {
+                'mine_ice': mining_rec,
+                'clear_rubble': rubble_clearing_rec,
+            }
 
         # Unit Actions
         unit_actions = {}
@@ -167,25 +173,30 @@ class Agent:
 
         # Make at least 1 heavy mine ice
         if (
-                (not factory_has_heavy_ice_miner(factory)
+            not factory_has_heavy_ice_miner(factory)
             and unit.unit.unit_type == 'HEAVY'
-            and unit.status.role != 'mine_ice') or
-                (unit.status.role == 'mine_ice' and len(unit.unit.action_queue) == 0)
-        ):
+            and unit.status.role != 'mine_ice'
+        ) or (unit.status.role == 'mine_ice' and len(unit.unit.action_queue) == 0):
             self.log(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
             mining_rec = unit_recommendations.pop('mine_ice', None)
             if mining_rec is not None:
                 unit.status.role = 'mine_ice'
                 return self.mining_planner.carry_out(unit, recommendation=mining_rec)
             else:
-                raise RuntimeError(f'no `mine_ice` recommendation')
+                raise RuntimeError(f'no `mine_ice` recommendation for {unit.unit_id}')
 
         # Make at least one light mine rubble
-        if unit.unit.unit_type == 'LIGHT' and not unit.status.role:
-            self.log(
-                f'TODO: {unit.unit_id} assigned to clear_rubble (for {unit.factory_id})'
-            )
-            unit.status.role = 'rubble_clear'
+        if (unit.unit.unit_type == 'LIGHT' and not unit.status.role) or (
+            unit.status.role == 'clear_rubble' and len(unit.unit.action_queue) == 0
+        ):
+            self.log(f'{unit.unit_id} assigned to clear_rubble (for {unit.factory_id})')
+
+            rubble_clearing_rec = unit_recommendations.pop('clear_rubble', None)
+            if rubble_clearing_rec is not None:
+                unit.status.role = 'clear_rubble'
+                return self.rubble_clearing_planner.carry_out(
+                    unit, recommendation=rubble_clearing_rec
+                )
             pass
         return None
 
@@ -197,6 +208,8 @@ class Agent:
         game_state = obs_to_game_state(step, self.env_cfg, obs)
         # TODO: Use last obs to see what has changed to optimize update? Or master does this?
         self.master.update(game_state)
+        self.mining_planner.update()
+        self.rubble_clearing_planner.update()
         self.last_obs = obs
 
     def _get_general_processed_obs(self) -> GeneralObs:
@@ -268,14 +281,14 @@ def calculate_unit_obs(unit: FriendlyUnitManger, plan: MasterState) -> UnitObs:
 
 
 def calculate_factory_obs(
-    factory: FriendlyFactoryManager, plan: MasterState
+    factory: FriendlyFactoryManager, master: MasterState
 ) -> FactoryObs:
     """Calculate observations that are specific to a particular factory"""
 
     center_tile_occupied = (
         # True if plan.maps.unit_at_tile(factory.factory.pos) is not None else False
         True
-        if plan.units.unit_at_position(factory.factory.pos) is not None
+        if master.units.unit_at_position(factory.factory.pos) is not None
         else False
     )
 
@@ -300,7 +313,7 @@ def calculate_factory_action(
 
         # Want at least one light to do other things
         if (
-            len(factory.light_units) < 0
+            len(factory.light_units) < 1
             and factory.factory.cargo.metal > master.env_cfg.ROBOTS['LIGHT'].METAL_COST
             and factory.factory.power > master.env_cfg.ROBOTS['LIGHT'].POWER_COST
         ):
@@ -312,7 +325,10 @@ def calculate_factory_action(
     if (
         factory.factory.cargo.water > 1000 or master.step > 800
     ):  # Either excess water or near end game
-        if factory.factory.can_water(master.game_state):
+        water_cost = factory.factory.water_cost(master.game_state)
+        if factory.factory.cargo.water - water_cost > min(
+            100, 1000 - master.game_state.real_env_steps
+        ):
             logging.info(
                 f'{factory.factory.unit_id} watering with water={factory.factory.cargo.water} and water_cost={water_cost}'
             )

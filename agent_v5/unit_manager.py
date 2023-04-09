@@ -1,6 +1,7 @@
 from typing import Optional, Tuple
 import abc
 from dataclasses import dataclass
+from typing import Union
 import logging
 
 from lux.unit import Unit
@@ -17,7 +18,7 @@ LOGGING_LEVEL = 3
 
 @dataclass
 class Status:
-    role: str
+    role: Union[str, None]
     current_action: str
     recommendation: Optional[Recommendation]
 
@@ -65,9 +66,7 @@ class FriendlyUnitManger(UnitManager):
         super().__init__(unit)
         self.factory_id = factory_id
         self.master: MasterState = master_state
-        self.status: Status = Status(
-            role='not set', current_action='', recommendation=None
-        )
+        self.status: Status = Status(role=None, current_action='', recommendation=None)
 
     def log(self, message, level=logging.INFO):
         logging.log(

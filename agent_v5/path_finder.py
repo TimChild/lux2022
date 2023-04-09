@@ -283,6 +283,5 @@ class PathFinder:
                 blocked_cells.append(collision_pos)
             else:
                 self.log(f'No paths found without collisions after many attempts')
-                # TODO: Remove this raise
-                raise RuntimeError
+                return np.array([start])
         return path
