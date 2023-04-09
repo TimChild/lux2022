@@ -2,7 +2,7 @@ from luxai_s2.env import LuxAI_S2
 import matplotlib.pyplot as plt
 import numpy as np
 from util import figures_to_subplots, show_env
-from agent_v5.agent import Agent
+from agent_v2_0.agent import Agent
 
 if __name__ == '__main__':
     env = LuxAI_S2()
