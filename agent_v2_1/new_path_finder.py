@@ -92,7 +92,7 @@ class Pather:
     ):
         self.unit_paths = unit_paths
         self.base_costmap = base_costmap
-        self.full_costmap = full_costmap if full_costmap else base_costmap
+        self.full_costmap = full_costmap if full_costmap is not None else base_costmap
 
     def fast_path(
         self,

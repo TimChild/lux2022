@@ -12,12 +12,12 @@ from lux.config import EnvConfig
 from lux.utils import my_turn_to_place_factory
 
 from unit_manager import UnitManager, FriendlyUnitManger, EnemyUnitManager
-from master_state import MasterState, AllUnits
+from master_state import MasterState
 from factory_manager import FriendlyFactoryManager
 from actions import (
-    unit_should_consider_acting,
     factory_should_consider_acting,
 )
+from new_path_finder import Pather
 from mining_planner import MiningPlanner
 from rubble_clearing_planner import RubbleClearingPlanner
 
@@ -28,9 +28,6 @@ logging.info('Starting Log')
 
 if TYPE_CHECKING:
     from .master_state import Recommendation
-
-    # from .path_finder import PathFinder
-    from .new_path_finder import Pather
 
 
 def find_collisions1(
@@ -83,122 +80,122 @@ def find_collisions1(
     return collisions
 
 
-def find_collisions2(all_unit_paths: AllUnitPaths) -> List[Collision]:
-    """
-    Find collisions between friendly units and all units (friendly and enemy) in the given paths.
-
-    Args:
-        all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
-
-    Returns:
-        A list of Collision objects containing information about each detected collision.
-    """
-    raise NotImplementedError('Need to make some modifications first')
-    collisions = []
-
-    friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
-    enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
-    all_units = {**friendly_units, **enemy_units}
-
-    for unit_id, unit_path in friendly_units.items():
-        for other_unit_id, other_unit_path in all_units.items():
-            # Skip self-comparison
-            if unit_id == other_unit_id:
-                continue
-
-            # Broadcast and compare the paths to find collisions
-            unit_path_broadcasted = unit_path[:, np.newaxis]
-            other_unit_path_broadcasted = other_unit_path[np.newaxis, :]
-
-            # Calculate the differences in positions at each step
-            diff = np.abs(unit_path_broadcasted - other_unit_path_broadcasted)
-
-            # Find the indices where both x and y differences are zero (i.e., collisions)
-            collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
-
-            # Create Collision objects for each detected collision
-            for index in collision_indices:
-                collision = Collision(
-                    unit_id=unit_id,
-                    other_unit_id=other_unit_id,
-                    pos=tuple(unit_path[index[0]]),
-                    step=index[0],
-                )
-                collisions.append(collision)
-
-    return collisions
-
-
-def find_collisions3(all_unit_paths: AllUnitPaths) -> List[Collision]:
-    """
-    Find collisions between friendly units and all units (friendly and enemy) in the given paths.
-
-    Args:
-        all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
-
-    Returns:
-        A list of Collision objects containing information about each detected collision.
-    """
-
-    def pad_paths(paths_dict: Dict[str, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
-        max_path_length = max([path.shape[0] for path in paths_dict.values()])
-        padded_paths = []
-        unit_ids = []
-        for unit_id, path in paths_dict.items():
-            padding_length = max_path_length - path.shape[0]
-            padded_path = np.pad(
-                path,
-                ((0, padding_length), (0, 0)),
-                mode='constant',
-                constant_values=np.nan,
-            )
-            padded_paths.append(padded_path)
-            unit_ids.append(unit_id)
-
-        return np.array(padded_paths), unit_ids
-
-    raise NotImplementedError('Need to make some modifications first')
-    collisions = []
-
-    friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
-    enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
-    all_units = {**friendly_units, **enemy_units}
-
-    friendly_paths, friendly_ids = pad_paths(friendly_units)
-    enemy_paths, enemy_ids = pad_paths(enemy_units)
-    all_paths, all_ids = pad_paths(all_units)
-
-    # Broadcast and compare the friendly paths with all paths to find collisions
-    diff = np.abs(friendly_paths[:, :, np.newaxis] - all_paths[np.newaxis, :, :])
-
-    # Find the indices where both x and y differences are zero (i.e., collisions)
-    collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
-
-    # Create Collision objects for each detected collision
-    for index in collision_indices:
-        unit_id = friendly_ids[index[0]]
-        other_unit_id = all_ids[index[2]]
-
-        # Skip self-comparison
-        if unit_id == other_unit_id:
-            continue
-
-        collision = Collision(
-            unit_id=unit_id,
-            other_unit_id=other_unit_id,
-            pos=tuple(friendly_paths[index[0], index[1]]),
-            step=index[1],
-        )
-        collisions.append(collision)
-
-    return collisions
+# def find_collisions2(all_unit_paths: AllUnitPaths) -> List[Collision]:
+#     """
+#     Find collisions between friendly units and all units (friendly and enemy) in the given paths.
+#
+#     Args:
+#         all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
+#
+#     Returns:
+#         A list of Collision objects containing information about each detected collision.
+#     """
+#     raise NotImplementedError('Need to make some modifications first')
+#     collisions = []
+#
+#     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
+#     enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
+#     all_units = {**friendly_units, **enemy_units}
+#
+#     for unit_id, unit_path in friendly_units.items():
+#         for other_unit_id, other_unit_path in all_units.items():
+#             # Skip self-comparison
+#             if unit_id == other_unit_id:
+#                 continue
+#
+#             # Broadcast and compare the paths to find collisions
+#             unit_path_broadcasted = unit_path[:, np.newaxis]
+#             other_unit_path_broadcasted = other_unit_path[np.newaxis, :]
+#
+#             # Calculate the differences in positions at each step
+#             diff = np.abs(unit_path_broadcasted - other_unit_path_broadcasted)
+#
+#             # Find the indices where both x and y differences are zero (i.e., collisions)
+#             collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
+#
+#             # Create Collision objects for each detected collision
+#             for index in collision_indices:
+#                 collision = Collision(
+#                     unit_id=unit_id,
+#                     other_unit_id=other_unit_id,
+#                     pos=tuple(unit_path[index[0]]),
+#                     step=index[0],
+#                 )
+#                 collisions.append(collision)
+#
+#     return collisions
+#
+#
+# def find_collisions3(all_unit_paths: AllUnitPaths) -> List[Collision]:
+#     """
+#     Find collisions between friendly units and all units (friendly and enemy) in the given paths.
+#
+#     Args:
+#         all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
+#
+#     Returns:
+#         A list of Collision objects containing information about each detected collision.
+#     """
+#
+#     def pad_paths(paths_dict: Dict[str, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
+#         max_path_length = max([path.shape[0] for path in paths_dict.values()])
+#         padded_paths = []
+#         unit_ids = []
+#         for unit_id, path in paths_dict.items():
+#             padding_length = max_path_length - path.shape[0]
+#             padded_path = np.pad(
+#                 path,
+#                 ((0, padding_length), (0, 0)),
+#                 mode='constant',
+#                 constant_values=np.nan,
+#             )
+#             padded_paths.append(padded_path)
+#             unit_ids.append(unit_id)
+#
+#         return np.array(padded_paths), unit_ids
+#
+#     raise NotImplementedError('Need to make some modifications first')
+#     collisions = []
+#
+#     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
+#     enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
+#     all_units = {**friendly_units, **enemy_units}
+#
+#     friendly_paths, friendly_ids = pad_paths(friendly_units)
+#     enemy_paths, enemy_ids = pad_paths(enemy_units)
+#     all_paths, all_ids = pad_paths(all_units)
+#
+#     # Broadcast and compare the friendly paths with all paths to find collisions
+#     diff = np.abs(friendly_paths[:, :, np.newaxis] - all_paths[np.newaxis, :, :])
+#
+#     # Find the indices where both x and y differences are zero (i.e., collisions)
+#     collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
+#
+#     # Create Collision objects for each detected collision
+#     for index in collision_indices:
+#         unit_id = friendly_ids[index[0]]
+#         other_unit_id = all_ids[index[2]]
+#
+#         # Skip self-comparison
+#         if unit_id == other_unit_id:
+#             continue
+#
+#         collision = Collision(
+#             unit_id=unit_id,
+#             other_unit_id=other_unit_id,
+#             pos=tuple(friendly_paths[index[0], index[1]]),
+#             step=index[1],
+#         )
+#         collisions.append(collision)
+#
+#     return collisions
 
 
 @dataclass
 class UnitsToAct:
     needs_to_act: List[FriendlyUnitManger]
     should_not_act: List[FriendlyUnitManger]
-    has_updated_actions: List[FriendlyUnitManger] = list
+    has_updated_actions: List[FriendlyUnitManger] = field(default_factory=list)
 
 
 @dataclass
@@ -224,9 +221,9 @@ class CloseUnits:
 
     unit_id: str
     unit_pos: Tuple[int, int]
-    other_unit_ids: List[str] = list
-    other_unit_positions: List[Tuple[int, int]] = list
-    other_unit_distances: List[int] = list
+    other_unit_ids: List[str] = field(default_factory=list)
+    other_unit_positions: List[Tuple[int, int]] = field(default_factory=list)
+    other_unit_distances: List[int] = field(default_factory=list)
 
 
 @dataclass
@@ -314,18 +311,18 @@ class TurnPlanner:
     check_collision_steps = 2
     kernel_dist = 5
 
-    def __init__(self, master: MasterState, units: AllUnits):
+    def __init__(self, master: MasterState):
         """Assuming this is called after beginning of turn update"""
         self.master = master
-        self.all_units = units
+        self.all_units = self.master.units
 
         # Caching
         self._costmap: np.ndarray = None
         self._upcoming_collisions: Collisions = None
-        self._close_units: Dict[str, CloseEnemies] = {}
+        self._close_units: Dict[str, CloseEnemies] = None
 
     def units_should_consider_acting(
-        self, units: List[FriendlyUnitManger]
+        self, units: Dict[str, FriendlyUnitManger]
     ) -> UnitsToAct:
         """
         Determines which units should potentially act this turn, and which should continue with current actions
@@ -344,35 +341,35 @@ class TurnPlanner:
         close_to_enemy = self.calculate_close_enemies()
         needs_to_act = []
         should_not_act = []
-        for unit in units:
+        for unit_id, unit in units.items():
             should_act = False
             # If not enough power to do something meaningful
             if unit.power < (
                 unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
             ):
                 logging.info(
-                    f'not enough power -- {unit.unit_id} should not consider acting'
+                    f'not enough power -- {unit_id} should not consider acting'
                 )
                 should_act = False
             # If no queue
             elif len(unit.action_queue) == 0:
-                logging.info(f'no actions -- {unit.unit_id} should consider acting')
+                logging.info(f'no actions -- {unit_id} should consider acting')
                 should_act = True
             # If colliding with friendly
-            elif unit.unit_id in upcoming_collisions.friendly:
+            elif unit_id in upcoming_collisions.friendly:
                 logging.info(
-                    f'collision with friendly -- {unit.unit_id} should consider acting'
+                    f'collision with friendly -- {unit_id} should consider acting'
                 )
                 should_act = True
             # If colliding with enemy
-            elif unit.unit_id in upcoming_collisions.enemy:
+            elif unit_id in upcoming_collisions.enemy:
                 logging.info(
-                    f'collision with enemy -- {unit.unit_id} should consider acting'
+                    f'collision with enemy -- {unit_id} should consider acting'
                 )
                 should_act = True
             # If close to enemy
-            elif unit.unit_id in close_to_enemy:
-                logging.info(f'close to enemy -- {unit.unit_id} should consider acting')
+            elif unit_id in close_to_enemy:
+                logging.info(f'close to enemy -- {unit_id} should consider acting')
                 should_act = True
             # TODO: If about to do invalid action:
             # TODO: pickup more power than available, dig where no resource, transfer to unoccupied location
@@ -513,12 +510,14 @@ class TurnPlanner:
         Returns:
             A sorted pandas dataframe with units ordered by priority.
         """
-        sorted_df = df.sort_values(
-            by=['is_heavy', 'enough_power_to_move', 'power', 'ice', 'ore'],
-            ascending=[True, False, True, False, True],
-        )
-
-        return sorted_df
+        if not df.empty:
+            sorted_df = df.sort_values(
+                by=['is_heavy', 'enough_power_to_move', 'power', 'ice', 'ore'],
+                ascending=[True, False, True, False, True],
+            )
+            return sorted_df
+        else:
+            return df
 
     def base_costmap(self) -> np.ndarray:
         """
@@ -530,7 +529,8 @@ class TurnPlanner:
             A numpy array representing the costmap.
         """
         if self._costmap is None:
-            costmap = self.master.maps.rubble
+            costmap = self.master.maps.rubble.copy() * 0.1  # was 0.05
+            costmap += 1  # Zeros aren't traversable
             enemy_factory_map = self.master.maps.factory_maps.enemy
             costmap[enemy_factory_map >= 0] = -1  # Not traversable
             self._costmap = costmap
@@ -617,14 +617,13 @@ class TurnPlanner:
             """
             Handle collision cases based on unit types and their friendly or enemy status.
 
-            Args:
-                unit: A Unit object representing the primary unit.
-                other_unit: A Unit object representing the other unit to compare against.
-                power_threshold_low: A numeric value representing the lower threshold for the power difference between the two units.
-                power_threshold_high: A numeric value representing the upper threshold for the power difference between the two units.
+            Args: unit: A Unit object representing the primary unit. other_unit: A Unit object representing the other
+            unit to compare against. power_threshold_low: A numeric value representing the lower threshold for the
+            power difference between the two units. power_threshold_high: A numeric value representing the upper
+            threshold for the power difference between the two units.
 
-            Returns:
-                tuple of float, bool for weighting and allowing collisions (weighting means prefer move towards -ve or away +ve)
+            Returns: tuple of float, bool for weighting and allowing collisions (weighting means prefer move towards
+            -ve or away +ve)
             """
             unit_type = unit.unit_type  # "LIGHT" or "HEAVY"
             other_unit_type = other_unit.unit_type  # "LIGHT" or "HEAVY"
@@ -747,11 +746,20 @@ class TurnPlanner:
         return new_cost
 
     def get_full_costmap(
-        self, unit: FriendlyUnitManger, base_costmap: np.ndarray
+        self,
+        unit: FriendlyUnitManger,
+        base_costmap: np.ndarray,
+        all_unit_paths: AllUnitPaths,
+        units_to_act: UnitsToAct,
     ) -> np.ndarray:
         """Update the shared pathfinder with the specific costmap for the current unit"""
         # TODO: Could do more to the base costmap here (make areas higher or lower)
-        new_costmap = self.get_costmap_with_paths(base_costmap=base_costmap, unit=unit)
+        new_costmap = self.get_costmap_with_paths(
+            base_costmap=base_costmap,
+            all_unit_paths=all_unit_paths,
+            units_to_act=units_to_act,
+            unit=unit,
+        )
         # TODO: or here
         return new_costmap
 
@@ -780,8 +788,10 @@ class TurnPlanner:
 
         # TODO: Collect some factory obs to help decide what to do
         # TEMPORARY
+        logging.info(f'Deciding actions for {unit.unit_id}')
         if unit.unit_type == 'HEAVY':
             rec = mining_planner.recommend(unit)
+            print(rec, rec.resource_pos)
             if rec is not None:
                 mining_planner.carry_out(unit, rec)
                 return True
@@ -811,7 +821,7 @@ class TurnPlanner:
         Returns:
             Actions to update units with
         """
-        units_to_act = self.units_should_consider_acting(self.master.units.friendly.all)
+        units_to_act = self.units_should_consider_acting(self.all_units.friendly.all)
         unit_data_df = self.collect_unit_data(units_to_act.needs_to_act)
         sorted_data_df = self.sort_units_by_priority(unit_data_df)
 
@@ -823,7 +833,12 @@ class TurnPlanner:
             # Row is a NamedTuple with column names
             unit = row.unit
             unit: FriendlyUnitManger
-            full_costmap = self.get_full_costmap(unit, base_costmap)
+            full_costmap = self.get_full_costmap(
+                unit=unit,
+                base_costmap=base_costmap,
+                all_unit_paths=all_unit_paths,
+                units_to_act=units_to_act,
+            )
 
             actions_before = unit.action_queue
             # Figure out new actions for unit  (i.e. RoutePlanners)
@@ -904,7 +919,7 @@ class Agent:
         self.mining_planner.update()
         self.rubble_clearing_planner.update()
 
-        tp = TurnPlanner(self.master, self.master.units)
+        tp = TurnPlanner(self.master)
         unit_actions = tp.process_units(
             mining_planner=self.mining_planner,
             rubble_clearing_planner=self.rubble_clearing_planner,
@@ -978,55 +993,55 @@ class Agent:
         #     if u_action is not None:
         #         unit_actions[unit_id] = u_action
 
-    def calculate_unit_actions(
-        self,
-        unit: FriendlyUnitManger,
-        uobs: UnitObs,
-        factory: [None, FriendlyFactoryManager],
-        fobs: [None, FactoryObs],
-        unit_recommendations: dict[str, Recommendation],
-    ) -> [list[np.ndarray], None]:
-        def factory_has_heavy_ice_miner(factory: FriendlyFactoryManager):
-            units = factory.heavy_units
-            for unit_id, unit in units.items():
-                if unit.status.role == 'mine_ice':
-                    return True
-            return False
-
-        if factory is None:
-            logging.info(f'{unit.unit_id} has no factory. Doing nothing')
-            return None
-
-        # Make at least 1 heavy mine ice
-        if (
-            not factory_has_heavy_ice_miner(factory)
-            and unit.unit_type == 'HEAVY'
-            and unit.status.role != 'mine_ice'
-        ) or (unit.status.role == 'mine_ice' and len(unit.action_queue) == 0):
-            logging.info(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
-            mining_rec = unit_recommendations.pop('mine_ice', None)
-            if mining_rec is not None:
-                unit.status.role = 'mine_ice'
-                return self.mining_planner.carry_out(unit, recommendation=mining_rec)
-            else:
-                raise RuntimeError(f'no `mine_ice` recommendation for {unit.unit_id}')
-
-        # Make at least one light mine rubble
-        if (unit.unit_type == 'LIGHT' and not unit.status.role) or (
-            unit.status.role == 'clear_rubble' and len(unit.action_queue) == 0
-        ):
-            logging.info(
-                f'{unit.unit_id} assigned to clear_rubble (for {unit.factory_id})'
-            )
-
-            rubble_clearing_rec = unit_recommendations.pop('clear_rubble', None)
-            if rubble_clearing_rec is not None:
-                unit.status.role = 'clear_rubble'
-                return self.rubble_clearing_planner.carry_out(
-                    unit, recommendation=rubble_clearing_rec
-                )
-            pass
-        return None
+    # def calculate_unit_actions(
+    #     self,
+    #     unit: FriendlyUnitManger,
+    #     uobs: UnitObs,
+    #     factory: [None, FriendlyFactoryManager],
+    #     fobs: [None, FactoryObs],
+    #     unit_recommendations: dict[str, Recommendation],
+    # ) -> [list[np.ndarray], None]:
+    #     def factory_has_heavy_ice_miner(factory: FriendlyFactoryManager):
+    #         units = factory.heavy_units
+    #         for unit_id, unit in units.items():
+    #             if unit.status.role == 'mine_ice':
+    #                 return True
+    #         return False
+    #
+    #     if factory is None:
+    #         logging.info(f'{unit.unit_id} has no factory. Doing nothing')
+    #         return None
+    #
+    #     # Make at least 1 heavy mine ice
+    #     if (
+    #         not factory_has_heavy_ice_miner(factory)
+    #         and unit.unit_type == 'HEAVY'
+    #         and unit.status.role != 'mine_ice'
+    #     ) or (unit.status.role == 'mine_ice' and len(unit.action_queue) == 0):
+    #         logging.info(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
+    #         mining_rec = unit_recommendations.pop('mine_ice', None)
+    #         if mining_rec is not None:
+    #             unit.status.role = 'mine_ice'
+    #             return self.mining_planner.carry_out(unit, recommendation=mining_rec)
+    #         else:
+    #             raise RuntimeError(f'no `mine_ice` recommendation for {unit.unit_id}')
+    #
+    #     # Make at least one light mine rubble
+    #     if (unit.unit_type == 'LIGHT' and not unit.status.role) or (
+    #         unit.status.role == 'clear_rubble' and len(unit.action_queue) == 0
+    #     ):
+    #         logging.info(
+    #             f'{unit.unit_id} assigned to clear_rubble (for {unit.factory_id})'
+    #         )
+    #
+    #         rubble_clearing_rec = unit_recommendations.pop('clear_rubble', None)
+    #         if rubble_clearing_rec is not None:
+    #             unit.status.role = 'clear_rubble'
+    #             return self.rubble_clearing_planner.carry_out(
+    #                 unit, recommendation=rubble_clearing_rec
+    #             )
+    #         pass
+    #     return None
 
     def _beginning_of_step_update(
         self, step: int, obs: dict, remainingOverageTime: int
@@ -1196,95 +1211,96 @@ parts of game)
 #     obs = GeneralObs()
 
 if __name__ == '__main__':
-    run_type = 'start'
-    import time
-
-    start = time.time()
-    ########## PyCharm ############
-    from util import get_test_env, show_env, run
-    import json
-
-    if run_type == 'test':
-        pass
-
-    elif run_type == 'start':
-        ### From start running X steps
-        # fig = run(Agent, Agent, map_seed=1, max_steps=40, return_type='figure')
-        # fig.show()
-
-        replay = run(
-            Agent,
-            # BasicAgent,
-            Agent,
-            map_seed=1,
-            max_steps=1000,
-            save_state_at=None,
-            return_type='replay',
-        )
-        with open('replay.json', 'w') as f:
-            json.dump(replay, f)
-
-    elif run_type == 'checkpoint':
-        ### From checkpoint
-        env = get_test_env('test_state.pkl')
-        fig = show_env(env)
-        fig.show()
-
-    print(f'Finished in {time.time() - start:.3g} s')
-    ####################################
-
-    ####### JUPYTER ONLY  ########
-    # from lux_eye import run_agents
-    # run_agents(Agent, Agent, map_seed=1, save_state_at=None)
-    #######################
-
-    # env = get_test_env()
-    # show_env(env)
+    pass
+    # run_type = 'start'
+    # import time
     #
-    # game_state = game_state_from_env(env)
-    # unit = game_state.units["player_0"]["unit_4"]
+    # start = time.time()
+    # ########## PyCharm ############
+    # from util import get_test_env, show_env, run
+    # import json
     #
-    # # First move unit to start on Factory tile -- down, down, left
-    # empty_actions = {
-    #     "player_0": {},
-    #     "player_1": {},
-    # }
+    # if run_type == 'test':
+    #     pass
     #
-    # actions = {
-    #     "player_0": {unit.unit_id: [unit.move(DOWN, repeat=1), unit.move(LEFT)]},
-    #     "player_1": {},
-    # }
+    # elif run_type == 'start':
+    #     ### From start running X steps
+    #     # fig = run(Agent, Agent, map_seed=1, max_steps=40, return_type='figure')
+    #     # fig.show()
     #
-    # obs, rews, dones, infos = env.step(actions)
-    # fig = initialize_step_fig(env)
-    # for i in range(2):
-    #     obs, rews, dones, infos = env.step(empty_actions)
-    #     add_env_step(fig, env)
+    #     replay = run(
+    #         Agent,
+    #         # BasicAgent,
+    #         Agent,
+    #         map_seed=1,
+    #         max_steps=1000,
+    #         save_state_at=None,
+    #         return_type='replay',
+    #     )
+    #     with open('replay.json', 'w') as f:
+    #         json.dump(replay, f)
     #
-    # # Set work flow -- pickup, right, up, up, up, dig, down, down, down, left, transfer
-    # actions = {
-    #     "player_0": {
-    #         unit.unit_id: [
-    #             unit.pickup(POWER, 200, repeat=-1),
-    #             unit.move(RIGHT, repeat=-1),
-    #             unit.move(UP, repeat=-1),
-    #             unit.move(UP, repeat=-1),
-    #             unit.move(UP, repeat=-1),
-    #             unit.dig(repeat=-1),
-    #             unit.dig(repeat=-1),
-    #             unit.move(DOWN, repeat=-1),
-    #             unit.move(DOWN, repeat=-1),
-    #             unit.move(DOWN, repeat=-1),
-    #             unit.move(LEFT, repeat=-1),
-    #             unit.transfer(CENTER, ICE, unit.cargo.ice, repeat=-1),
-    #         ]
-    #     },
-    #     "player_1": {},
-    # }
+    # elif run_type == 'checkpoint':
+    #     ### From checkpoint
+    #     env = get_test_env('test_state.pkl')
+    #     fig = show_env(env)
+    #     fig.show()
     #
-    # obs, rews, dones, infos = env.step(actions)
-    # add_env_step(fig, env)
-    # for i in range(30):
-    #     obs, rews, dones, infos = env.step(empty_actions)
-    #     add_env_step(fig, env)
-    # fig.show()
+    # print(f'Finished in {time.time() - start:.3g} s')
+    # ####################################
+    #
+    # ####### JUPYTER ONLY  ########
+    # # from lux_eye import run_agents
+    # # run_agents(Agent, Agent, map_seed=1, save_state_at=None)
+    # #######################
+    #
+    # # env = get_test_env()
+    # # show_env(env)
+    # #
+    # # game_state = game_state_from_env(env)
+    # # unit = game_state.units["player_0"]["unit_4"]
+    # #
+    # # # First move unit to start on Factory tile -- down, down, left
+    # # empty_actions = {
+    # #     "player_0": {},
+    # #     "player_1": {},
+    # # }
+    # #
+    # # actions = {
+    # #     "player_0": {unit.unit_id: [unit.move(DOWN, repeat=1), unit.move(LEFT)]},
+    # #     "player_1": {},
+    # # }
+    # #
+    # # obs, rews, dones, infos = env.step(actions)
+    # # fig = initialize_step_fig(env)
+    # # for i in range(2):
+    # #     obs, rews, dones, infos = env.step(empty_actions)
+    # #     add_env_step(fig, env)
+    # #
+    # # # Set work flow -- pickup, right, up, up, up, dig, down, down, down, left, transfer
+    # # actions = {
+    # #     "player_0": {
+    # #         unit.unit_id: [
+    # #             unit.pickup(POWER, 200, repeat=-1),
+    # #             unit.move(RIGHT, repeat=-1),
+    # #             unit.move(UP, repeat=-1),
+    # #             unit.move(UP, repeat=-1),
+    # #             unit.move(UP, repeat=-1),
+    # #             unit.dig(repeat=-1),
+    # #             unit.dig(repeat=-1),
+    # #             unit.move(DOWN, repeat=-1),
+    # #             unit.move(DOWN, repeat=-1),
+    # #             unit.move(DOWN, repeat=-1),
+    # #             unit.move(LEFT, repeat=-1),
+    # #             unit.transfer(CENTER, ICE, unit.cargo.ice, repeat=-1),
+    # #         ]
+    # #     },
+    # #     "player_1": {},
+    # # }
+    # #
+    # # obs, rews, dones, infos = env.step(actions)
+    # # add_env_step(fig, env)
+    # # for i in range(30):
+    # #     obs, rews, dones, infos = env.step(empty_actions)
+    # #     add_env_step(fig, env)
+    # # fig.show()

@@ -4,13 +4,11 @@ from typing import TYPE_CHECKING, Tuple, List
 import numpy as np
 
 from agent_v2_1.new_path_finder import Pather
-from util import calc_path_to_factory, power_cost_of_path, num_turns_of_actions
-from master_state import MasterState, Planner
+from util import calc_path_to_factory, power_cost_of_path
+from master_state import MasterState, Planner, Maps
 from actions import Recommendation
-from path_finder import CollisionParams, PathFinder
 from util import (
     power_cost_of_actions,
-    path_to_actions,
     HEAVY_UNIT,
     LIGHT_UNIT,
     POWER,
@@ -37,6 +35,7 @@ class RubbleDigValue:
     def __init__(
         self,
         rubble: np.ndarray,
+        maps: Maps,
         full_factory_map: np.ndarray,
         factory_pos: Tuple[int, int],
         factory_dist: int = 10,
@@ -48,6 +47,7 @@ class RubbleDigValue:
         Calculate value of rubble digging near a factory
         """
         self.rubble = rubble
+        self.maps = maps
         self.full_factory_map = full_factory_map
         self.factory_pos = factory_pos
         self.factory_dist = factory_dist
@@ -72,6 +72,11 @@ class RubbleDigValue:
         """
         if self._rubble_subset is None or self._new_factory_pos is None:
             rubble = self.rubble.copy()
+
+            # Don't clear under ice or ore (lichen can't grow there)
+            rubble[self.maps.ice > 0] = 0
+            rubble[self.maps.ore > 0] = 0
+
             if self.full_factory_map is not None:
                 rubble[self.full_factory_map >= 0] = 100
             subsetter = SubsetExtractor(
@@ -360,7 +365,7 @@ class RubbleRoutePlanner:
         logging.info(f"unit moving to {max_value_coord}")
         path = self.pathfinder.fast_path(
             self.unit.pos,
-            max_value_coord,
+            end_pos=max_value_coord,
             margin=2,
         )
         if len(path) > 0:
@@ -391,16 +396,10 @@ class RubbleRoutePlanner:
 
     def _path_to_factory(self) -> np.ndarray:
         return calc_path_to_factory(
-            self.pathfinder,
-            self.unit.pos,
-            self.factory.factory_loc,
-            rubble=self._future_rubble,
+            pathfinder=self.pathfinder,
+            pos=self.unit.pos,
+            factory_loc=self.factory.factory_loc,
             margin=2,
-            collision_params=CollisionParams(
-                look_ahead_turns=3,
-                ignore_ids=(self.unit.unit_id,),
-                starting_step=num_turns_of_actions(self.unit.action_queue),
-            ),
         )
 
 
@@ -444,8 +443,8 @@ class RubbleClearingPlanner(Planner):
                 factory=factory,
                 unit_pos=unit.pos,
                 unit_id=unit.unit_id,
-                unit_power=unit.unit.power,
-                unit_type=unit.unit.unit_type,
+                unit_power=unit.power,
+                unit_type=unit.unit_type,
             )
             actions = route_planner.make_route()
             return actions[:20]
@@ -467,6 +466,7 @@ class RubbleClearingPlanner(Planner):
 
             rubble_value = RubbleDigValue(
                 rubble=rubble,
+                maps=self.master.maps,
                 full_factory_map=all_factory_map,
                 factory_pos=factory_pos,
                 factory_dist=20,

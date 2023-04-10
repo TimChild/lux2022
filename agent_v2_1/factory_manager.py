@@ -1,10 +1,10 @@
 from __future__ import annotations
-from typing import Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 import logging
 
-from lux.kit import obs_to_game_state, GameState
+from lux.kit import GameState
 from lux.factory import Factory
 
 from master_state import MasterState
@@ -19,7 +19,7 @@ from util import (
 from actions import Recommendation
 
 if TYPE_CHECKING:
-    from unit_manager import UnitManager
+    pass
 
 
 class BuildHeavyRecommendation(Recommendation):
@@ -59,6 +59,10 @@ class FactoryManager:
 
     def update(self, factory: Factory):
         self.factory = factory
+
+    @property
+    def pos(self):
+        return self.factory.pos
 
 
 class EnemyFactoryManager(FactoryManager):

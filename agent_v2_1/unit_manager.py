@@ -71,7 +71,7 @@ class UnitManager(abc.ABC):
     def power(self) -> int:
         return self.unit.power
 
-    @pos.setter
+    @power.setter
     def power(self, value):
         self.unit.power = value
 

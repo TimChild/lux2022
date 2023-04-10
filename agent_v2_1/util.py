@@ -25,7 +25,7 @@ from itertools import product
 from luxai_s2 import LuxAI_S2
 from luxai_s2.unit import UnitType
 
-from agent_v2_1.new_path_finder import Pather
+from new_path_finder import Pather
 from lux.kit import obs_to_game_state, GameState, to_json
 from lux.config import UnitConfig, EnvConfig
 from lux.utils import direction_to
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from path_finder import PathFinder, CollisionParams
     from unit_manager import FriendlyUnitManger
 
-POS_TYPE = Union[Tuple[int, int], np.ndarray]
+POS_TYPE = Union[Tuple[int, int], np.ndarray, Tuple[np.ndarray]]
 PATH_TYPE = Union[List[Tuple[int, int]], np.ndarray]
 
 
@@ -808,6 +808,19 @@ def game_state_from_env(env: LuxAI_S2):
 #     return replay
 
 
+def show_map_array(map_array):
+    fig = go.Figure()
+    fig.add_trace(
+        go.Heatmap(
+            z=map_array.T,
+        ),
+    )
+    fig.update_yaxes(
+        autorange="reversed",
+    )
+    return fig
+
+
 def show_env(env, mode="plotly", fig=None):
     game_state = game_state_from_env(env)
     if mode == "mpl":
@@ -1545,6 +1558,8 @@ def path_to_factory_edge_nearest_pos(
     if np.sum(factory_loc) == 9:
         factory_loc = set_middle_of_factory_loc_zero(factory_loc)
     assert np.sum(factory_loc) == 8
+    if pos_to_be_near is None:
+        raise ValueError(f'Need to provide pos_to_be_near')
 
     original_factory_loc = factory_loc
     factory_loc = factory_loc.copy()

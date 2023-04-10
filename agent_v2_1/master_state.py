@@ -11,8 +11,6 @@ from agent_v2_1.new_path_finder import Pather
 from lux.kit import GameState
 
 from util import ORE, ICE, METAL, WATER, manhattan
-from path_finder import PathFinder
-
 
 if TYPE_CHECKING:
     from lux.unit import Unit
@@ -42,7 +40,7 @@ class Planner(abc.ABC):
     """
 
     @abc.abstractmethod
-    def recommend(self, unit: FriendlyUnitManger):
+    def recommend(self, unit: FriendlyUnitManger, *args, **kwargs):
         """Recommend an action for the unit (effectively make a high level obs)"""
         pass
 
@@ -98,10 +96,15 @@ class FactoryMaps:
                 arr[factory_map == f_num] = f_num
             by_team[team] = arr
 
-        friendly = by_team[player]
-        enemy = by_team['player_0' if player == 'player_1' else 'player_1']
-        factory_maps = cls(all=factory_map, friendly=friendly, enemy=enemy)
-        return factory_maps
+        if by_team:
+            friendly = by_team[player]
+            enemy = by_team['player_0' if player == 'player_1' else 'player_1']
+            factory_maps = cls(all=factory_map, friendly=friendly, enemy=enemy)
+            return factory_maps
+        logging.info(
+            f'No factories to update with (game_state.teams = {game_state.teams})'
+        )
+        return None
 
 
 @dataclass
@@ -491,9 +494,9 @@ class MasterState:
 
         self.game_state: GameState = None
         self.step: int = None
-        self.pathfinder: Pather = (
-            None  # This gets set at the beginning of each unit action
-        )
+
+        # This gets set at the beginning of each unit action
+        self.pathfinder: Pather = None
 
         self.units = AllUnits(
             friendly=FriendlyUnits(master=self), enemy=EnemyUnits(), master=self
@@ -503,7 +506,7 @@ class MasterState:
         self.maps = Maps()
 
     def update(self, game_state: GameState):
-        self.maps.update(game_state)
+        self.maps.update(game_state, player=self.player)
         if game_state.real_env_steps < 0:
             self._early_update(game_state)
         else:
