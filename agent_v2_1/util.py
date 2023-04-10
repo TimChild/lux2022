@@ -232,7 +232,9 @@ def num_turns_of_actions(actions: Union[np.ndarray, List[np.ndarray]]) -> int:
     return int(np.sum(durations))
 
 
-def power_cost_of_actions(rubble: np.ndarray, unit: FriendlyUnitManger, actions: List[np.ndarray]):
+def power_cost_of_actions(
+    rubble: np.ndarray, unit: FriendlyUnitManger, actions: List[np.ndarray]
+):
     """Power requirements of a list of actions
 
     Note: Does not check for invalid moves or actions
@@ -676,8 +678,9 @@ def path_to_actions(path):
     return actions
 
 
-def new_actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray]) -> np.ndarray:
+def actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray]) -> np.ndarray:
     path = [start_pos]
+    pos = start_pos
     for action in actions:
         if action[0] == MOVE:
             direction = action[1]
@@ -686,16 +689,6 @@ def new_actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray]) -> np.nd
         pos = pos + MOVE_DELTAS[direction] * action[ACT_N]
         path.append(pos)
     return np.array(path)
-
-
-@deprecated(
-    deprecated_in='2.1.0',
-    details='use new_actions_to_path instead, and provide the start pos (unit.pos for '
-    'backwards compatability)',
-)
-def actions_to_path(unit, actions):
-    """Convert list of actions to path for unit (considers other actions as move center)"""
-    return new_actions_to_path(unit.pos, actions)
 
 
 ################### Plotting #################
@@ -1019,7 +1012,7 @@ def _plotly_add_units(fig, state: GameState, add_path=True):
                 )
             )
             if add_path:
-                path = actions_to_path(unit, unit.action_queue)
+                path = actions_to_path(unit.pos, unit.action_queue)
                 if len(path) > 1:
                     path = path[1:]
                     plotly_plot_path(fig, path, step=step)
@@ -1571,7 +1564,7 @@ def path_to_factory_edge_nearest_pos(
         if nearest_factory is None:
             break
         elif tuple(nearest_factory) == tuple(pos):
-            return np.array([])
+            return np.array([pos])  # Already there
         else:
             path = pathfinder.fast_path(
                 pos,

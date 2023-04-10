@@ -158,7 +158,7 @@ class Pather:
         Args:
             start_pos: start of path coord
             end_pos: end of path coord
-            base_cost_only: Set to True to use only the base costmap
+            costmap: override the costmap for pathing
 
         Returns:
             array shape (len, 2) for path

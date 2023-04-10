@@ -792,7 +792,6 @@ class TurnPlanner:
         success = False
         if unit.unit_type == 'HEAVY':
             rec = mining_planner.recommend(unit)
-            print(rec, rec.resource_pos)
             if rec is not None:
                 mining_planner.carry_out(unit, rec)
                 success = True
@@ -852,7 +851,7 @@ class TurnPlanner:
                 rubble_clearing_planner=rubble_clearing_planner,
             )
 
-            if unit.action_queue == actions_before:
+            if np.all(np.array(unit.action_queue) == np.array(actions_before)):
                 units_to_act.should_not_act.append(unit)
             else:
                 units_to_act.has_updated_actions.append(unit)
@@ -913,7 +912,7 @@ class Agent:
 
     def act(self, step: int, obs, remainingOverageTime: int = 60):
         """Required API for Agent. This is called every turn after early_setup is complete"""
-        logging.info(f'======== Start of turn for {self.player} ============')
+        logging.warning(f'======== Start of turn {self.master.game_state.real_env_steps} for {self.player} ============')
         self._beginning_of_step_update(step, obs, remainingOverageTime)
 
         self.mining_planner.update()

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from agent_v2_1.new_path_finder import Pather
+from new_path_finder import Pather
 from master_state import MasterState, Planner
 from actions import Recommendation
 import util

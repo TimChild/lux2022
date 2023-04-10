@@ -7,7 +7,7 @@ import collections
 
 import numpy as np
 
-from agent_v2_1.new_path_finder import Pather
+from new_path_finder import Pather
 from lux.kit import GameState
 
 from util import ORE, ICE, METAL, WATER, manhattan

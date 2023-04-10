@@ -3,7 +3,7 @@ import logging
 from typing import TYPE_CHECKING, Tuple, List
 import numpy as np
 
-from agent_v2_1.new_path_finder import Pather
+from new_path_finder import Pather
 from util import calc_path_to_factory, power_cost_of_path
 from master_state import MasterState, Planner, Maps
 from actions import Recommendation
@@ -196,7 +196,9 @@ def calc_value_to_move(pos: Tuple[int, int], value_array: np.ndarray) -> float:
     return max(vals)
 
 
-def calc_best_direction(pos: Tuple[int, int], value_array: np.ndarray, costmap: np.ndarray) -> int:
+def calc_best_direction(
+    pos: Tuple[int, int], value_array: np.ndarray, costmap: np.ndarray
+) -> int:
     """Return direction to highest adjacent value"""
     # (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
     move_deltas = MOVE_DELTAS[1:]  # Exclude center
@@ -332,7 +334,9 @@ class RubbleRoutePlanner:
         # Otherwise move to next best spot
         elif value_to_move > 0:
             logging.info(f'adding move to better location')
-            best_direction = calc_best_direction(self.unit.pos, value_array, self.pathfinder.full_costmap)
+            best_direction = calc_best_direction(
+                self.unit.pos, value_array, self.pathfinder.full_costmap
+            )
             self.pathfinder.append_direction_to_actions(self.unit, best_direction)
 
         # Not near any high value, shouldn't get here
@@ -341,6 +345,7 @@ class RubbleRoutePlanner:
                 f'While calculating next action, values were all zero. (adding move center)',
             )
             return False
+        return True
 
     def _from_factory_actions(self) -> bool:
         """Generate starting actions assuming starting on factory"""

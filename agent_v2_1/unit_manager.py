@@ -45,7 +45,7 @@ class UnitManager(abc.ABC):
     @property
     def current_path(self) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
-        return util.new_actions_to_path(self.start_of_turn_pos, self.action_queue)
+        return util.actions_to_path(self.start_of_turn_pos, self.action_queue)
 
     @property
     def action_queue(self) -> List[np.ndarray]:
@@ -86,7 +86,7 @@ class UnitManager(abc.ABC):
         """
         if actions is None:
             actions = self.unit.action_queue
-        return util.new_actions_to_path(self.unit.pos, actions)
+        return util.actions_to_path(self.unit.pos, actions)
 
     @abc.abstractmethod
     def dead(self):
