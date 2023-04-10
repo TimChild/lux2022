@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Tuple, Optional, List
 from dataclasses import dataclass
 
 import numpy as np
-from luxai_s2.unit import UnitType
 
 from agent_v2_1.new_path_finder import Pather
 from master_state import MasterState, Planner
@@ -17,8 +16,6 @@ from util import (
     ORE,
     nearest_non_zero,
     power_cost_of_actions,
-    HEAVY_UNIT,
-    LIGHT_UNIT,
     POWER,
     CENTER,
     power_cost_of_path,
@@ -73,10 +70,7 @@ class MiningRoutePlanner:
         resource_pos: Tuple[int, int],
         resource_type: int,
         factory: FriendlyFactoryManager,
-        unit_pos: Tuple[int, int],
-        unit_id: str,
-        unit_power: int,
-        unit_type: str,
+        unit: FriendlyUnitManger,
     ):
         """
         Args:
@@ -85,12 +79,8 @@ class MiningRoutePlanner:
             resource_pos: position of resource to mine
             resource_type: i.e. ICE, ORE, etc
             factory: factory being mined for
-            unit_pos:
-            unit_id:
-            unit_power:
-            unit_type:
+            unit: unit to make route for
         """
-        assert unit_type in ['LIGHT', 'HEAVY']
         self.pathfinder = pathfinder
 
         # Map related
@@ -98,14 +88,11 @@ class MiningRoutePlanner:
         self.resource_pos = resource_pos
         self.resource_type = resource_type
         # Unit related
-        self.unit_start_pos = unit_pos
+        self.unit_start_pos = unit.pos
         self.factory = factory
 
-        # These will be changed during route planning
-        self.unit = LIGHT_UNIT if unit_type == 'LIGHT' else HEAVY_UNIT
-        self.unit.pos = unit_pos
-        self.unit.power = unit_power
-        self.unit.unit_id = unit_id
+        # This will be changed during route planning
+        self.unit = unit
         self.unit.action_queue = []
 
     def _path_to_and_from_resource(self):
@@ -135,7 +122,7 @@ class MiningRoutePlanner:
             )
 
             # Decide which to do
-            if power_remaining > 3 * self.unit.unit_cfg.DIG_COST:
+            if power_remaining > 3 * self.unit.unit_config.DIG_COST:
                 # Go to resource first
                 self._resource_then_factory(path_to_resource, power_remaining)
             else:
@@ -162,7 +149,7 @@ class MiningRoutePlanner:
 
         # Dig as many times as possible
         n_digs = int(
-            np.floor(power_remaining_after_moves / self.unit.unit_cfg.DIG_COST)
+            np.floor(power_remaining_after_moves / self.unit.unit_config.DIG_COST)
         )
         if n_digs >= 1:
             self.unit.action_queue.append(self.unit.dig(n=n_digs))
@@ -181,7 +168,7 @@ class MiningRoutePlanner:
         # Transfer resources to factory
         self.unit.action_queue.append(
             self.unit.transfer(
-                CENTER, self.resource_type, self.unit.unit_cfg.CARGO_SPACE
+                CENTER, self.resource_type, self.unit.unit_config.CARGO_SPACE
             )
         )
 
@@ -220,10 +207,10 @@ class MiningRoutePlanner:
             self.rubble, self.unit, self.unit.action_queue
         )
         target_digs = int(
-            (self.unit.unit_cfg.BATTERY_CAPACITY - travel_cost)
-            / self.unit.unit_cfg.DIG_COST,
+            (self.unit.unit_config.BATTERY_CAPACITY - travel_cost)
+            / self.unit.unit_config.DIG_COST,
         )
-        target_power = travel_cost + target_digs * self.unit.unit_cfg.DIG_COST
+        target_power = travel_cost + target_digs * self.unit.unit_config.DIG_COST
 
         # If action queue is short, assume factory won't have more energy, if long, assume it will
         if len(self.unit.action_queue) < 10:
@@ -241,13 +228,13 @@ class MiningRoutePlanner:
             if power_to_pickup > 0:
                 self.unit.action_queue.append(self.unit.pickup(POWER, power_to_pickup))
             n_digs = target_digs
-        elif factory_power + available_power > self.unit.unit_cfg.DIG_COST * 3:
+        elif factory_power + available_power > self.unit.unit_config.DIG_COST * 3:
             logging.info(f'picking up available power {factory_power}')
             self.unit.action_queue.append(self.unit.pickup(POWER, factory_power))
             n_digs = int(
                 np.floor(
                     (factory_power + available_power - travel_cost)
-                    / self.unit.unit_cfg.DIG_COST
+                    / self.unit.unit_config.DIG_COST
                 )
             )
         else:
@@ -292,7 +279,7 @@ class MiningRoutePlanner:
         # Add transfer
         self.unit.action_queue.append(
             self.unit.transfer(
-                CENTER, self.resource_type, self.unit.unit_cfg.CARGO_SPACE
+                CENTER, self.resource_type, self.unit.unit_config.CARGO_SPACE
             )
         )
         return True
@@ -505,10 +492,7 @@ class MiningPlanner(Planner):
             resource_pos=recommendation.resource_pos,
             resource_type=recommendation.resource_type,
             factory=factory,
-            unit_pos=unit_manager.pos,
-            unit_id=unit_manager.unit_id,
-            unit_power=unit_manager.unit.power,
-            unit_type=unit_manager.unit.unit_type,
+            unit=unit_manager,
         )
         actions = route_planner.make_route()
         return actions[:20]

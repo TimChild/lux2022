@@ -232,13 +232,12 @@ def num_turns_of_actions(actions: Union[np.ndarray, List[np.ndarray]]) -> int:
     return int(np.sum(durations))
 
 
-def power_cost_of_actions(rubble: np.ndarray, unit: Unit, actions: List[np.ndarray]):
+def power_cost_of_actions(rubble: np.ndarray, unit: FriendlyUnitManger, actions: List[np.ndarray]):
     """Power requirements of a list of actions
 
     Note: Does not check for invalid moves or actions
     """
-    unit_cfg: UnitConfig = unit.unit_cfg
-
+    unit_cfg = unit.unit_config
     pos = unit.pos
 
     cost = 0

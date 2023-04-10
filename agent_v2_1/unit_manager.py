@@ -30,6 +30,10 @@ class UnitManager(abc.ABC):
         self.unit = unit
         self.unit_config: UnitConfig = unit.unit_cfg
 
+        self.dig = unit.dig
+        self.transfer = unit.transfer
+        self.pickup = unit.pickup
+
         # Keep track of pos a start of turn because pos will be updated while planning what to do next
         self.start_of_turn_pos = unit.pos
 

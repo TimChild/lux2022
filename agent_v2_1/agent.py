@@ -789,26 +789,26 @@ class TurnPlanner:
         # TODO: Collect some factory obs to help decide what to do
         # TEMPORARY
         logging.info(f'Deciding actions for {unit.unit_id}')
+        success = False
         if unit.unit_type == 'HEAVY':
             rec = mining_planner.recommend(unit)
             print(rec, rec.resource_pos)
             if rec is not None:
                 mining_planner.carry_out(unit, rec)
-                return True
+                success = True
             else:
                 logging.error(f'Mining planner returned None for {unit.unit_id}')
-                return False
-        if unit.unit_type == 'LIGHT':
+        elif unit.unit_type == 'LIGHT':
             rec = rubble_clearing_planner.recommend(unit)
             if rec is not None:
                 rubble_clearing_planner.carry_out(unit, rec)
-                return True
+                success = True
             else:
                 logging.error(
                     f'Rubble clearing planner returned None for {unit.unit_id}'
                 )
-                return False
-        return False
+        all_unit_paths.update_path(unit)
+        return success
 
     def process_units(
         self,
