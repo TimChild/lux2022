@@ -7,6 +7,7 @@ import collections
 
 import numpy as np
 
+from agent_v2_1.new_path_finder import Pather
 from lux.kit import GameState
 
 from util import ORE, ICE, METAL, WATER, manhattan
@@ -490,7 +491,9 @@ class MasterState:
 
         self.game_state: GameState = None
         self.step: int = None
-        self.pathfinder: PathFinder = PathFinder()
+        self.pathfinder: Pather = (
+            None  # This gets set at the beginning of each unit action
+        )
 
         self.units = AllUnits(
             friendly=FriendlyUnits(master=self), enemy=EnemyUnits(), master=self
@@ -506,13 +509,6 @@ class MasterState:
         else:
             self._update_units(game_state)
             self._update_factories(game_state)
-            # self._update_allocations(game_state)
-            self.pathfinder.update(
-                rubble=self.maps.rubble,
-                friendly_units=self.units.friendly.all,
-                enemy_units=self.units.enemy.all,
-                enemy_factories=self.factories.enemy,
-            )
 
         self.step = game_state.real_env_steps
         self.game_state = game_state

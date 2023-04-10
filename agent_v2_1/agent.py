@@ -346,23 +346,36 @@ class TurnPlanner:
         should_not_act = []
         for unit in units:
             should_act = False
+            # If not enough power to do something meaningful
+            if unit.power < (
+                unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
+            ):
+                logging.info(
+                    f'not enough power -- {unit.unit_id} should not consider acting'
+                )
+                should_act = False
             # If no queue
-            if len(unit.unit.action_queue) == 0:
+            elif len(unit.action_queue) == 0:
                 logging.info(f'no actions -- {unit.unit_id} should consider acting')
                 should_act = True
+            # If colliding with friendly
             elif unit.unit_id in upcoming_collisions.friendly:
                 logging.info(
                     f'collision with friendly -- {unit.unit_id} should consider acting'
                 )
                 should_act = True
+            # If colliding with enemy
             elif unit.unit_id in upcoming_collisions.enemy:
                 logging.info(
-                    f'collision with friendly -- {unit.unit_id} should consider acting'
+                    f'collision with enemy -- {unit.unit_id} should consider acting'
                 )
                 should_act = True
+            # If close to enemy
             elif unit.unit_id in close_to_enemy:
                 logging.info(f'close to enemy -- {unit.unit_id} should consider acting')
                 should_act = True
+            # TODO: If about to do invalid action:
+            # TODO: pickup more power than available, dig where no resource, transfer to unoccupied location
 
             if should_act:
                 needs_to_act.append(unit)
@@ -477,13 +490,13 @@ class TurnPlanner:
                     ]
                     if unit_factory
                     else np.nan,
-                    'is_heavy': unit.unit.unit_type == 'HEAVY',
-                    'enough_power_to_move': unit.unit.power
+                    'is_heavy': unit.unit_type == 'HEAVY',
+                    'enough_power_to_move': unit.power
                     > unit.unit_config.MOVE_COST
                     + unit.unit_config.ACTION_QUEUE_POWER_COST,
-                    'power': unit.unit.power,
-                    'ice': unit.unit.cargo.ice,
-                    'ore': unit.unit.cargo.ore,
+                    'power': unit.power,
+                    'ice': unit.cargo.ice,
+                    'ore': unit.cargo.ore,
                 }
             )
 
@@ -742,8 +755,55 @@ class TurnPlanner:
         # TODO: or here
         return new_costmap
 
+    def calculate_actions_for_unit(
+        self,
+        base_costmap: np.ndarray,
+        full_costmap: np.ndarray,
+        all_unit_paths: AllUnitPaths,
+        df_row: pd.Series,
+        unit: FriendlyUnitManger,
+        mining_planner: MiningPlanner,
+        rubble_clearing_planner: RubbleClearingPlanner,
+    ) -> bool:
+        """Calculate new actions for this unit"""
+        # Update the master pathfinder with newest Pather (full_costmap changes for each unit)
+        self.master.pathfinder = Pather(
+            unit_paths=all_unit_paths,
+            base_costmap=base_costmap,
+            full_costmap=full_costmap,
+        )
+
+        # TODO: If close to enemy and should attack - do it
+        # TODO: If close to enemy and run away - do it
+        current_queue = unit.action_queue
+        unit.action_queue = []
+
+        # TODO: Collect some factory obs to help decide what to do
+        # TEMPORARY
+        if unit.unit_type == 'HEAVY':
+            rec = mining_planner.recommend(unit)
+            if rec is not None:
+                mining_planner.carry_out(unit, rec)
+                return True
+            else:
+                logging.error(f'Mining planner returned None for {unit.unit_id}')
+                return False
+        if unit.unit_type == 'LIGHT':
+            rec = rubble_clearing_planner.recommend(unit)
+            if rec is not None:
+                rubble_clearing_planner.carry_out(unit, rec)
+                return True
+            else:
+                logging.error(
+                    f'Rubble clearing planner returned None for {unit.unit_id}'
+                )
+                return False
+        return False
+
     def process_units(
         self,
+        mining_planner: MiningPlanner,
+        rubble_clearing_planner: RubbleClearingPlanner,
     ) -> Dict[str, List[np.ndarray]]:
         """
         Processes the units by choosing the actions the units should take this turn in order of priority
@@ -759,31 +819,37 @@ class TurnPlanner:
 
         all_unit_paths = self.get_unit_paths()
 
-        for row in sorted_data_df.itertuples():
+        for index, row in sorted_data_df.iterrows():
             # Row is a NamedTuple with column names
             unit = row.unit
             unit: FriendlyUnitManger
             full_costmap = self.get_full_costmap(unit, base_costmap)
-            self.master.pathfinder = Pather(
-                unit_paths=all_unit_paths,
+
+            actions_before = unit.action_queue
+            # Figure out new actions for unit  (i.e. RoutePlanners)
+            success = self.calculate_actions_for_unit(
                 base_costmap=base_costmap,
                 full_costmap=full_costmap,
+                all_unit_paths=all_unit_paths,
+                df_row=row,
+                unit=unit,
+                mining_planner=mining_planner,
+                rubble_clearing_planner=rubble_clearing_planner,
             )
 
-            actions_before = unit.unit.action_queue
-            # Figure out new actions for unit  (i.e. RoutePlanners)
-            pass
-
-            if unit.unit.action_queue == actions_before:
+            if unit.action_queue == actions_before:
                 units_to_act.should_not_act.append(unit)
             else:
                 units_to_act.has_updated_actions.append(unit)
                 all_unit_paths.update_path(unit)
 
         actions = {}
+
+        # TODO: One last check for collisions?
+
         for unit in units_to_act.has_updated_actions:
-            if len(unit.unit.action_queue) > 0:
-                actions[unit.unit_id] = unit.unit.action_queue
+            if len(unit.action_queue) > 0:
+                actions[unit.unit_id] = unit.action_queue
         return actions
 
 
@@ -835,16 +901,26 @@ class Agent:
         logging.info(f'======== Start of turn for {self.player} ============')
         self._beginning_of_step_update(step, obs, remainingOverageTime)
 
-        # Get processed observations (i.e. the obs that I will use to train a PPO agent)
-        # First - general observations of the full game state (i.e. not factory/unit specific)
-        general_obs = self._get_general_processed_obs()
+        self.mining_planner.update()
+        self.rubble_clearing_planner.update()
 
+        tp = TurnPlanner(self.master, self.master.units)
+        unit_actions = tp.process_units(
+            mining_planner=self.mining_planner,
+            rubble_clearing_planner=self.rubble_clearing_planner,
+        )
+
+        #
+        # # Get processed observations (i.e. the obs that I will use to train a PPO agent)
+        # # First - general observations of the full game state (i.e. not factory/unit specific)
+        # general_obs = self._get_general_processed_obs()
+        #
         # Then additional observations for units (not things they already store)
-        unit_obs: dict[str, UnitObs] = {}
-        for unit_id, unit in self.master.units.friendly.all.items():
-            if unit_should_consider_acting(unit, self.master):
-                uobs = calculate_unit_obs(unit, self.master)
-                unit_obs[unit_id] = uobs
+        # unit_obs: dict[str, UnitObs] = {}
+        # for unit_id, unit in self.master.units.friendly.all.items():
+        #     if unit_should_consider_acting(unit, self.master):
+        #         uobs = calculate_unit_obs(unit, self.master)
+        #         unit_obs[unit_id] = uobs
 
         # Then additional observations for factories (not things they already store)
         factory_obs = {}
@@ -852,39 +928,6 @@ class Agent:
             if factory_should_consider_acting(factory, self.master):
                 fobs = calculate_factory_obs(factory, self.master)
                 factory_obs[factory_id] = fobs
-
-        # Unit Recommendations
-        unit_recommendations = {}
-        for unit_id in unit_obs.keys():
-            unit = self.master.units.friendly.get_unit(unit_id)
-            # TODO: maybe add some logic here as to whether to get recommendations??
-            mining_rec = self.mining_planner.recommend(unit_manager=unit)
-            rubble_clearing_rec = self.rubble_clearing_planner.recommend(unit=unit)
-            unit_recommendations[unit_id] = {
-                'mine_ice': mining_rec,
-                'clear_rubble': rubble_clearing_rec,
-            }
-
-        # Unit Actions
-        unit_actions = {}
-        for unit_id in unit_obs.keys():
-            unit = self.master.units.friendly.get_unit(unit_id)
-            uobs = unit_obs[unit_id]
-            if unit.factory_id:
-                fobs = factory_obs[unit.factory_id]
-                factory = self.master.factories.friendly[unit.factory_id]
-            else:
-                fobs = None
-                factory = None
-            u_action = self.calculate_unit_actions(
-                unit=unit,
-                uobs=uobs,
-                factory=factory,
-                fobs=fobs,
-                unit_recommendations=unit_recommendations[unit_id],
-            )
-            if u_action is not None:
-                unit_actions[unit_id] = u_action
 
         # Factory Actions
         factory_actions = {}
@@ -899,7 +942,41 @@ class Agent:
 
         logging.debug(f'{self.player} Unit actions: {unit_actions}')
         logging.info(f'{self.player} Factory actions: {factory_actions}')
+
         return dict(**unit_actions, **factory_actions)
+        #
+        # # Unit Recommendations
+        # unit_recommendations = {}
+        # for unit_id in unit_obs.keys():
+        #     unit = self.master.units.friendly.get_unit(unit_id)
+        #     # TODO: maybe add some logic here as to whether to get recommendations??
+        #     mining_rec = self.mining_planner.recommend(unit_manager=unit)
+        #     rubble_clearing_rec = self.rubble_clearing_planner.recommend(unit=unit)
+        #     unit_recommendations[unit_id] = {
+        #         'mine_ice': mining_rec,
+        #         'clear_rubble': rubble_clearing_rec,
+        #     }
+        #
+        # # Unit Actions
+        # unit_actions = {}
+        # for unit_id in unit_obs.keys():
+        #     unit = self.master.units.friendly.get_unit(unit_id)
+        #     uobs = unit_obs[unit_id]
+        #     if unit.factory_id:
+        #         fobs = factory_obs[unit.factory_id]
+        #         factory = self.master.factories.friendly[unit.factory_id]
+        #     else:
+        #         fobs = None
+        #         factory = None
+        #     u_action = self.calculate_unit_actions(
+        #         unit=unit,
+        #         uobs=uobs,
+        #         factory=factory,
+        #         fobs=fobs,
+        #         unit_recommendations=unit_recommendations[unit_id],
+        #     )
+        #     if u_action is not None:
+        #         unit_actions[unit_id] = u_action
 
     def calculate_unit_actions(
         self,
@@ -923,9 +1000,9 @@ class Agent:
         # Make at least 1 heavy mine ice
         if (
             not factory_has_heavy_ice_miner(factory)
-            and unit.unit.unit_type == 'HEAVY'
+            and unit.unit_type == 'HEAVY'
             and unit.status.role != 'mine_ice'
-        ) or (unit.status.role == 'mine_ice' and len(unit.unit.action_queue) == 0):
+        ) or (unit.status.role == 'mine_ice' and len(unit.action_queue) == 0):
             logging.info(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
             mining_rec = unit_recommendations.pop('mine_ice', None)
             if mining_rec is not None:
@@ -935,8 +1012,8 @@ class Agent:
                 raise RuntimeError(f'no `mine_ice` recommendation for {unit.unit_id}')
 
         # Make at least one light mine rubble
-        if (unit.unit.unit_type == 'LIGHT' and not unit.status.role) or (
-            unit.status.role == 'clear_rubble' and len(unit.unit.action_queue) == 0
+        if (unit.unit_type == 'LIGHT' and not unit.status.role) or (
+            unit.status.role == 'clear_rubble' and len(unit.action_queue) == 0
         ):
             logging.info(
                 f'{unit.unit_id} assigned to clear_rubble (for {unit.factory_id})'
@@ -959,8 +1036,6 @@ class Agent:
         game_state = obs_to_game_state(step, self.env_cfg, obs)
         # TODO: Use last obs to see what has changed to optimize update? Or master does this?
         self.master.update(game_state)
-        self.mining_planner.update()
-        self.rubble_clearing_planner.update()
         self.last_obs = obs
 
     def _get_general_processed_obs(self) -> GeneralObs:
@@ -1015,10 +1090,10 @@ def calculate_unit_obs(unit: FriendlyUnitManger, plan: MasterState) -> UnitObs:
     """
     id = unit.unit_id
     nearest_enemy_light_distance = plan.units.nearest_unit(
-        pos=unit.unit.pos, friendly=False, enemy=True, light=True, heavy=False
+        pos=unit.pos, friendly=False, enemy=True, light=True, heavy=False
     )
     nearest_enemy_heavy_distance = plan.units.nearest_unit(
-        pos=unit.unit.pos, friendly=False, enemy=True, light=False, heavy=True
+        pos=unit.pos, friendly=False, enemy=True, light=False, heavy=True
     )
     uobs = UnitObs(
         id=id,

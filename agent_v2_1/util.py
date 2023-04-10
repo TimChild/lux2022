@@ -25,6 +25,7 @@ from itertools import product
 from luxai_s2 import LuxAI_S2
 from luxai_s2.unit import UnitType
 
+from agent_v2_1.new_path_finder import Pather
 from lux.kit import obs_to_game_state, GameState, to_json
 from lux.config import UnitConfig, EnvConfig
 from lux.utils import direction_to
@@ -1469,12 +1470,10 @@ def figures_to_subplots(
 
 
 def calc_path_to_factory(
-    pathfinder: PathFinder,
+    pathfinder: Pather,
     pos: Tuple[int, int],
     factory_loc: np.ndarray,
-    rubble: Union[bool, np.ndarray] = False,
     margin=2,
-    collision_params: CollisionParams = None,
 ) -> np.ndarray:
     """Calculate path from pos to the nearest point on factory that will be unoccupied on arrival
     Args:
@@ -1495,12 +1494,10 @@ def calc_path_to_factory(
         if tuple(nearest_factory) == tuple(pos):
             return np.array(pos)
         if nearest_factory is not None:
-            path = pathfinder.path_fast(
+            path = pathfinder.fast_path(
                 pos,
                 nearest_factory,
-                rubble=rubble,
                 margin=margin,
-                collision_params=collision_params,
             )
             if len(path) > 0:
                 return path
@@ -1510,12 +1507,11 @@ def calc_path_to_factory(
         logging.warning(
             f'No path to any factory tile without collisions from {pos}  (best factory loc would be {original_nearest_location}), returning path without considering collisions'
         )
-        path = pathfinder.path_fast(
+        path = pathfinder.fast_path(
             pos,
             original_nearest_location,
-            rubble=rubble,
+            costmap=pathfinder.base_costmap,
             margin=margin,
-            collision_params=None,
         )
         return path
 
@@ -1535,14 +1531,11 @@ def set_middle_of_factory_loc_zero(factory_loc: np.ndarray):
 
 
 def path_to_factory_edge_nearest_pos(
-    pathfinder: PathFinder,
+    pathfinder: Pather,
     factory_loc: np.ndarray,
-    collision_params: CollisionParams,
     pos: Tuple[int, int],
     pos_to_be_near: Tuple[int, int],
-    rubble=True,
     margin=1,
-    max_delay_by_move_center=0,
 ) -> Union[np.ndarray, None]:
     """Path to the best location on the factory edge without collision
     Args:
@@ -1566,43 +1559,42 @@ def path_to_factory_edge_nearest_pos(
         elif tuple(nearest_factory) == tuple(pos):
             return np.array([])
         else:
-            path = pathfinder.path_fast(
+            path = pathfinder.fast_path(
                 pos,
                 nearest_factory,
-                rubble=rubble,
                 margin=margin,
-                collision_params=collision_params,
             )
             if len(path) > 0:
                 return path
         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
-    if max_delay_by_move_center > 0:
-        from path_finder import CollisionParams  # Avoiding circular import
 
-        logging.info(f'Adding delay to finding path to edge of factory')
-        new_collision_params = CollisionParams(
-            look_ahead_turns=collision_params.look_ahead_turns,
-            ignore_ids=collision_params.ignore_ids,
-            friendly_light=collision_params.friendly_light,
-            friendly_heavy=collision_params.friendly_heavy,
-            enemy_light=collision_params.enemy_light,
-            enemy_heavy=collision_params.enemy_heavy,
-            starting_step=collision_params.starting_step + 1,
-        )
-        next_path = path_to_factory_edge_nearest_pos(
-            pathfinder,
-            factory_loc,
-            new_collision_params,
-            pos,
-            pos_to_be_near,
-            rubble,
-            margin,
-            max_delay_by_move_center=max_delay_by_move_center - 1,
-        )
-        return np.concatenate((np.array([pos]), next_path))
-    else:
-        logging.warning(f'No path to edge of factory found without collisions')
-        return None
+    logging.warning(f'No path to edge of factory found without collisions')
+    return np.array([])
+    # if max_delay_by_move_center > 0:
+    #     logging.info(f'Adding delay to finding path to edge of factory')
+    #     new_collision_params = CollisionParams(
+    #         look_ahead_turns=collision_params.look_ahead_turns,
+    #         ignore_ids=collision_params.ignore_ids,
+    #         friendly_light=collision_params.friendly_light,
+    #         friendly_heavy=collision_params.friendly_heavy,
+    #         enemy_light=collision_params.enemy_light,
+    #         enemy_heavy=collision_params.enemy_heavy,
+    #         starting_step=collision_params.starting_step + 1,
+    #     )
+    #     next_path = path_to_factory_edge_nearest_pos(
+    #         pathfinder,
+    #         factory_loc,
+    #         new_collision_params,
+    #         pos,
+    #         pos_to_be_near,
+    #         rubble,
+    #         margin,
+    #         max_delay_by_move_center=max_delay_by_move_center - 1,
+    #     )
+    #     return np.concatenate((np.array([pos]), next_path))
+    # else:
+    #     logging.warning(f'No path to edge of factory found without collisions')
+    #     return None
 
 
 def power_cost_of_path(path, rubble: np.ndarray, unit_type="LIGHT") -> int:

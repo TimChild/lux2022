@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from typing import Union
 import logging
 
+from luxai_s2.unit import UnitCargo
+
 from lux.unit import Unit
 from lux.config import UnitConfig
 import util
@@ -56,6 +58,10 @@ class UnitManager(abc.ABC):
     @pos.setter
     def pos(self, value):
         self.unit.pos = value
+
+    @property
+    def cargo(self) -> UnitCargo:
+        return self.unit.cargo
 
     @property
     def unit_type(self) -> str:

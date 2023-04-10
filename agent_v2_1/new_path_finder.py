@@ -52,7 +52,9 @@ def _adjust_coords(start, end, lowers) -> Tuple[Tuple[int, int], Tuple[int, int]
     """Adjust coords to new reduced area map"""
     new_start = [c - l for c, l in zip(start, lowers)]
     new_end = [c - l for c, l in zip(end, lowers)]
-    return tuple(new_start), tuple(new_end)  # Complaining about unknown length of tuples
+    return tuple(new_start), tuple(
+        new_end
+    )  # Complaining about unknown length of tuples
 
 
 def _adjust_path_back(path: np.ndarray, lowers):
@@ -74,8 +76,7 @@ def _get_bounds(start, end, margin, map_shape):
     # Bounds including margin (x, y)
     lowers = [max(0, v - margin) for v in mins]
     uppers = [
-        min(s - 1, v + margin) + 1
-        for s, v in zip(reversed(map_shape), maxs)
+        min(s - 1, v + margin) + 1 for s, v in zip(reversed(map_shape), maxs)
     ]  # +1 for range
     return lowers, uppers
 
@@ -95,8 +96,8 @@ class Pather:
 
     def fast_path(
         self,
-        start_pos: Tuple[int, int],
-        end_pos: Tuple[int, int],
+        start_pos: util.POS_TYPE,
+        end_pos: util.POS_TYPE,
         costmap=None,
         margin=2,
     ):
@@ -130,7 +131,7 @@ class Pather:
         return path
 
     def append_path_to_actions(
-            self, unit: UnitManager, path: Union[List[Tuple[int, int]], np.ndarray]
+        self, unit: UnitManager, path: Union[List[Tuple[int, int]], np.ndarray]
     ) -> None:
         """
         Turns the path into actions that are appended to unit. This is how path should ALWAYS be updated

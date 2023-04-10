@@ -3,6 +3,7 @@ import logging
 from typing import TYPE_CHECKING, Tuple, List
 import numpy as np
 
+from agent_v2_1.new_path_finder import Pather
 from util import calc_path_to_factory, power_cost_of_path, num_turns_of_actions
 from master_state import MasterState, Planner
 from actions import Recommendation
@@ -221,7 +222,7 @@ class RubbleRoutePlanner:
 
     def __init__(
         self,
-        pathfinder: PathFinder,
+        pathfinder: Pather,
         rubble: np.ndarray,
         rubble_value_map: np.ndarray,
         factory: FriendlyFactoryManager,
@@ -289,8 +290,7 @@ class RubbleRoutePlanner:
                 )
             else:
                 if len(path_to_factory) > 0:
-                    self.unit.action_queue.extend(path_to_actions(path_to_factory))
-                    self.unit.pos = path_to_factory[-1]
+                    self.pathfinder.append_path_to_actions(self.unit, path_to_factory)
                     break
         return self.unit.action_queue[: self.target_queue_length]
 
@@ -358,27 +358,19 @@ class RubbleRoutePlanner:
             np.argmax(boundary_values), boundary_values.shape
         )
         logging.info(f"unit moving to {max_value_coord}")
-        path = self.pathfinder.path_fast(
+        path = self.pathfinder.fast_path(
             self.unit.pos,
             max_value_coord,
-            rubble=True,
             margin=2,
-            collision_params=CollisionParams(
-                look_ahead_turns=self.move_lookahead,
-                ignore_ids=(self.unit.unit_id,),
-                enemy_light=True if self.unit.unit_type == 'LIGHT' else False,
-                starting_step=num_turns_of_actions(self.unit.action_queue),
-            ),
         )
         if len(path) > 0:
-            self.unit.action_queue.extend(path_to_actions(path))
-            self.unit.pos = path[-1]  # Update position of unit
+            self.pathfinder.append_path_to_actions(self.unit, path)
             return True
         else:
             logging.warning(
                 f'No path to {max_value_coord} from {self.unit.pos}, moving center',
             )
-            self.unit.action_queue.append(self.unit.move(CENTER))
+            self.pathfinder.append_direction_to_actions(self.unit, CENTER)
             return False
 
     def _get_boundary_values(self):
