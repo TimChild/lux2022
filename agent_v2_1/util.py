@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from collections import deque
 import functools
 import sys
 
@@ -125,6 +125,13 @@ class MyEnv:
         self.other_agent = OtherAgent("player_1", self.env.env_cfg)
         self.agents = {a.player: a for a in [self.agent, self.other_agent]}
 
+        # For being able to undo
+        self._previous_step = deque(maxlen=5)
+        self._previous_real_steps = deque(maxlen=5)
+        self._previous_obs = deque(maxlen=5)
+        self._previous_env = deque(maxlen=5)
+
+
     def run_early_setup(self):
         """Run through the placing factories stage"""
         # Reset
@@ -148,26 +155,29 @@ class MyEnv:
             actions[player] = acts
         return actions
 
+    def undo(self):
+        """Undoes the last turn (can be done a few times in a row)"""
+        self.env_step, self.real_env_steps, self.obs, self.env = (
+            self._previous_step.pop(),
+            self._previous_real_steps.pop(),
+            self._previous_obs.pop(),
+            self._previous_env.pop(),
+        )
+
+    def _record_state(self):
+        """So that I can easily undo actions later"""
+        self._previous_step.append(self.env_step)
+        self._previous_real_steps.append(self.env_step)
+        self._previous_obs.append(self.obs)
+        self._previous_env.append(copy.copy(self.env))
+
     def step(self):
         """Progress a single step"""
         logging.info(
             f"Carrying out real step {self.real_env_steps}, env step {self.env_step}"
         )
 
-        def reset_to_previous_state():
-            self.env_step, self.real_env_steps, self.obs, self.env = (
-                step,
-                real_steps,
-                obs,
-                env,
-            )
-
-        step, real_steps, obs, env = (
-            self.env_step,
-            self.real_env_steps,
-            self.obs,
-            copy.copy(self.env),
-        )
+        self._record_state()
 
         try:
             actions = self.get_actions()
@@ -179,14 +189,14 @@ class MyEnv:
                     f'One of the players dones came back True, previous state restored, use myenv.get_actions() to '
                     f'repeat gathering latest turns actions'
                 )
-                reset_to_previous_state()
+                self.undo()
                 return False
         except Exception as e:
             logging.warning(
                 f'Error caught while running step, previous state restored, use myenv.get_actions() to '
                 f'repeat gathering actions'
             )
-            reset_to_previous_state()
+            self.undo()
             raise e
         return True
 
