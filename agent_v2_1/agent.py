@@ -24,11 +24,58 @@ from rubble_clearing_planner import RubbleClearingPlanner
 
 import util
 
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, filename='log.log')
 logging.info('Starting Log')
 
 if TYPE_CHECKING:
     from .master_state import Recommendation
+
+
+
+class FactoryTurnPlanner:
+
+    def __init__(self, master: MasterState):
+        self.master = master
+
+    def get_observation_df(self):
+        """
+        - Gather info about factories and put into DF
+        - Sort so that top is highest priority factory (not sure this will make much difference anyway)
+        - Some of this is probably useful for units to decide on actions too
+        """
+        # factory_obs = {}
+        # for factory_id, factory in self.master.factories.friendly.items():
+        #     if factory_should_consider_acting(factory, self.master):
+        #         fobs = calculate_factory_obs(factory, self.master)
+        #         factory_obs[factory_id] = fobs
+
+
+
+    def get_actions(self):
+        """
+        - Determine actions based on info in DF
+
+        """
+        # factory_obs = self.get_observation_df()
+        #
+        # for index, row in factory_obs.iterrows():
+        #
+        #
+        # # Factory Actions
+        # factory_actions = {}
+        # for factory_id in factory_obs.keys():
+        #     factory = self.master.factories.friendly[factory_id]
+        #     fobs = factory_obs[factory_id]
+        #     f_action = calculate_factory_action(
+        #         factory=factory, fobs=fobs, master=self.master
+        #     )
+        #     if f_action is not None:
+        #         factory_actions[factory_id] = f_action
+
+
+#######################################
+
 
 
 def find_collisions1(
@@ -308,11 +355,12 @@ class AllUnitPaths:
         return collisions
 
 
+
 class TurnPlanner:
     # Look for close units within this distance
-    search_dist = 6
+    search_dist = 4
     # What is considered a close unit when considering future paths
-    close_threshold = 5
+    close_threshold = 3
     # If there will be a collision within this many steps consider acting
     check_collision_steps = 2
     # Increase cost to travel near units based on kernel with this dist
@@ -524,7 +572,7 @@ class TurnPlanner:
         if not df.empty:
             sorted_df = df.sort_values(
                 by=['is_heavy', 'enough_power_to_move', 'power', 'ice', 'ore'],
-                ascending=[True, False, True, False, True],
+                ascending=[False, False, True, False, True],
             )
             return sorted_df
         else:
@@ -575,9 +623,7 @@ class TurnPlanner:
             likelihood_array = np.exp(-0.5 * (distance_diffs**1))
 
             return likelihood_array
-        logging.info(f'Updating costmap with path unit at {unit_pos} with other_path {other_path} (first value in '
-                     f'other_path is other units CURRENT location that will be removed before calculating collisions '
-                     f'etc)')
+        logging.info(f'Updating costmap with path unit at {unit_pos} with other_path[0:2] {other_path[0:2]}')
         other_path = other_path[1:]
         # Figure out distance to other_units path at each point
         other_path_distance = [util.manhattan(p, unit_pos) for p in other_path]
@@ -794,6 +840,8 @@ class TurnPlanner:
         rubble_clearing_planner: RubbleClearingPlanner,
     ) -> bool:
         """Calculate new actions for this unit"""
+        logging.info(f'Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, role =  {unit.status.role}')
+
         # Update the master pathfinder with newest Pather (full_costmap changes for each unit)
         self.master.pathfinder = Pather(
             base_costmap=base_costmap,
@@ -907,7 +955,7 @@ class TurnPlanner:
 
         for unit_id, unit in units_to_act.has_updated_actions.items():
             if len(unit.action_queue) > 0:
-                actions[unit_id] = unit.action_queue
+                actions[unit_id] = unit.action_queue[:20]
         return actions
 
 
@@ -964,11 +1012,6 @@ class Agent:
         self.mining_planner.update()
         self.rubble_clearing_planner.update()
 
-        tp = TurnPlanner(self.master)
-        unit_actions = tp.process_units(
-            mining_planner=self.mining_planner,
-            rubble_clearing_planner=self.rubble_clearing_planner,
-        )
 
         #
         # # Get processed observations (i.e. the obs that I will use to train a PPO agent)
@@ -999,6 +1042,15 @@ class Agent:
             )
             if f_action is not None:
                 factory_actions[factory_id] = f_action
+
+
+
+
+        tp = TurnPlanner(self.master)
+        unit_actions = tp.process_units(
+            mining_planner=self.mining_planner,
+            rubble_clearing_planner=self.rubble_clearing_planner,
+        )
 
         logging.debug(f'{self.player} Unit actions: {unit_actions}')
         logging.info(f'{self.player} Factory actions: {factory_actions}')

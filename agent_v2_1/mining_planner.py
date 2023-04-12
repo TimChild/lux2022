@@ -156,6 +156,21 @@ class MiningRoutePlanner:
                 else:  # No path to factory
                     success = False
 
+                if self.unit.cargo.ice > 0:
+                    logging.info(f'dropping off {self.unit.cargo.ice} ice before from_factory')
+                    self.unit.action_queue.append(
+                        self.unit.transfer(
+                            CENTER, ICE, self.unit.unit_config.CARGO_SPACE
+                        )
+                    )
+                if self.unit.cargo.ore > 0:
+                    logging.info(f'dropping off {self.unit.cargo.ore} ore before from_factory')
+                    self.unit.action_queue.append(
+                        self.unit.transfer(
+                            CENTER, ORE, self.unit.unit_config.CARGO_SPACE
+                        )
+                    )
+
         # Then route from factory (if successful up to this point)
         if success:
             if len(self.unit.action_queue) < self.target_queue_length:
@@ -232,29 +247,32 @@ class MiningRoutePlanner:
         available_power = self.unit.power - power_cost_of_actions(
             self.rubble, self.unit, self.unit.action_queue
         )
+        if available_power < 0:
+            logging.warning(f'{self.unit.log_prefix}: available_power negative, setting zero instead')
+            available_power = 0
+        logging.info(f'available_power = {available_power}')
+
         target_digs = int(
             (self.unit.unit_config.BATTERY_CAPACITY - travel_cost)
             / self.unit.unit_config.DIG_COST,
         )
         target_power = travel_cost + target_digs * self.unit.unit_config.DIG_COST
+        logging.info(f'target_power = {target_power}')
 
-        # If action queue is short, assume factory won't have more energy, if long, assume it will
-        if len(self.unit.action_queue) < 10:
-            factory_power = self.factory.factory.power
-        else:
-            # Assume enough to do anything (will be checking if this is true before unit tries to do it)
-            factory_power = 3000
+        # Assume nothing else picking up power
+        factory_power = self.factory.power + util.num_turns_of_actions(self.unit.action_queue)
+        logging.info(f'factory_power = {target_power}')
 
         # Pickup power and update n_digs
         if factory_power > target_power - available_power:
-            logging.info(
-                f'picking up desired power to achieve target of {target_power}'
-            )
             power_to_pickup = target_power - available_power
+            logging.info(
+                f'picking up {power_to_pickup} power to achieve target of {target_power}'
+            )
             if power_to_pickup > 0:
-                self.unit.action_queue.append(self.unit.pickup(POWER, power_to_pickup))
+                self.unit.action_queue.append(self.unit.pickup(POWER, min(self.unit.unit_config.BATTERY_CAPACITY, power_to_pickup)))
             n_digs = target_digs
-        elif factory_power + available_power > self.unit.unit_config.DIG_COST * 3:
+        elif factory_power + available_power - travel_cost > self.unit.unit_config.DIG_COST * 3:
             logging.info(f'picking up available power {factory_power}')
             self.unit.action_queue.append(self.unit.pickup(POWER, factory_power))
             n_digs = int(
@@ -285,7 +303,7 @@ class MiningRoutePlanner:
             self.unit.action_queue.append(self.unit.dig(n=n_digs))
         else:
             logging.error(
-                f'n_digs = {n_digs}, unit heading off to not mine anything. should always be greater than 1'
+                f'{self.unit.unit_id} n_digs = {n_digs}, unit heading off to not mine anything. should always be greater than 1'
             )
             return False
 
@@ -397,7 +415,7 @@ class MiningPlanner(Planner):
         return success
 
     def recommend(
-        self, unit: FriendlyUnitManger, resource_type: int = ICE, **kwargs
+        self, unit: FriendlyUnitManger, resource_type: int = ICE, unit_must_move: bool = False
     ) -> [None, MiningRecommendation]:
         # Which resource are we looking for?
         if resource_type == ICE:
@@ -410,7 +428,8 @@ class MiningPlanner(Planner):
             )
 
         # If unit must move, make sure not to recommend resource under unit
-        resource_map[unit.pos_slice] = 0
+        if unit_must_move:
+            resource_map[unit.pos_slice] = 0
 
         # Where is the unit and where is the factory
         unit_pos = unit.pos

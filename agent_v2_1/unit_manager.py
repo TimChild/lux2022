@@ -37,6 +37,10 @@ class UnitManager(abc.ABC):
         # Keep track of pos a start of turn because pos will be updated while planning what to do next
         self.start_of_turn_pos = unit.pos
 
+    @property
+    def log_prefix(self) -> str:
+        return f'{self.unit_type} {self.unit_id}({self.start_of_turn_pos})({self.pos}):'
+
     def update(self, unit: Unit):
         """Beginning of turn update"""
         self.unit = unit
@@ -117,9 +121,14 @@ class FriendlyUnitManger(UnitManager):
     def dead(self):
         """Called when unit is detected as dead"""
         logging.info(
-            f'Friendly unit {self.unit_id} dead, removing from {self.factory_id} units also'
+            f'{self.log_prefix} Friendly unit dead'
         )
-        fkey = 'light' if self.unit.unit_type == 'LIGHT' else 'heavy'
-        getattr(self.master.factories.friendly[self.factory_id], f'{fkey}_units').pop(
-            self.unit_id
-        )
+        if self.factory_id:
+            logging.info(f'removing from {self.factory_id} units also')
+            fkey = 'light' if self.unit.unit_type == 'LIGHT' else 'heavy'
+            popped = getattr(self.master.factories.friendly[self.factory_id], f'{fkey}_units').pop(
+                self.unit_id, None
+            )
+            if popped is None:
+                logging.warning(f'{self.log_prefix}  was not in {self.factory_id} units')
+

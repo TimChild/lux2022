@@ -381,9 +381,12 @@ class RubbleRoutePlanner:
     def _from_factory_actions(self) -> bool:
         """Generate starting actions assuming starting on factory"""
         if self.unit.power < self.unit.unit_config.BATTERY_CAPACITY:
-            logging.info(f"topping up battery")
             power_to_pickup = self.unit.unit_config.BATTERY_CAPACITY - self.unit.power
+            if self.factory.power < power_to_pickup:
+                logging.warning(f'{self.unit.unit_id} would like to pickup {power_to_pickup} but factory has {self.factory.power}. Not doing rubble clearing this turn')
+                return False
             if power_to_pickup > 0:
+                logging.info(f"topping up battery")
                 self.unit.action_queue.append(self.unit.pickup(POWER, power_to_pickup))
 
         boundary_values = self._get_boundary_values()

@@ -85,6 +85,10 @@ class FriendlyFactoryManager(FactoryManager):
         arr[self.factory.pos_slice] = 1
         return arr
 
+    @property
+    def power(self) -> int:
+        return self.factory.power
+
     @staticmethod
     def place_factory(game_state: GameState, player):
         """Place factory in early_setup"""
