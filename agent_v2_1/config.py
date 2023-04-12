@@ -1,16 +1,27 @@
 import logging
 
+ALL_LOGGERS = {}
+
+
 # Custom logging levels
 FUNCTION_CALL = 25
 logging.addLevelName(FUNCTION_CALL, "FUNCTION")
+
+VERBOSE = 5
+logging.addLevelName(VERBOSE, "VERBOSE")
 
 
 def function_call(self, message, *args, **kwargs):
     if self.isEnabledFor(FUNCTION_CALL):
         self._log(FUNCTION_CALL, message, args, **kwargs)
 
+def verbose(self, message, *args, **kwargs):
+    if self.isEnabledFor(VERBOSE):
+        self._log(VERBOSE, message, args, **kwargs)
+
 
 logging.Logger.function_call = function_call
+logging.Logger.verbose = verbose
 
 
 class LevelFilter(logging.Filter):
@@ -32,38 +43,39 @@ class LevelAboveFilter(logging.Filter):
 # Create a custom logger
 base_logger = logging.getLogger(__name__)
 base_logger.setLevel(logging.DEBUG)
+base_logger.handlers = []
 
 # Create handlers for debug, info, and other levels
+verbose_handler = logging.StreamHandler()
 debug_handler = logging.StreamHandler()
 info_handler = logging.StreamHandler()
+function_call_handler = logging.StreamHandler()
 other_handler = logging.StreamHandler()
 
 # Set level and add filters for each handler
+verbose_handler.setLevel(VERBOSE)
+verbose_handler.addFilter(LevelFilter(VERBOSE))
+
 debug_handler.setLevel(logging.DEBUG)
 debug_handler.addFilter(LevelFilter(logging.DEBUG))
 
 info_handler.setLevel(logging.INFO)
 info_handler.addFilter(LevelFilter(logging.INFO))
 
+function_call_handler.setLevel(FUNCTION_CALL)
+function_call_handler.addFilter(LevelFilter(FUNCTION_CALL))
+
 other_handler.setLevel(logging.WARNING)
 other_handler.addFilter(LevelAboveFilter(logging.INFO))
 
-
 # Create formatters and add them to handlers
-# info_format = logging.Formatter(
-#     '\t%(levelname)-8.8s:%(module)-10.10s.%(name)-10.10s:%(lineno)-4d - %(message)s'
-# )
-#
-# debug_format = logging.Formatter(
-#     '\t\t%(levelname)-8.8s:%(module)-10.10s.%(name)-10.10s:%(lineno)-4d - %(message)s'
-# )
-# other_format = logging.Formatter(
-#     '%(levelname)-8.8s:%(module)-10.10s.%(name)-10.10s:%(lineno)-4d - %(message)s'
-# )
 other_format = logging.Formatter(
     '%(levelname)s:%(module)s.%(name)s:%(lineno)d: %(message)s'
 )
 info_format = logging.Formatter(
+    '\t%(levelname)s:%(module)s.%(name)s:%(lineno)d: %(message)s'
+)
+function_call_format = logging.Formatter(
     '\t%(levelname)s:%(module)s.%(name)s:%(lineno)d: %(message)s'
 )
 
@@ -71,20 +83,27 @@ debug_format = logging.Formatter(
     '\t\t%(levelname)s:%(module)s.%(name)s:%(lineno)d: %(message)s'
 )
 
+verbose_format = logging.Formatter(
+    '\t\t\t%(levelname)s: %(message)s'
+)
+
+verbose_handler.setFormatter(verbose_format)
 debug_handler.setFormatter(debug_format)
 info_handler.setFormatter(info_format)
+function_call_handler.setFormatter(function_call_format)
 other_handler.setFormatter(other_format)
 
 # Add the handlers to the logger
+base_logger.addHandler(verbose_handler)
 base_logger.addHandler(debug_handler)
 base_logger.addHandler(info_handler)
+base_logger.addHandler(function_call_handler)
 base_logger.addHandler(other_handler)
 
 
 # logging.basicConfig(level=logging.INFO, filename='log.log')
 base_logger.warning('================== Starting Log =====================')
 
-ALL_LOGGERS = {}
 
 
 def get_logger(name) -> logging.Logger:
@@ -99,14 +118,6 @@ def get_logger(name) -> logging.Logger:
 
 def update_logging_level(level, all_loggers=True):
     """Updates the logging level"""
-    # root = logging.getLogger()
-    # if root.handlers:
-    #     for handler in root.handlers:
-    #         root.removeHandler(handler)
-    # logging.basicConfig(
-    #     format="%(levelname)-5.5s:%(module)-10.10s.%(name)-10.10s:%(lineno)-4d:%(funcName)-20.20s: %(message)s",
-    #     level=level,
-    # )
     base_logger.setLevel(level)
     if all_loggers:
         for k, logger in ALL_LOGGERS.items():

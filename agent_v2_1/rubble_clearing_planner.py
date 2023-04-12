@@ -450,6 +450,9 @@ class RubbleClearingPlanner(Planner):
 
         self._factory_value_maps = {}
 
+    def __repr__(self):
+        return f'RubbleClearingPlanner[step={self.master.step}]'
+
     def update_actions_of(self, unit: FriendlyUnitManger, unit_must_move: bool):
         """Figure out what the next actions for unit should be"""
         success = False

@@ -378,6 +378,9 @@ class MiningPlanner(Planner):
         self.master: MasterState = master_state
         self._mining_routes = None
 
+    def __repr__(self):
+        return f'MiningPlanner[step={self.master.step}]'
+
     @property
     def ice(self):
         return self.master.maps.ice

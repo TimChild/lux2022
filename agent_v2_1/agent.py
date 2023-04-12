@@ -390,7 +390,7 @@ class TurnPlanner:
         Returns:
             Instance of UnitsToAct
         """
-        logger.function_call(f"units_should_consider_acting called with units: {units}")
+        logger.function_call(f"units_should_consider_acting called with len(units): {len(units)}")
 
         upcoming_collisions = self.calculate_collisions()
         close_to_enemy = self.calculate_close_enemies()
@@ -538,6 +538,8 @@ class TurnPlanner:
             data.append(
                 {
                     'unit': unit,
+                    'unit_id': unit.unit_id,
+                    'len_action_queue': len(unit.action_queue),
                     'distance_to_factory': unit_distance_map[
                         unit_factory.factory.pos[0], unit_factory.factory.pos[1]
                     ]
@@ -566,16 +568,18 @@ class TurnPlanner:
         Returns:
             A sorted pandas dataframe with units ordered by priority.
         """
-        logger.function_call(f"sort_units_by_priority called with dataframe:\n{df}")
+        logger.function_call(f"sort_units_by_priority called")
 
         if not df.empty:
             sorted_df = df.sort_values(
                 by=['is_heavy', 'enough_power_to_move', 'power', 'ice', 'ore'],
                 ascending=[False, False, True, False, True],
             )
-            logger.debug(f"Sorted units by priority:\n{sorted_df}")
-            logger.debug(f"Unit with highest priority: {sorted_df.iloc[0]}")
-            logger.debug(f"Unit with lowest priority: {sorted_df.iloc[-1]}")
+            logger.debug(f"Sorted units by priority")
+            highest = sorted_df.iloc[0]
+            lowest = sorted_df.iloc[-1]
+            logger.debug(f"Unit with highest priority: {highest.unit_id}  ({highest.unit.pos}), is_heavy={highest.is_heavy}, power={highest.power}, ice={highest.ice}, ore={highest.ore}, len_acts={highest.len_action_queue}")
+            logger.debug(f"Unit with lowest priority: {lowest.unit_id}  ({lowest.unit.pos}), is_heavy={lowest.is_heavy}, power={lowest.power}, ice={lowest.ice}, ore={lowest.ore}, len_acts={lowest.len_action_queue}")
             return sorted_df
         else:
             logger.debug("Empty dataframe, returning without sorting.")
@@ -628,7 +632,7 @@ class TurnPlanner:
             return likelihood_array
 
         logger.info(
-            f'Updating costmap with path unit at {unit_pos} with other_path[0:2] {other_path[0:2]}'
+            f'Updating costmap with other_path[0:2] {other_path[0:2]}'
         )
         other_path = other_path[1:]
         # Figure out distance to other_units path at each point
@@ -796,7 +800,7 @@ class TurnPlanner:
             units_to_act: UnitsToAct instance containing units that need to act and units that should not act.
             unit: Unit to get the costmap for (i.e. distances calculated relative to this unit)
         """
-        logger.debug(f"Calculating costmap with paths for unit {unit.unit_id}")
+        logger.function_call(f"Calculating costmap with paths for unit {unit.unit_id}")
         new_cost = base_costmap.copy()
 
         all_close_units = self.calculate_close_units()
@@ -805,7 +809,7 @@ class TurnPlanner:
         # If close to enemy, add those paths
         if unit.unit_id in all_close_units.close_to_enemy:
             logger.debug(
-                f"{unit.unit_id} is close to at least one enemy, adding those to costmap"
+                f"Close to at least one enemy, adding those to costmap"
             )
             close_units = all_close_units.close_to_enemy[unit.unit_id]
             # For each nearby enemy unit
@@ -818,7 +822,7 @@ class TurnPlanner:
         # If close to friendly, add those paths
         if unit.unit_id in all_close_units.close_to_friendly:
             logger.debug(
-                f"{unit.unit_id} is close to at least one friendly, adding those to costmap"
+                f"Close to at least one friendly, adding those to costmap"
             )
             close_units = all_close_units.close_to_friendly[unit.unit_id]
 
@@ -827,7 +831,7 @@ class TurnPlanner:
                 if other_id in units_yet_to_act:
                     # That other unit can get out of the way
                     logger.debug(
-                        f"For {unit.unit_id}, not adding friendly {other_id}'s path to costmap, assuming it will get out of the way"
+                        f"Not adding friendly {other_id}'s path to costmap, assuming it will get out of the way"
                     )
                     continue
                 other_unit = self.master.units.friendly.get_unit(other_id)
@@ -838,7 +842,7 @@ class TurnPlanner:
                     other_is_enemy=False,
                 )
 
-        logger.debug(f"Done calculating costmap with paths for unit {unit.unit_id}")
+        logger.debug(f"Done calculating costmap")
         return new_cost
 
     def calculate_actions_for_unit(
@@ -851,7 +855,7 @@ class TurnPlanner:
         rubble_clearing_planner: RubbleClearingPlanner,
     ) -> bool:
         """Calculate new actions for this unit"""
-        logger.info(
+        logger.function_call(
             f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, role = {unit.status.role}"
         )
 
@@ -891,7 +895,6 @@ class TurnPlanner:
         # TODO: If close to enemy and run away - do it
         # TODO: Collect some factory obs to help decide what to do
         # TEMPORARY
-        logger.info(f"Deciding actions for {unit.unit_id}")
         success = calculate_unit_actions(unit, unit_must_move)
         # If current location is going to be occupied by another unit, the first action must be to move!
         if unit_must_move:
@@ -937,8 +940,8 @@ class TurnPlanner:
             unit: FriendlyUnitManger
             units_to_act.needs_to_act.pop(unit.unit_id)
 
-            logger.debug(
-                f"Processing unit {unit.unit_id} at index {index}: "
+            logger.info(
+                f"\n\nProcessing unit {unit.unit_id}({unit.pos}) at index {index}: "
                 f"is_heavy={row.is_heavy}, enough_power_to_move={row.enough_power_to_move}, "
                 f"power={row.power}, ice={row.ice}, ore={row.ore}"
             )
@@ -965,7 +968,7 @@ class TurnPlanner:
                 == np.array(unit_before.action_queue[: self.actions_same_check])
             ):
                 logger.debug(
-                    f'For {unit.unit_id}, first {self.actions_same_check} actions same, not updating unit action queue'
+                    f'First {self.actions_same_check} actions same, not updating unit action queue'
                 )
                 #  Store the unit_before (i.e. not updated at all since it's not changing it's actions)
                 units_to_act.should_not_act[unit.unit_id] = unit_before
@@ -985,7 +988,7 @@ class TurnPlanner:
 
 class Agent:
     def __init__(self, player: str, env_cfg: EnvConfig):
-        logger.info(f'initializing agent for player {player}')
+        logger.info(f'Initializing agent for player {player}')
         self.player = player
         self.env_cfg: EnvConfig = env_cfg
         np.random.seed(0)
@@ -1072,9 +1075,8 @@ class Agent:
             rubble_clearing_planner=self.rubble_clearing_planner,
         )
 
-        logger.debug(f'{self.player} Unit actions: {unit_actions}')
-        logger.info(f'{self.player} Factory actions: {factory_actions}')
-
+        logger.verbose(f'{self.player} Unit actions: {unit_actions}')
+        logger.debug(f'{self.player} Factory actions: {factory_actions}')
         return dict(**unit_actions, **factory_actions)
         #
         # # Unit Recommendations

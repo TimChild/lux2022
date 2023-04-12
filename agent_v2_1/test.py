@@ -17,3 +17,7 @@ def test_info_func():
 def test_warning_func():
     print('in warning func')
     logger.warning(f'warning message')
+
+def test_function_call_func():
+    print('in function_call func')
+    logger.function_call(f'function_call message')
