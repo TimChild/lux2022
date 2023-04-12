@@ -3,7 +3,6 @@ import numpy as np
 import abc
 from dataclasses import dataclass
 from typing import Union
-import logging
 
 from luxai_s2.unit import UnitCargo
 
@@ -11,11 +10,12 @@ from lux.unit import Unit
 from lux.config import UnitConfig
 import util
 
+from config import get_logger
 from master_state import MasterState
 from actions import Recommendation
 
-LOGGING_LEVEL = 3
 
+logger = get_logger(__name__)
 
 @dataclass
 class Status:
@@ -108,7 +108,7 @@ class UnitManager(abc.ABC):
 
 class EnemyUnitManager(UnitManager):
     def dead(self):
-        logging.info(f'Enemy unit {self.unit_id} dead, nothing more to do')
+        logger.info(f'Enemy unit {self.unit_id} dead, nothing more to do')
 
 
 class FriendlyUnitManger(UnitManager):
@@ -120,15 +120,15 @@ class FriendlyUnitManger(UnitManager):
 
     def dead(self):
         """Called when unit is detected as dead"""
-        logging.info(
+        logger.info(
             f'{self.log_prefix} Friendly unit dead'
         )
         if self.factory_id:
-            logging.info(f'removing from {self.factory_id} units also')
+            logger.info(f'removing from {self.factory_id} units also')
             fkey = 'light' if self.unit.unit_type == 'LIGHT' else 'heavy'
             popped = getattr(self.master.factories.friendly[self.factory_id], f'{fkey}_units').pop(
                 self.unit_id, None
             )
             if popped is None:
-                logging.warning(f'{self.log_prefix}  was not in {self.factory_id} units')
+                logger.warning(f'{self.log_prefix}  was not in {self.factory_id} units')
 

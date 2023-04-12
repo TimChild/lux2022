@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import functools
 from dataclasses import dataclass, field, InitVar
 from typing import Tuple, List, TYPE_CHECKING, Iterable, Dict, Optional, Union
@@ -9,12 +8,15 @@ from pathfinding.finder.a_star import AStarFinder
 import numpy as np
 from lux.utils import direction_to
 
+from config import get_logger
 import util
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager
     from factory_manager import FactoryManager
     from lux.factory import Factory
+
+logger = get_logger(__name__)
 
 
 # @dataclass(frozen=True)

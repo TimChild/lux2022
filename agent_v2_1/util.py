@@ -5,7 +5,6 @@ import sys
 
 from deprecation import deprecated
 from typing import Tuple, List, Union, Optional, TYPE_CHECKING
-import logging
 import copy
 from scipy import ndimage
 from scipy.signal import convolve2d
@@ -25,6 +24,7 @@ from itertools import product
 from luxai_s2 import LuxAI_S2
 from luxai_s2.unit import UnitType
 
+from config import get_logger
 from new_path_finder import Pather
 from lux.kit import obs_to_game_state, GameState, to_json
 from lux.config import UnitConfig, EnvConfig
@@ -36,6 +36,8 @@ if TYPE_CHECKING:
     from path_finder import PathFinder, CollisionParams
     from unit_manager import FriendlyUnitManger
     from factory_manager import FriendlyFactoryManager
+
+logger = get_logger(__name__)
 
 POS_TYPE = Union[Tuple[int, int], np.ndarray, Tuple[np.ndarray]]
 PATH_TYPE = Union[List[Tuple[int, int]], np.ndarray]
@@ -101,16 +103,6 @@ RECHARGE = 5
 
 
 ################# General #################
-def update_logging_level(level):
-    """Updates the logging level"""
-    root = logging.getLogger()
-    if root.handlers:
-        for handler in root.handlers:
-            root.removeHandler(handler)
-    logging.basicConfig(
-        format="%(levelname)-5.5s:%(module)-10.10s.%(name)-10.10s:%(lineno)-4d:%(funcName)-20.20s: %(message)s",
-        level=level,
-    )
 
 
 class MyEnv:
@@ -174,7 +166,7 @@ class MyEnv:
 
     def step(self):
         """Progress a single step"""
-        logging.info(
+        logger.info(
             f"Carrying out real step {self.real_env_steps}, env step {self.env_step}"
         )
 
@@ -186,14 +178,14 @@ class MyEnv:
             self.real_env_steps = self.env.state.real_env_steps
             self.obs, rewards, dones, infos = self.env.step(actions)
             if any(dones.values()) and self.env_step < 1000:
-                logging.warning(
+                logger.warning(
                     f'One of the players dones came back True, previous state restored, use myenv.get_actions() to '
                     f'repeat gathering latest turns actions'
                 )
                 self.undo()
                 return False
         except Exception as e:
-            logging.warning(
+            logger.warning(
                 f'Error caught while running step, previous state restored, use myenv.get_actions() to '
                 f'repeat gathering actions'
             )
@@ -672,7 +664,7 @@ def list_of_tuples_to_array(lst: List[List[Tuple[int, int]]]) -> np.ndarray:
 def path_to_actions(path):
     """Converts path to actions (combines same direction moves by setting higher n)"""
     if len(path) == 0:
-        logging.warning(f'path_to_actions got empty path {path}')
+        logger.warning(f'path_to_actions got empty path {path}')
         return []
     pos = path[0]
     directions = []
@@ -725,7 +717,7 @@ def move_to_new_spot_on_factory(
                     best_direction = direction
                     best_cost = new_cost
         except IndexError as e:
-            logging.info(
+            logger.info(
                 f'Index error for ({new_x, new_y}), probably near edge of map, ignoring this position'
             )
     # Move unit to best location if available
@@ -733,7 +725,7 @@ def move_to_new_spot_on_factory(
         pathfinder.append_direction_to_actions(unit, best_direction)
         success = True
     else:
-        logging.error(f'No best_direction to move on factory')
+        logger.error(f'No best_direction to move on factory')
     return success
 
 
@@ -1555,7 +1547,7 @@ def calc_path_to_factory(
             factory_loc[nearest_factory[0], nearest_factory[1]] = 0
     # Path to the nearest tile anyway
     else:
-        logging.warning(
+        logger.warning(
             f'No path to any factory tile without collisions from {pos}  (best factory loc would be {original_nearest_location}), returning path without considering collisions'
         )
         path = pathfinder.fast_path(
@@ -1621,10 +1613,10 @@ def path_to_factory_edge_nearest_pos(
                 return path
         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
 
-    logging.warning(f'No path to edge of factory found without collisions')
+    logger.warning(f'No path to edge of factory found without collisions')
     return np.array([[]])
     # if max_delay_by_move_center > 0:
-    #     logging.info(f'Adding delay to finding path to edge of factory')
+    #     logger.info(f'Adding delay to finding path to edge of factory')
     #     new_collision_params = CollisionParams(
     #         look_ahead_turns=collision_params.look_ahead_turns,
     #         ignore_ids=collision_params.ignore_ids,
@@ -1646,7 +1638,7 @@ def path_to_factory_edge_nearest_pos(
     #     )
     #     return np.concatenate((np.array([pos]), next_path))
     # else:
-    #     logging.warning(f'No path to edge of factory found without collisions')
+    #     logger.warning(f'No path to edge of factory found without collisions')
     #     return None
 
 

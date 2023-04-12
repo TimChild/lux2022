@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import functools
 from dataclasses import dataclass, field, InitVar
 from typing import Tuple, List, TYPE_CHECKING, Iterable, Dict, Optional, Union
@@ -9,6 +8,7 @@ from pathfinding.finder.a_star import AStarFinder
 import numpy as np
 from lux.utils import direction_to
 
+from config import get_logger
 from util import list_of_tuples_to_array
 
 if TYPE_CHECKING:
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from factory_manager import FactoryManager
     from lux.factory import Factory
 
+logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class CollisionParams:
@@ -266,7 +267,7 @@ class PathFinder:
                 attempts += 1
                 path = _path(blocked_cells)
                 if len(path) == 0:
-                    logging.info(f'No paths found without collisions')
+                    logger.info(f'No paths found without collisions')
                     break
                 collision_pos = self.check_collisions(
                     path, collision_params=collision_params
@@ -275,6 +276,6 @@ class PathFinder:
                     break
                 blocked_cells.append(collision_pos)
             else:
-                logging.info(f'No paths found without collisions after many attempts')
+                logger.info(f'No paths found without collisions after many attempts')
                 return np.array([start])
         return path

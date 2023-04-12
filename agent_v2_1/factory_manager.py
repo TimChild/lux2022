@@ -2,11 +2,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
-import logging
 
 from lux.kit import GameState
 from lux.factory import Factory
 
+from config import get_logger
 from master_state import MasterState
 from util import (
     manhattan,
@@ -20,6 +20,8 @@ from actions import Recommendation
 
 if TYPE_CHECKING:
     pass
+
+logger = get_logger(__name__)
 
 
 class BuildHeavyRecommendation(Recommendation):
@@ -67,7 +69,7 @@ class FactoryManager:
 
 class EnemyFactoryManager(FactoryManager):
     def dead(self):
-        logging.info(f'dead, nothing else to do')
+        logger.info(f'dead, nothing else to do')
 
 
 class FriendlyFactoryManager(FactoryManager):
@@ -133,9 +135,9 @@ class FriendlyFactoryManager(FactoryManager):
 
     def dead(self):
         """Called when factory is detected as dead"""
-        logging.info(f'dead, looking for assigned units')
+        logger.info(f'dead, looking for assigned units')
 
         for unit_id, unit in self.master.units.friendly.all.items():
             if unit.factory_id == self.unit_id:
-                logging.info(f'Removing {self.unit_id} assignment for unit {unit_id}')
+                logger.info(f'Removing {self.unit_id} assignment for unit {unit_id}')
                 unit.factory_id = None

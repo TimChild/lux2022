@@ -1,6 +1,5 @@
 from __future__ import annotations
 import abc
-import logging
 from typing import TYPE_CHECKING, List
 from dataclasses import dataclass, field
 import collections
@@ -10,6 +9,7 @@ import numpy as np
 from new_path_finder import Pather
 from lux.kit import GameState
 
+from config import get_logger
 from util import ORE, ICE, METAL, WATER, manhattan
 
 if TYPE_CHECKING:
@@ -20,6 +20,9 @@ if TYPE_CHECKING:
         EnemyFactoryManager,
     )
     from actions import Recommendation
+
+
+logger = get_logger(__name__)
 
 
 def map_nested_dicts(ob, func):
@@ -46,7 +49,10 @@ class Planner(abc.ABC):
 
     @abc.abstractmethod
     def carry_out(
-        self, unit: FriendlyUnitManger, recommendation: Recommendation, unit_must_move: bool
+        self,
+        unit: FriendlyUnitManger,
+        recommendation: Recommendation,
+        unit_must_move: bool,
     ) -> List[np.ndarray]:
         """
         Idea would be to make the actions necessary to carry out recommendation
@@ -101,7 +107,7 @@ class FactoryMaps:
             enemy = by_team['player_0' if player == 'player_1' else 'player_1']
             factory_maps = cls(all=factory_map, friendly=friendly, enemy=enemy)
             return factory_maps
-        logging.info(
+        logger.info(
             f'No factories to update with (game_state.teams = {game_state.teams})'
         )
         return None
@@ -191,7 +197,7 @@ class Units(abc.ABC):
     def unit_at_position(self, pos: tuple[int, int]) -> [None, str]:
         """Get the unit_id of unit at given position"""
         if self.unit_positions is None:
-            logging.error(
+            logger.error(
                 f'Requesting unit at {pos} before initializing unit_positions',
             )
             raise RuntimeError(
@@ -202,14 +208,15 @@ class Units(abc.ABC):
     def replace_unit(self, unit_id: str, unit: UnitManager):
         """Replace existing saved unit with an update of itself (i.e. should be the same unit, but with possibly new info)"""
         if unit_id != unit.unit_id:
-            raise RuntimeError(f'{unit_id} != {unit.unit_id}. When replacing unit in master, it must be the same unit!')
+            raise RuntimeError(
+                f'{unit_id} != {unit.unit_id}. When replacing unit in master, it must be the same unit!'
+            )
         if unit_id in self.light:
             self.light[unit_id] = unit
         elif unit_id in self.heavy:
             self.heavy[unit_id] = unit
         else:
             raise KeyError(f"{unit_id} does not exist in Units, can't replace")
-
 
     def nearest_unit(
         self, pos: tuple[int, int], light=True, heavy=True
@@ -247,7 +254,7 @@ class Units(abc.ABC):
         for u_dict in (self.light, self.heavy):
             # If anything in light/heavy list that isn't in full list, must be dead
             for k in set(u_dict.keys()) - set(units.keys()):
-                logging.info(f'Removing unit {k}, assumed dead')
+                logger.info(f'Removing unit {k}, assumed dead')
                 dead_unit = u_dict.pop(k)
                 dead_unit.dead()
 
@@ -323,7 +330,7 @@ class FriendlyUnits(Units):
                     factory_id = f'factory_{factory_id_num}'
 
                 else:
-                    logging.error(
+                    logger.error(
                         f"No factory under new {unit_id}, assigning `None` for factory_id. Pretty sure this shouldn't "
                         f"happen though",
                     )
@@ -372,7 +379,7 @@ class Factories:
         # Remove dead
         for k in set(f_dict.keys()) - set(factories.keys()):
             dead_factory = f_dict.pop(k)
-            logging.info(f'Friendly {k} died, being removed')
+            logger.info(f'Friendly {k} died, being removed')
             dead_factory.dead()
 
         # Update Enemy Factories
@@ -388,7 +395,7 @@ class Factories:
         # Remove dead
         for k in set(f_dict.keys()) - set(factories.keys()):
             dead_factory = f_dict.pop(k)
-            logging.info(f'Friendly {k} died, being removed')
+            logger.info(f'Friendly {k} died, being removed')
             dead_factory.dead()
 
 

@@ -23,18 +23,17 @@ from mining_planner import MiningPlanner
 from rubble_clearing_planner import RubbleClearingPlanner
 
 import util
+from config import get_logger
 
-# logging.basicConfig(level=logging.INFO)
-logging.basicConfig(level=logging.INFO, filename='log.log')
-logging.info('Starting Log')
+
+logger = get_logger(__name__)
+
 
 if TYPE_CHECKING:
     from .master_state import Recommendation
 
 
-
 class FactoryTurnPlanner:
-
     def __init__(self, master: MasterState):
         self.master = master
 
@@ -49,8 +48,6 @@ class FactoryTurnPlanner:
         #     if factory_should_consider_acting(factory, self.master):
         #         fobs = calculate_factory_obs(factory, self.master)
         #         factory_obs[factory_id] = fobs
-
-
 
     def get_actions(self):
         """
@@ -75,7 +72,6 @@ class FactoryTurnPlanner:
 
 
 #######################################
-
 
 
 def find_collisions1(
@@ -355,7 +351,6 @@ class AllUnitPaths:
         return collisions
 
 
-
 class TurnPlanner:
     # Look for close units within this distance
     search_dist = 4
@@ -395,6 +390,8 @@ class TurnPlanner:
         Returns:
             Instance of UnitsToAct
         """
+        logger.function_call(f"units_should_consider_acting called with units: {units}")
+
         upcoming_collisions = self.calculate_collisions()
         close_to_enemy = self.calculate_close_enemies()
         needs_to_act = {}
@@ -405,29 +402,29 @@ class TurnPlanner:
             if unit.power < (
                 unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
             ):
-                logging.info(
-                    f'not enough power -- {unit_id} should not consider acting'
+                logger.debug(
+                    f'Not enough power -- {unit_id} should not consider acting'
                 )
                 should_act = False
             # If no queue
             elif len(unit.action_queue) == 0:
-                logging.info(f'no actions -- {unit_id} should consider acting')
+                logger.debug(f'No actions -- {unit_id} should consider acting')
                 should_act = True
             # If colliding with friendly
             elif unit_id in upcoming_collisions.friendly:
-                logging.info(
-                    f'collision with friendly -- {unit_id} should consider acting'
+                logger.debug(
+                    f'Collision with friendly -- {unit_id} should consider acting'
                 )
                 should_act = True
             # If colliding with enemy
             elif unit_id in upcoming_collisions.enemy:
-                logging.info(
-                    f'collision with enemy -- {unit_id} should consider acting'
+                logger.debug(
+                    f'Collision with enemy -- {unit_id} should consider acting'
                 )
                 should_act = True
             # If close to enemy
             elif unit_id in close_to_enemy:
-                logging.info(f'close to enemy -- {unit_id} should consider acting')
+                logger.debug(f'Close to enemy -- {unit_id} should consider acting')
                 should_act = True
             # TODO: If about to do invalid action:
             # TODO: pickup more power than available, dig where no resource, transfer to unoccupied location
@@ -569,13 +566,19 @@ class TurnPlanner:
         Returns:
             A sorted pandas dataframe with units ordered by priority.
         """
+        logger.function_call(f"sort_units_by_priority called with dataframe:\n{df}")
+
         if not df.empty:
             sorted_df = df.sort_values(
                 by=['is_heavy', 'enough_power_to_move', 'power', 'ice', 'ore'],
                 ascending=[False, False, True, False, True],
             )
+            logger.debug(f"Sorted units by priority:\n{sorted_df}")
+            logger.debug(f"Unit with highest priority: {sorted_df.iloc[0]}")
+            logger.debug(f"Unit with lowest priority: {sorted_df.iloc[-1]}")
             return sorted_df
         else:
+            logger.debug("Empty dataframe, returning without sorting.")
             return df
 
     def base_costmap(self) -> np.ndarray:
@@ -623,7 +626,10 @@ class TurnPlanner:
             likelihood_array = np.exp(-0.5 * (distance_diffs**1))
 
             return likelihood_array
-        logging.info(f'Updating costmap with path unit at {unit_pos} with other_path[0:2] {other_path[0:2]}')
+
+        logger.info(
+            f'Updating costmap with path unit at {unit_pos} with other_path[0:2] {other_path[0:2]}'
+        )
         other_path = other_path[1:]
         # Figure out distance to other_units path at each point
         other_path_distance = [util.manhattan(p, unit_pos) for p in other_path]
@@ -659,14 +665,18 @@ class TurnPlanner:
 
         if allow_collision is False:
             # Block next X steps in other path that are equal in distance
-            for i, (p, d) in enumerate(zip(other_path[:self.avoid_collision_steps], other_path_distance)):
-                if d == i:  # I.e. if distance to point on path is same as no. steps it would take to get there
-                    logging.info(f'making {p} impassable')
+            for i, (p, d) in enumerate(
+                zip(other_path[: self.avoid_collision_steps], other_path_distance)
+            ):
+                if (
+                    d == i
+                ):  # I.e. if distance to point on path is same as no. steps it would take to get there
+                    logger.info(f'making {p} impassable')
                     costmap[p[0], p[1]] = -1
 
         # If current location becomes blocked, warn that should be unblocked elsewhere
         if costmap[unit_pos[0], unit_pos[1]] == -1:
-            logging.warning(
+            logger.warning(
                 f'{unit_pos} got blocked even though that is the units current position. If cost not changed > 0 pathing will fail'
             )
 
@@ -755,7 +765,7 @@ class TurnPlanner:
             power_threshold_low=low_power_diff,
             power_threshold_high=high_power_diff,
         )
-        logging.info(
+        logger.info(
             f'For this {this_unit.unit_id} and other {other_unit.unit_id} - travel avoidance = {avoidance} and allow_collision = {allow_collision}'
         )
         if avoidance == 0 and allow_collision is True:
@@ -783,9 +793,10 @@ class TurnPlanner:
 
         Args:
             base_costmap: A numpy array representing the costmap.
+            units_to_act: UnitsToAct instance containing units that need to act and units that should not act.
             unit: Unit to get the costmap for (i.e. distances calculated relative to this unit)
         """
-        logging.info(f'For {unit.unit_id}, calculating costmap with paths')
+        logger.debug(f"Calculating costmap with paths for unit {unit.unit_id}")
         new_cost = base_costmap.copy()
 
         all_close_units = self.calculate_close_units()
@@ -793,8 +804,8 @@ class TurnPlanner:
 
         # If close to enemy, add those paths
         if unit.unit_id in all_close_units.close_to_enemy:
-            logging.info(
-                f'{unit.unit_id} is close to at least one enemy, adding those to costmap'
+            logger.debug(
+                f"{unit.unit_id} is close to at least one enemy, adding those to costmap"
             )
             close_units = all_close_units.close_to_enemy[unit.unit_id]
             # For each nearby enemy unit
@@ -806,8 +817,8 @@ class TurnPlanner:
 
         # If close to friendly, add those paths
         if unit.unit_id in all_close_units.close_to_friendly:
-            logging.info(
-                f'{unit.unit_id} is close to at least one friendly, adding those to costmap'
+            logger.debug(
+                f"{unit.unit_id} is close to at least one friendly, adding those to costmap"
             )
             close_units = all_close_units.close_to_friendly[unit.unit_id]
 
@@ -815,8 +826,8 @@ class TurnPlanner:
             for other_id in close_units.other_unit_ids:
                 if other_id in units_yet_to_act:
                     # That other unit can get out of the way
-                    logging.info(
-                        f'For {unit.unit_id}, Not adding friendly {other_id}s path to costmap, assuming it will get out of the way'
+                    logger.debug(
+                        f"For {unit.unit_id}, not adding friendly {other_id}'s path to costmap, assuming it will get out of the way"
                     )
                     continue
                 other_unit = self.master.units.friendly.get_unit(other_id)
@@ -827,7 +838,7 @@ class TurnPlanner:
                     other_is_enemy=False,
                 )
 
-        logging.info(f'For {unit.unit_id}, done calculating costmap with paths')
+        logger.debug(f"Done calculating costmap with paths for unit {unit.unit_id}")
         return new_cost
 
     def calculate_actions_for_unit(
@@ -840,7 +851,9 @@ class TurnPlanner:
         rubble_clearing_planner: RubbleClearingPlanner,
     ) -> bool:
         """Calculate new actions for this unit"""
-        logging.info(f'Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, role =  {unit.status.role}')
+        logger.info(
+            f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, role = {unit.status.role}"
+        )
 
         # Update the master pathfinder with newest Pather (full_costmap changes for each unit)
         self.master.pathfinder = Pather(
@@ -863,8 +876,8 @@ class TurnPlanner:
         unit_must_move = False
         # If current location is blocked, unit MUST move first turn
         if travel_costmap[unit.pos[0], unit.pos[1]] <= 0:
-            logging.warning(
-                f'{unit.unit_id} MUST move first turn to avoid collision at {unit.pos}'
+            logger.warning(
+                f"{unit.unit_id} MUST move first turn to avoid collision at {unit.pos}"
             )
             unit_must_move = True
             travel_costmap[
@@ -878,7 +891,7 @@ class TurnPlanner:
         # TODO: If close to enemy and run away - do it
         # TODO: Collect some factory obs to help decide what to do
         # TEMPORARY
-        logging.info(f'Deciding actions for {unit.unit_id}')
+        logger.info(f"Deciding actions for {unit.unit_id}")
         success = calculate_unit_actions(unit, unit_must_move)
         # If current location is going to be occupied by another unit, the first action must be to move!
         if unit_must_move:
@@ -888,8 +901,8 @@ class TurnPlanner:
                 or q[0][util.ACT_TYPE] != util.MOVE
                 or q[0][util.ACT_DIRECTION] == util.CENTER
             ):
-                logging.error(
-                    f'{unit.unit_id} was required to move first turn, but actions are {q}'
+                logger.error(
+                    f"{unit.unit_id} was required to move first turn, but actions are {q}"
                 )
                 # TODO: Then just let it happen?
                 # TODO: Or force a move and rerun calculate unit_actions?
@@ -907,12 +920,15 @@ class TurnPlanner:
         Returns:
             Actions to update units with
         """
+        logger.function_call(
+            f"process_units called with mining_planner: {mining_planner}, rubble_clearing_planner: {rubble_clearing_planner}"
+        )
+
         units_to_act = self.units_should_consider_acting(self.master.units.friendly.all)
         unit_data_df = self.collect_unit_data(units_to_act.needs_to_act)
         sorted_data_df = self.sort_units_by_priority(unit_data_df)
 
         base_costmap = self.base_costmap()
-
 
         for index, row in sorted_data_df.iterrows():
             # Note: Row is a pd.Series of the unit_data_df
@@ -920,6 +936,12 @@ class TurnPlanner:
             unit = row.unit
             unit: FriendlyUnitManger
             units_to_act.needs_to_act.pop(unit.unit_id)
+
+            logger.debug(
+                f"Processing unit {unit.unit_id} at index {index}: "
+                f"is_heavy={row.is_heavy}, enough_power_to_move={row.enough_power_to_move}, "
+                f"power={row.power}, ice={row.ice}, ore={row.ore}"
+            )
             travel_costmap = self.get_travel_costmap(
                 unit=unit,
                 base_costmap=base_costmap,
@@ -942,7 +964,9 @@ class TurnPlanner:
                 np.array(unit.action_queue[: self.actions_same_check])
                 == np.array(unit_before.action_queue[: self.actions_same_check])
             ):
-                logging.info(f'For {unit.unit_id}, first {self.actions_same_check} actions same, not update units action queue')
+                logger.debug(
+                    f'For {unit.unit_id}, first {self.actions_same_check} actions same, not updating unit action queue'
+                )
                 #  Store the unit_before (i.e. not updated at all since it's not changing it's actions)
                 units_to_act.should_not_act[unit.unit_id] = unit_before
                 self.master.units.friendly.replace_unit(unit.unit_id, unit_before)
@@ -961,7 +985,7 @@ class TurnPlanner:
 
 class Agent:
     def __init__(self, player: str, env_cfg: EnvConfig):
-        logging.info(f'initializing agent for player {player}')
+        logger.info(f'initializing agent for player {player}')
         self.player = player
         self.env_cfg: EnvConfig = env_cfg
         np.random.seed(0)
@@ -999,19 +1023,18 @@ class Agent:
                 action = FriendlyFactoryManager.place_factory(
                     self.master.game_state, self.player
                 )
-        logging.info(f'Early setup action {action}')
+        logger.info(f'Early setup action {action}')
         return action
 
     def act(self, step: int, obs, remainingOverageTime: int = 60):
         """Required API for Agent. This is called every turn after early_setup is complete"""
-        logging.warning(
-            f'======== Start of turn {self.master.game_state.real_env_steps} for {self.player} ============'
+        logger.warning(
+            f'======== Start of turn {self.master.game_state.real_env_steps+1} for {self.player} ============'
         )
         self._beginning_of_step_update(step, obs, remainingOverageTime)
 
         self.mining_planner.update()
         self.rubble_clearing_planner.update()
-
 
         #
         # # Get processed observations (i.e. the obs that I will use to train a PPO agent)
@@ -1043,17 +1066,14 @@ class Agent:
             if f_action is not None:
                 factory_actions[factory_id] = f_action
 
-
-
-
         tp = TurnPlanner(self.master)
         unit_actions = tp.process_units(
             mining_planner=self.mining_planner,
             rubble_clearing_planner=self.rubble_clearing_planner,
         )
 
-        logging.debug(f'{self.player} Unit actions: {unit_actions}')
-        logging.info(f'{self.player} Factory actions: {factory_actions}')
+        logger.debug(f'{self.player} Unit actions: {unit_actions}')
+        logger.info(f'{self.player} Factory actions: {factory_actions}')
 
         return dict(**unit_actions, **factory_actions)
         #
@@ -1106,7 +1126,7 @@ class Agent:
     #         return False
     #
     #     if factory is None:
-    #         logging.info(f'{unit.unit_id} has no factory. Doing nothing')
+    #         logger.info(f'{unit.unit_id} has no factory. Doing nothing')
     #         return None
     #
     #     # Make at least 1 heavy mine ice
@@ -1115,7 +1135,7 @@ class Agent:
     #         and unit.unit_type == 'HEAVY'
     #         and unit.status.role != 'mine_ice'
     #     ) or (unit.status.role == 'mine_ice' and len(unit.action_queue) == 0):
-    #         logging.info(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
+    #         logger.info(f'{unit.unit_id} assigned to mine_ice (for {unit.factory_id})')
     #         mining_rec = unit_recommendations.pop('mine_ice', None)
     #         if mining_rec is not None:
     #             unit.status.role = 'mine_ice'
@@ -1127,7 +1147,7 @@ class Agent:
     #     if (unit.unit_type == 'LIGHT' and not unit.status.role) or (
     #         unit.status.role == 'clear_rubble' and len(unit.action_queue) == 0
     #     ):
-    #         logging.info(
+    #         logger.info(
     #             f'{unit.unit_id} assigned to clear_rubble (for {unit.factory_id})'
     #         )
     #
@@ -1144,7 +1164,7 @@ class Agent:
         self, step: int, obs: dict, remainingOverageTime: int
     ):
         """Use the step and obs to update any turn based info (e.g. map changes)"""
-        logging.info(f'Beginning of step update for step {step}')
+        logger.info(f'Beginning of step update for step {step}')
         game_state = obs_to_game_state(step, self.env_cfg, obs)
         # TODO: Use last obs to see what has changed to optimize update? Or master does this?
         self.master.update(game_state)
@@ -1246,7 +1266,7 @@ def calculate_factory_action(
             and factory.factory.cargo.metal > master.env_cfg.ROBOTS['HEAVY'].METAL_COST
             and factory.factory.power > master.env_cfg.ROBOTS['HEAVY'].POWER_COST
         ):
-            logging.info(f'{factory.factory.unit_id} building Heavy')
+            logger.info(f'{factory.factory.unit_id} building Heavy')
             return factory.factory.build_heavy()
 
         # Want at least one light to do other things
@@ -1255,7 +1275,7 @@ def calculate_factory_action(
             and factory.factory.cargo.metal > master.env_cfg.ROBOTS['LIGHT'].METAL_COST
             and factory.factory.power > master.env_cfg.ROBOTS['LIGHT'].POWER_COST
         ):
-            logging.info(f'{factory.factory.unit_id} building Light')
+            logger.info(f'{factory.factory.unit_id} building Light')
             return factory.factory.build_light()
 
     # Watering Lichen
@@ -1267,7 +1287,7 @@ def calculate_factory_action(
         if factory.factory.cargo.water - water_cost > min(
             100, 1000 - master.game_state.real_env_steps
         ):
-            logging.info(
+            logger.info(
                 f'{factory.factory.unit_id} watering with water={factory.factory.cargo.water} and water_cost={water_cost}'
             )
             return factory.factory.water()
