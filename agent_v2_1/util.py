@@ -35,6 +35,7 @@ from lux.cargo import UnitCargo
 if TYPE_CHECKING:
     from path_finder import PathFinder, CollisionParams
     from unit_manager import FriendlyUnitManger
+    from factory_manager import FriendlyFactoryManager
 
 POS_TYPE = Union[Tuple[int, int], np.ndarray, Tuple[np.ndarray]]
 PATH_TYPE = Union[List[Tuple[int, int]], np.ndarray]
@@ -131,7 +132,6 @@ class MyEnv:
         self._previous_obs = deque(maxlen=5)
         self._previous_env = deque(maxlen=5)
 
-
     def run_early_setup(self):
         """Run through the placing factories stage"""
         # Reset
@@ -141,6 +141,7 @@ class MyEnv:
 
         # Run placing factory actions
         while self.env.state.real_env_steps < 0:
+            self._record_state()
             actions = self.get_early_actions()
             self.env_step += 1
             self.real_env_steps = self.env.state.real_env_steps
@@ -169,7 +170,7 @@ class MyEnv:
         self._previous_step.append(self.env_step)
         self._previous_real_steps.append(self.env_step)
         self._previous_obs.append(self.obs)
-        self._previous_env.append(copy.copy(self.env))
+        self._previous_env.append(copy.deepcopy(self.env))
 
     def step(self):
         """Progress a single step"""
@@ -689,16 +690,51 @@ def path_to_actions(path):
 
 
 def actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray]) -> np.ndarray:
+    """Convert list of actions (from start_pos) into a path
+    Note: First value in path is current position
+    """
     path = [start_pos]
     pos = start_pos
     for action in actions:
-        if action[0] == MOVE:
-            direction = action[1]
-        else:
-            direction = CENTER
-        pos = pos + MOVE_DELTAS[direction] * action[ACT_N]
-        path.append(pos)
+        for _ in range(action[ACT_N]):
+            if action[0] == MOVE:
+                direction = action[1]
+            else:
+                direction = CENTER
+            pos = pos + MOVE_DELTAS[direction]
+            path.append(pos)
     return np.array(path)
+
+
+def move_to_new_spot_on_factory(
+    pathfinder: Pather, unit: FriendlyUnitManger, factory: FriendlyFactoryManager
+):
+    """Move to a new spot on factory (i.e. if current spot is going to be occupied by another unit next turn)"""
+    success = False
+    pos = np.array(unit.pos)
+    best_direction = None
+    best_cost = 999
+    for direction, delta in zip(MOVE_DIRECTIONS[1:], MOVE_DELTAS[1:]):
+        new_x, new_y = pos + delta
+        try:
+            # If on factory
+            if factory.factory_loc[new_x, new_y]:
+                new_cost = pathfinder.full_costmap[new_x, new_y]
+                # If this is better based on costmap
+                if 0 < new_cost < best_cost:
+                    best_direction = direction
+                    best_cost = new_cost
+        except IndexError as e:
+            logging.info(
+                f'Index error for ({new_x, new_y}), probably near edge of map, ignoring this position'
+            )
+    # Move unit to best location if available
+    if best_direction is not None:
+        pathfinder.append_direction_to_actions(unit, best_direction)
+        success = True
+    else:
+        logging.error(f'No best_direction to move on factory')
+    return success
 
 
 ################### Plotting #################
@@ -1507,7 +1543,7 @@ def calc_path_to_factory(
         attempts += 1
         nearest_factory = nearest_non_zero(factory_loc, pos)
         if tuple(nearest_factory) == tuple(pos):
-            return np.array(pos)
+            return np.array([pos])  # Path is list of positions
         if nearest_factory is not None:
             path = pathfinder.fast_path(
                 pos,
@@ -1586,7 +1622,7 @@ def path_to_factory_edge_nearest_pos(
         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
 
     logging.warning(f'No path to edge of factory found without collisions')
-    return np.array([])
+    return np.array([[]])
     # if max_delay_by_move_center > 0:
     #     logging.info(f'Adding delay to finding path to edge of factory')
     #     new_collision_params = CollisionParams(
@@ -1614,14 +1650,17 @@ def path_to_factory_edge_nearest_pos(
     #     return None
 
 
-def power_cost_of_path(path, rubble: np.ndarray, unit_type="LIGHT") -> int:
+def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type="LIGHT") -> int:
     """Cost to move along path including rubble
     Note: Assumes first path is current location (i.e. not part of cost)
     """
     assert unit_type in ["LIGHT", "HEAVY"]
     unit_cfg = LIGHT_UNIT.unit_cfg if unit_type == "LIGHT" else HEAVY_UNIT.unit_cfg
+    path = np.array(path)
+    if path.ndim != 2:
+        raise ValueError(f'Path should be (N,2) in shape, got {path.shape}')
 
-    if len(path) == 0:
+    if len(path) <= 1:
         return 0
     cost = 0
     for pos in path[1:]:

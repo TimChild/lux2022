@@ -46,7 +46,7 @@ class Planner(abc.ABC):
 
     @abc.abstractmethod
     def carry_out(
-        self, unit: FriendlyUnitManger, recommendation: Recommendation
+        self, unit: FriendlyUnitManger, recommendation: Recommendation, unit_must_move: bool
     ) -> List[np.ndarray]:
         """
         Idea would be to make the actions necessary to carry out recommendation
@@ -198,6 +198,18 @@ class Units(abc.ABC):
                 f'self.unit_positions is None. Must be initialized first'
             )
         return self.unit_positions.unit_at_position(pos)
+
+    def replace_unit(self, unit_id: str, unit: UnitManager):
+        """Replace existing saved unit with an update of itself (i.e. should be the same unit, but with possibly new info)"""
+        if unit_id != unit.unit_id:
+            raise RuntimeError(f'{unit_id} != {unit.unit_id}. When replacing unit in master, it must be the same unit!')
+        if unit_id in self.light:
+            self.light[unit_id] = unit
+        elif unit_id in self.heavy:
+            self.heavy[unit_id] = unit
+        else:
+            raise KeyError(f"{unit_id} does not exist in Units, can't replace")
+
 
     def nearest_unit(
         self, pos: tuple[int, int], light=True, heavy=True

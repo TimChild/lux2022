@@ -64,6 +64,14 @@ class UnitManager(abc.ABC):
         self.unit.pos = value
 
     @property
+    def pos_slice(self):
+        """Can be used for indexing arrays directly
+        Examples:
+            r = rubble[unit.pos_slice]
+        """
+        return np.s_[self.pos[0], self.pos[1]]
+
+    @property
     def cargo(self) -> UnitCargo:
         return self.unit.cargo
 

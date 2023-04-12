@@ -86,11 +86,9 @@ class Pather:
 
     def __init__(
         self,
-        unit_paths: AllUnitPaths,
         base_costmap: np.ndarray,
         full_costmap: np.ndarray = None,
     ):
-        self.unit_paths = unit_paths
         self.base_costmap = base_costmap
         self.full_costmap = full_costmap if full_costmap is not None else base_costmap
 
@@ -141,7 +139,6 @@ class Pather:
         unit.action_queue.extend(actions)
         if len(path) > 0:
             unit.pos = path[-1]
-        self.unit_paths.update_path(unit)
 
     def append_direction_to_actions(self, unit: UnitManager, direction: int):
         """Turn the direction into actions that are appended to unit"""
