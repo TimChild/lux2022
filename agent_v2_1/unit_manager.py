@@ -120,7 +120,7 @@ class FriendlyUnitManger(UnitManager):
 
     def dead(self):
         """Called when unit is detected as dead"""
-        logger.info(
+        logger.warning(
             f'{self.log_prefix} Friendly unit dead'
         )
         if self.factory_id:

@@ -2,11 +2,10 @@ from __future__ import annotations
 import abc
 import copy
 import functools
-from typing import TYPE_CHECKING, List, Dict, Tuple
+from typing import TYPE_CHECKING, List, Dict, Tuple, Union
 import pandas as pd
 from dataclasses import dataclass, field
 import numpy as np
-import logging
 
 from lux.kit import obs_to_game_state
 from lux.config import EnvConfig
@@ -92,24 +91,37 @@ def find_collisions1(
     enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
 
     for unit_id, unit_path in friendly_units.items():
+        # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+        #     print('looking at unit_19')
+        logger.debug(f'Checking collisions for {unit_id}')
         for other_unit_id, other_unit_path in {**friendly_units, **enemy_units}.items():
+            # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+            #     print('other', other_unit_id)
             # Skip self-comparison
             if unit_id == other_unit_id:
                 continue
 
             # Find the minimum path length to avoid index out of range errors
             min_path_length = min(len(unit_path), len(other_unit_path))
+            # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+            #     print('min', min_path_length)
 
             # Optionally only check fewer steps
-            check_num_steps = (
+            _check = (
                 min_path_length
                 if check_num_steps is None
                 else min(min_path_length, check_num_steps)
             )
+            # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+            #     print('check', _check)
+            #     print('other_path', other_unit_path)
 
             # Check if there's a collision at any step up to check_num_steps
-            for step in range(check_num_steps):
+            for step in range(_check):
+                # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+                #     print('other_path at step',step,  other_unit_path[step])
                 if np.array_equal(unit_path[step], other_unit_path[step]):
+                    logger.debug(f'Collision found at step {step} pos {unit_path[step]} with {other_unit_id}')
                     collision = Collision(
                         unit_id=unit_id,
                         other_unit_id=other_unit_id,
@@ -274,6 +286,8 @@ class CloseUnits:
     other_unit_ids: List[str] = field(default_factory=list)
     other_unit_positions: List[Tuple[int, int]] = field(default_factory=list)
     other_unit_distances: List[int] = field(default_factory=list)
+    other_unit_types: List[str] = field(default_factory=list)
+    other_unit_powers: List[int] = field(default_factory=list)
 
 
 @dataclass
@@ -349,6 +363,59 @@ class AllUnitPaths:
             enemy={collision.unit_id: collision for collision in enemy},
         )
         return collisions
+
+
+def decide_action(
+    unit_data: pd.Series,
+    close_units: Union[None, CloseUnits],
+) -> str:
+    unit_type = unit_data["is_heavy"]
+    power = unit_data["power"]
+    ore_desired = unit_data["ore_desired"]
+    rubble_clearing_desired = unit_data["rubble_clearing_desired"]
+
+    def attack_or_run_away(
+        close_units: CloseUnits,
+        unit_type: str,
+        power_threshold: int,
+    ) -> str:
+        if close_units is not None:
+            close_enemies_within_2 = [
+                enemy
+                for enemy, distance in zip(
+                    close_units.other_unit_types, close_units.other_unit_distances
+                )
+                if distance <= 2 and enemy == unit_type
+            ]
+            if len(close_enemies_within_2) == 1:
+                enemy_power = close_units.other_unit_powers[
+                    close_units.other_unit_types.index(unit_type)
+                ]
+                if enemy_power < power - power_threshold:
+                    return "attack"
+            elif len(close_enemies_within_2) > 1:
+                return "run_away"
+        return None
+
+    action = None
+    if unit_type == "LIGHT":
+        action = attack_or_run_away(close_units, "LIGHT", 10)
+        if action is None:
+            if ore_desired:
+                action = "mine_ore"
+            elif rubble_clearing_desired:
+                action = "clear_rubble"
+            else:
+                action = "do_nothing"
+    else:  # unit_type == "HEAVY"
+        action = attack_or_run_away(close_units, "HEAVY", 100)
+        if action is None:
+            if ore_desired:
+                action = "mine_ore"
+            else:
+                action = "mine_ice"
+
+    return action
 
 
 class TurnPlanner:
@@ -495,6 +562,8 @@ class TurnPlanner:
                             close.other_unit_ids.append(other_id)
                             close.other_unit_positions.append(other_unit.pos)
                             close.other_unit_distances.append(dist)
+                            close.other_unit_types.append(other_unit.unit_type)
+                            close.other_unit_powers.append(other_unit.power)
                     if len(close.other_unit_ids) > 0:
                         all_close[unit_id] = close
             all_close_units = AllCloseUnits(
@@ -607,6 +676,7 @@ class TurnPlanner:
         costmap: np.ndarray,
         unit_pos: util.POS_TYPE,
         other_path: util.PATH_TYPE,
+        is_enemy: bool,
         avoidance: float = 0,
         allow_collision: bool = False,
     ) -> np.ndarray:
@@ -618,6 +688,7 @@ class TurnPlanner:
             costmap: The base costmap for travel (i.e. rubble)
             unit_pos: This units position
             other_path: Other units path
+            is_enemy: If enemy, their next turn may change (so avoid being 1 step away!)
             avoidance: How  much extra cost to be near other_poth (this would be added at collision points, then decreasing amount added near collision points)
             allow_collision: If False, coordinates likely to result in collision are make impassable (likely means the manhattan distance to the path coord is the same or slightly lower)
         """
@@ -634,10 +705,18 @@ class TurnPlanner:
         logger.info(
             f'Updating costmap with other_path[0:2] {other_path[0:2]}'
         )
-        other_path = other_path[1:]
+        other_path = other_path
         # Figure out distance to other_units path at each point
-        other_path_distance = [util.manhattan(p, unit_pos) for p in other_path]
+        other_path_distance = [util.manhattan(p, unit_pos) for p in other_path[:self.avoid_collision_steps+2]]
 
+        # Separate out current position and actual path going forward
+        other_pos_now = other_path[0]
+        other_dist_now = other_path_distance[0]
+        other_path = other_path[1:]
+        other_path_distance = other_path_distance[1:]
+
+        # if np.all(unit_pos == (35, 10)):
+        #     print(other_path, other_path_distance)
         # # If need to encourage moving away from other path
         # raise NotImplementedError
         # if avoidance != 0:
@@ -668,12 +747,20 @@ class TurnPlanner:
         #     costmap *= mask
 
         if allow_collision is False:
+            # Enemy may change plans, on first step don't allow being even 1 dist away
+            if is_enemy and other_dist_now <= 2:
+                logger.info(f'Enemy is close at {other_pos_now}, blocking adjacent cells')
+                # Block all adjacent cells to enemy (and current enemy pos)
+                for delta in util.MOVE_DELTAS:
+                    pos = np.array(other_pos_now) + delta
+                    costmap[pos[0], pos[1]] = -1
+
             # Block next X steps in other path that are equal in distance
             for i, (p, d) in enumerate(
                 zip(other_path[: self.avoid_collision_steps], other_path_distance)
             ):
                 if (
-                    d == i
+                    d == i+1
                 ):  # I.e. if distance to point on path is same as no. steps it would take to get there
                     logger.info(f'making {p} impassable')
                     costmap[p[0], p[1]] = -1
@@ -781,6 +868,7 @@ class TurnPlanner:
                 costmap,
                 this_unit.pos,
                 other_path,
+                other_is_enemy,
                 avoidance=avoidance,
                 allow_collision=allow_collision,
             )
@@ -858,14 +946,7 @@ class TurnPlanner:
         logger.function_call(
             f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, role = {unit.status.role}"
         )
-
-        # Update the master pathfinder with newest Pather (full_costmap changes for each unit)
-        self.master.pathfinder = Pather(
-            base_costmap=base_costmap,
-            full_costmap=travel_costmap,
-        )
-
-        def calculate_unit_actions(unit, unit_must_move):
+        def calculate_unit_actions(unit: FriendlyUnitManger, unit_must_move: bool, poss_close_enemy: [None, CloseUnits], row: pd.Series):
             _success = False
             if unit.unit_type == 'HEAVY':
                 _success = mining_planner.update_actions_of(
@@ -876,6 +957,12 @@ class TurnPlanner:
                     unit, unit_must_move=unit_must_move
                 )
             return _success
+
+        # Update the master pathfinder with newest Pather (full_costmap changes for each unit)
+        self.master.pathfinder = Pather(
+            base_costmap=base_costmap,
+            full_costmap=travel_costmap,
+        )
 
         unit_must_move = False
         # If current location is blocked, unit MUST move first turn
@@ -891,11 +978,15 @@ class TurnPlanner:
         # unit_before = copy.deepcopy(unit)
         unit.action_queue = []
 
+        close_units = self.calculate_close_units()
+        possible_close_enemy: [None, CloseUnits] = close_units.close_to_enemy.pop(unit.unit_id, None)
+        # action_type = decide_action(df_row, possible_close_enemy)
+
         # TODO: If close to enemy and should attack - do it
         # TODO: If close to enemy and run away - do it
         # TODO: Collect some factory obs to help decide what to do
         # TEMPORARY
-        success = calculate_unit_actions(unit, unit_must_move)
+        success = calculate_unit_actions(unit, unit_must_move, possible_close_enemy, df_row)
         # If current location is going to be occupied by another unit, the first action must be to move!
         if unit_must_move:
             q = unit.action_queue
@@ -939,6 +1030,15 @@ class TurnPlanner:
             unit = row.unit
             unit: FriendlyUnitManger
             units_to_act.needs_to_act.pop(unit.unit_id)
+
+            # if unit.factory_id:
+            #     row['ore_desired'] = self.master.factories.friendly[unit.factory_id]
+            # else:
+            #     row['ore_desired'] = False
+            # if unit.unit_type == 'LIGHT':
+            #     row['rubble_clearing_desired'] = True
+            # else:
+            #     row['rubble_clearing_desired'] = False
 
             logger.info(
                 f"\n\nProcessing unit {unit.unit_id}({unit.pos}) at index {index}: "

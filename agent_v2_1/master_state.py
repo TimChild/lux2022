@@ -343,10 +343,11 @@ class FriendlyUnits(Units):
                 u_dict[unit_id] = new_unit
 
                 # Add this unit to the factory list of units (light_units or heavy_units depending on unit_type
-                getattr(
-                    self.master.factories.friendly[factory_id],
-                    f'{unit.unit_type.lower()}_units',
-                )[unit_id] = new_unit
+                factory = self.master.factories.friendly.get(factory_id, None)
+                if factory is not None:
+                    getattr(factory, f'{unit.unit_type.lower()}_units')[unit_id] = new_unit
+                else:
+                    logger.error(f'No factory exists for {factory_id}')
 
         # Remove dead units
         self._remove_dead(units)

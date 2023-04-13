@@ -2,6 +2,8 @@ import logging
 
 ALL_LOGGERS = {}
 
+DEFAULT_LEVEL = logging.WARNING
+
 
 # Custom logging levels
 FUNCTION_CALL = 25
@@ -42,7 +44,7 @@ class LevelAboveFilter(logging.Filter):
 
 # Create a custom logger
 base_logger = logging.getLogger(__name__)
-base_logger.setLevel(logging.DEBUG)
+base_logger.setLevel(DEFAULT_LEVEL)
 base_logger.handlers = []
 
 # Create handlers for debug, info, and other levels
