@@ -6,6 +6,7 @@ import collections
 
 import numpy as np
 
+from lux.config import EnvConfig
 from new_path_finder import Pather
 from lux.kit import GameState
 
@@ -510,7 +511,7 @@ class MasterState:
     ):
         self.player = player
         self.opp_player = "player_1" if self.player == "player_0" else "player_0"
-        self.env_cfg = env_cfg
+        self.env_cfg: EnvConfig = env_cfg
 
         self.game_state: GameState = None
         self.step: int = None
