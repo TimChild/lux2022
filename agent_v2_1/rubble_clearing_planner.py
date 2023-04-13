@@ -19,7 +19,7 @@ from util import (
     manhattan_kernel,
     SubsetExtractor,
     stretch_middle_of_factory_array,
-    connected_factory_zeros,
+    connected_array_values_from_pos,
     create_boundary_array,
     pad_and_crop,
     manhattan_distance_between_values,
@@ -112,7 +112,7 @@ class RubbleDigValue:
                 self.factory_dist - 1 : self.factory_dist + 2,
                 self.factory_dist - 1 : self.factory_dist + 2,
             ] = 0
-            factory_zeroes = connected_factory_zeros(rubble_subset, new_factory_pos)
+            factory_zeroes = connected_array_values_from_pos(rubble_subset, new_factory_pos)
             rubble_factory_non_zero[factory_zeroes == 1] = 999  # Anything non-zero
             # TODO: Make this faster, or remove... this is the bottleneck for the whole thing
             manhattan_dist_to_zeros = manhattan_distance_between_values(
@@ -415,7 +415,7 @@ class RubbleRoutePlanner:
         That way, we can be sure we are always expanding the factories lichen area
         """
 
-        factory_zeros = connected_factory_zeros(self.rubble, self.factory.factory.pos)
+        factory_zeros = connected_array_values_from_pos(self.rubble, self.factory.factory.pos)
         boundary = create_boundary_array(factory_zeros, boundary_num=1)
         boundary[boundary != 0] = 1
         return self._future_value * boundary

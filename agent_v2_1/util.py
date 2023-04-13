@@ -361,21 +361,21 @@ def pad_and_crop(small_arr, large_arr, x1, y1, fill_value=0):
     return padded_arr
 
 
-def connected_factory_zeros(rubble, factory_pos) -> np.ndarray:
+def connected_array_values_from_pos(arr: np.ndarray, pos: POS_TYPE, connected_value=0) -> np.ndarray:
     """Figure out what area of zeros is connected to factory and return that array"""
     struct = ndimage.generate_binary_structure(rank=2, connectivity=1)
     # Note:
     # rank 2 = image dimensions
     # connectivity 1 = adjacent only (no diagonals)
 
-    labelled_arr, num_labels = ndimage.label(rubble == 0, structure=struct)
+    labelled_arr, num_labels = ndimage.label(arr == connected_value, structure=struct)
     # Note:
     # labelled_arr = unique values for each connected area of 0s
 
-    factory_zeros_id = labelled_arr[factory_pos[0], factory_pos[1]]
-    factory_zeros = np.zeros(rubble.shape)
-    factory_zeros[labelled_arr == factory_zeros_id] = 1
-    return factory_zeros
+    id_at_pos = labelled_arr[pos[0], pos[1]]
+    connected_array = np.zeros(arr.shape)
+    connected_array[labelled_arr == id_at_pos] = 1
+    return connected_array
 
 
 def append_zeros(arr, side):
