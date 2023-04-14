@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from unit_manager import UnitManager
     from factory_manager import FactoryManager
     from lux.factory import Factory
+    from unit_action_planner import AllUnitPaths
 
 logger = get_logger(__name__)
 
@@ -36,8 +37,6 @@ logger = get_logger(__name__)
 #         object.__setattr__(self, 'ignore_ids', tuple(self.ignore_ids))
 #
 
-if TYPE_CHECKING:
-    from agent import AllUnitPaths
 
 
 def _get_sub_area(costmap: np.ndarray, lowers, uppers):
