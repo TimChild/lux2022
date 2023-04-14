@@ -299,9 +299,9 @@ def decide_action(
                     close_units.other_unit_types.index(unit_type)
                 ]
                 if enemy_power < unit_info.power - power_threshold:
-                    return "attack"
+                    return actions.ATTACK
             elif len(close_enemies_within_2) > 1:
-                return "run_away"
+                return actions.RUN_AWAY
         return None
 
     action = None
@@ -309,24 +309,25 @@ def decide_action(
         action = attack_or_run_away(close_units, "LIGHT", 10)
         if action is None:
             if factory_info.light_mining_ore < factory_desires.light_mining_ore:
-                action = "mine_ore"
+                logger.debug(f'{factory_info.factory_id}: Adding light ore miner, light_ore={factory_info.light_mining_ore}, desires={factory_desires.light_mining_ore}')
+                action = actions.MINE_ORE
             elif (
                 factory_info.light_clearing_rubble
                 < factory_desires.light_clearing_rubble
             ):
-                action = "clear_rubble"
+                action = actions.CLEAR_RUBBLE
             else:
-                action = "do_nothing"
+                action = actions.NOTHING
     else:  # unit_type == "HEAVY"
         action = attack_or_run_away(close_units, "HEAVY", 100)
         if action is None:
             if factory_info.heavy_mining_ice < factory_desires.heavy_mining_ice:
-                action = "mine_ice"
+                action = actions.MINE_ICE
             elif factory_info.heavy_mining_ore < factory_desires.heavy_mining_ore:
-                action = "mine_ore"
+                action = actions.MINE_ORE
             elif factory_info.heavy_attacking < factory_desires.heavy_attacking:
-                action = "attack"
-
+                action = actions.ATTACK
+    logger.debug(f'action should be {action}')
     return action
 
 

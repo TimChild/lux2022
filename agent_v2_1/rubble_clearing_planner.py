@@ -118,7 +118,6 @@ class RubbleDigValue:
                 rubble_subset, new_factory_pos
             )
             rubble_factory_non_zero[factory_zeroes == 1] = 999  # Anything non-zero
-            # TODO: Make this faster, or remove... this is the bottleneck for the whole thing
             manhattan_dist_to_zeros = manhattan_distance_between_values(
                 rubble_factory_non_zero
             )
