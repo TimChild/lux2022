@@ -17,7 +17,7 @@ if str(parent_dir) not in sys.path:
     print(f"Adding {parent_dir} to path")
     sys.path.insert(0, str(parent_dir))
 
-from agent_v2_0.agent import Agent as Agent_v2_0
+# from agent_v2_0.agent import Agent as Agent_v2_0
 from agent import Agent
 
 
@@ -29,5 +29,5 @@ if __name__ == '__main__':
     # Run initial setup (placing factories)
     myenv = MyEnv(seed, Agent, Agent)
     myenv.run_early_setup()
-    myenv.run_to_step(1000)
+    myenv.run_to_step(100)
     myenv.show()

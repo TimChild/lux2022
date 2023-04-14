@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import threading
+from scipy.ndimage import distance_transform_cdt
 from collections import deque
 import functools
 from tqdm.auto import tqdm
@@ -105,6 +108,28 @@ RECHARGE = 5
 
 ################# General #################
 
+def timeout_decorator(timeout):
+    def decorator(fn):
+        def wrapper(*args, **kwargs):
+            result_container = {"result": None}
+
+            def target_fn():
+                result_container["result"] = fn(*args, **kwargs)
+
+            thread = threading.Thread(target=target_fn)
+            thread.start()
+            thread.join(timeout)
+
+            if thread.is_alive():
+                raise TimeoutError(f"Function '{fn.__name__}' timed out after {timeout} seconds")
+            else:
+                return result_container["result"]
+
+        return wrapper
+
+    return decorator
+
+
 class MyEnv:
     def __init__(self, seed: int, Agent, OtherAgent):
         self.seed = seed
@@ -195,10 +220,14 @@ class MyEnv:
 
     def get_actions(self):
         """Get next normal step actions"""
-        actions = {
-            player: agent.act(self.env_step, self.obs[player])
-            for player, agent in self.agents.items()
-        }
+        actions = {}
+        for player, agent in self.agents.items():
+            acts = agent.act(self.env_step, self.obs[player])
+            actions[player] = acts
+        # actions = {
+        #     player: agent.act(self.env_step, self.obs[player])
+        #     for player, agent in self.agents.items()
+        # }
         return actions
 
     def run_to_step(self, real_env_step: int):
@@ -562,21 +591,8 @@ def manhattan_distance_between_values(input_array, value=0):
     # Create a mask of the input array where the values are True where there are zeros
     mask = input_array == value
 
-    # Get the indices of the True values in the mask
-    mask_indices = np.array(np.where(mask)).T
-
-    # Create a meshgrid for the input array
-    x_grid, y_grid = np.meshgrid(
-        np.arange(input_array.shape[0]), np.arange(input_array.shape[1]), indexing="ij"
-    )
-
-    # Calculate the Manhattan distance between all points in the grid and the mask_indices
-    distances = np.abs(x_grid[..., np.newaxis] - mask_indices[:, 0]) + np.abs(
-        y_grid[..., np.newaxis] - mask_indices[:, 1]
-    )
-
-    # Get the minimum distance for each point in the grid
-    output_array = np.min(distances, axis=-1)
+    # Calculate the Manhattan distance using distance_transform_cdt function from SciPy
+    output_array = distance_transform_cdt(mask, metric='taxicab')
 
     return output_array
 
@@ -634,19 +650,6 @@ def find_border_coords(arr, value=0):
 def manhattan(a, b):
     return sum(abs(val1 - val2) for val1, val2 in zip(a, b))
 
-
-# class PathFinder:
-#     def __init__(self, cost_map):
-#         self.cost_map = cost_map
-#         self.grid = Grid(matrix=cost_map)
-#
-#     def path(self, start, end):
-#         finder = AStarFinder()
-#         start = self.grid.node(*start)
-#         end = self.grid.node(*end)
-#         path, runs = finder.find_path(start, end, self.grid)
-#         path = np.array(path)
-#         return path
 
 
 def count_consecutive(lst: Union[List[int], np.ndarray]) -> Tuple[List[int], List[int]]:

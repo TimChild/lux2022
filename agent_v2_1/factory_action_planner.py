@@ -105,6 +105,7 @@ class FactoryActionPlanner:
         ):
             logger.info(f"Removing factory {k}, assumed dead")
             self._factory_desires.pop(k)
+            self._factory_infos.pop(k)
 
         # Update their infos
         self._update_factory_info()

@@ -821,6 +821,9 @@ class UnitActionPlanner:
             # For each nearby enemy unit
             for other_id in close_units.other_unit_ids:
                 other_unit = self.master.units.enemy.get_unit(other_id)
+                if other_unit is None:
+                    logger.error(f'{self.master.player} step {self.master.step}: {other_id} does not exist in  master.units.enemy')
+                    continue
                 new_cost = self._add_other_unit_to_costmap(
                     new_cost, this_unit=unit, other_unit=other_unit, other_is_enemy=True
                 )
@@ -989,7 +992,9 @@ class UnitActionPlanner:
                 units_to_act=units_to_act,
             )
 
-            unit_before = copy.deepcopy(unit)
+            # unit_before = copy.deepcopy(unit)  # SLOW
+            unit_actions_before = copy.copy(unit.action_queue)
+
             # Figure out new actions for unit  (i.e. RoutePlanners)
             success = self._calculate_actions_for_unit(
                 base_costmap=base_costmap,
@@ -1006,14 +1011,16 @@ class UnitActionPlanner:
             # If first X actions are the same, don't update (unnecessary cost for unit)
             if np.all(
                 np.array(unit.action_queue[: self.actions_same_check])
-                == np.array(unit_before.action_queue[: self.actions_same_check])
+                == np.array(unit_actions_before[: self.actions_same_check])
             ):
                 logger.debug(
                     f"First {self.actions_same_check} actions same, not updating unit action queue"
                 )
                 #  Store the unit_before (i.e. not updated at all since it's not changing it's actions)
-                units_to_act.should_not_act[unit.unit_id] = unit_before
-                self.master.units.friendly.replace_unit(unit.unit_id, unit_before)
+                unit.action_queue = unit_actions_before
+                # Note: some other things about unit may be wrong, e.g. pos, power. But probably not important from here on (and slow to copy)
+                units_to_act.should_not_act[unit.unit_id] = unit
+                # self.master.units.friendly.replace_unit(unit.unit_id, unit_before)
             else:
                 units_to_act.has_updated_actions[unit.unit_id] = unit
 

@@ -160,12 +160,12 @@ class RubbleDigValue:
         return self._low_rubble_value
 
     def calculate_final_value(self):
-        self._get_rubble_subset()
-        self._get_factory_weighting()
-        self._get_manhattan_dist_to_zeros()
-        self._get_boundary_array()
-        self._get_conv_boundary_array()
-        self._get_low_rubble_value()
+        # self._get_rubble_subset()
+        # self._get_factory_weighting()
+        # self._get_manhattan_dist_to_zeros()
+        # self._get_boundary_array()
+        # self._get_conv_boundary_array()
+        # self._get_low_rubble_value()
 
         conv_boundary_array = self._get_conv_boundary_array()
         low_rubble_value = self._get_low_rubble_value()

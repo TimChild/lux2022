@@ -3,7 +3,7 @@ from logging.handlers import RotatingFileHandler
 
 ALL_LOGGERS = {}
 
-DEFAULT_LEVEL = logging.WARNING
+DEFAULT_LEVEL = logging.DEBUG
 
 
 # Custom logging levels

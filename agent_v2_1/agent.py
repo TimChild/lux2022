@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import time
 from typing import TYPE_CHECKING
 import numpy as np
 
@@ -14,6 +16,7 @@ from combat_planner import CombatPlanner
 from factory_action_planner import FactoryActionPlanner
 
 from config import get_logger
+import util
 
 
 logger = get_logger(__name__)
@@ -106,8 +109,10 @@ class Agent:
         logger.info(f"Early setup action {action}")
         return action
 
+    # @util.timeout_decorator(15)
     def act(self, step: int, obs, remainingOverageTime: int = 60):
         """Required API for Agent. This is called every turn after early_setup is complete"""
+        tstart = time.time()
         logger.warning(
             f"======== Start of turn {self.master.game_state.real_env_steps+1} for {self.player} ============"
         )
@@ -151,6 +156,31 @@ class Agent:
         factory_desires = self.factory_action_planner.get_factory_desires()
         factory_infos = self.factory_action_planner.get_factory_infos()
 
+        # try:
+        #     decide_actions = util.timeout_decorator(5)(self.factory_action_planner.decide_factory_actions)
+        #     factory_actions = decide_actions()
+        # except TimeoutError as e:
+        #     logger.error(f'Player {self.player} timed out during factory action calculations at step {self.master.step}, replacing with empty actions')
+        #     factory_actions = {}
+        # factory_desires = self.factory_action_planner.get_factory_desires()
+        # factory_infos = self.factory_action_planner.get_factory_infos()
+
+        # try:
+        #     tp = UnitActionPlanner(
+        #         self.master, factory_desires=factory_desires, factory_infos=factory_infos
+        #     )
+        #     decide_actions = util.timeout_decorator(5)(tp.decide_unit_actions)
+        #     unit_actions = decide_actions(
+        #         mining_planner=self.mining_planner,
+        #         rubble_clearing_planner=self.rubble_clearing_planner,
+        #         combat_planner=self.combat_planner,
+        #         factory_desires=factory_desires,
+        #         factory_infos=factory_infos,
+        #     )
+        # except TimeoutError as e:
+        #     logger.error(f'Player {self.player} timed out during unit action calculations at step {self.master.step}, replacing with empty actions')
+        #     unit_actions = {}
+
         tp = UnitActionPlanner(
             self.master, factory_desires=factory_desires, factory_infos=factory_infos
         )
@@ -164,6 +194,9 @@ class Agent:
 
         logger.verbose(f"{self.player} Unit actions: {unit_actions}")
         logger.debug(f"{self.player} Factory actions: {factory_actions}")
+        logger.warning(
+            f"======== End of turn {self.master.game_state.real_env_steps+1} for {self.player}: Took {time.time()-tstart:.1f}s ============"
+        )
         return dict(**unit_actions, **factory_actions)
         #
         # # Unit Recommendations
