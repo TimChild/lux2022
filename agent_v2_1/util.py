@@ -729,6 +729,7 @@ def actions_to_path(
     path = [start_pos]
     pos = start_pos
     actions = copy.copy(actions)
+    actions = list(actions)
     for i, action in enumerate(actions):
         for _ in range(action[ACT_N]):
             if action[0] == MOVE:
