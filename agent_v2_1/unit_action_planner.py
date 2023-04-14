@@ -1040,7 +1040,7 @@ class UnitActionPlanner:
                     f"First {self.actions_same_check} actions same, not updating unit action queue"
                 )
                 #  Store the unit_before (i.e. not updated at all since it's not changing it's actions)
-                unit.action_queue = unit_actions_before
+                unit.action_queue = unit.start_of_turn_actions
                 # Note: some other things about unit may be wrong, e.g. pos, power. But probably not important from here on (and slow to copy)
                 units_to_act.should_not_act[unit.unit_id] = unit
                 # self.master.units.friendly.replace_unit(unit.unit_id, unit_before)
