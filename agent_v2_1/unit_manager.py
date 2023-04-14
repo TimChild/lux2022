@@ -8,7 +8,9 @@ from luxai_s2.unit import UnitCargo
 
 from lux.unit import Unit
 from lux.config import UnitConfig
+
 import util
+import actions
 
 from config import get_logger
 from master_state import MasterState
@@ -17,11 +19,12 @@ from actions import Recommendation
 
 logger = get_logger(__name__)
 
+
 @dataclass
 class Status:
-    role: Union[str, None]
     current_action: str
-    recommendation: Optional[Recommendation]
+    previous_action: str
+    last_action_success: bool
 
 
 class UnitManager(abc.ABC):
@@ -37,9 +40,14 @@ class UnitManager(abc.ABC):
         # Keep track of pos a start of turn because pos will be updated while planning what to do next
         self.start_of_turn_pos = unit.pos
 
+    def power_cost_of_actions(self, rubble: np.ndarray):
+        return util.power_cost_of_actions(
+            rubble=rubble, unit=self, actions=self.action_queue
+        )
+
     @property
     def log_prefix(self) -> str:
-        return f'{self.unit_type} {self.unit_id}({self.start_of_turn_pos})({self.pos}):'
+        return f"{self.unit_type} {self.unit_id}({self.start_of_turn_pos})({self.pos}):"
 
     def update(self, unit: Unit):
         """Beginning of turn update"""
@@ -48,7 +56,9 @@ class UnitManager(abc.ABC):
 
     def current_path(self, max_len: int = 10) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
-        return util.actions_to_path(self.start_of_turn_pos, self.action_queue, max_len=max_len)
+        return util.actions_to_path(
+            self.start_of_turn_pos, self.action_queue, max_len=max_len
+        )
 
     @property
     def action_queue(self) -> List[np.ndarray]:
@@ -107,7 +117,7 @@ class UnitManager(abc.ABC):
 
 class EnemyUnitManager(UnitManager):
     def dead(self):
-        logger.info(f'Enemy unit {self.unit_id} dead, nothing more to do')
+        logger.info(f"Enemy unit {self.unit_id} dead, nothing more to do")
 
 
 class FriendlyUnitManger(UnitManager):
@@ -115,19 +125,20 @@ class FriendlyUnitManger(UnitManager):
         super().__init__(unit)
         self.factory_id = factory_id
         self.master: MasterState = master_state
-        self.status: Status = Status(role=None, current_action='', recommendation=None)
+        self.status: Status = Status(
+            current_action=actions.NOTHING,
+            previous_action=actions.NOTHING,
+            last_action_success=True,
+        )
 
     def dead(self):
         """Called when unit is detected as dead"""
-        logger.warning(
-            f'{self.log_prefix} Friendly unit dead'
-        )
+        logger.warning(f"{self.log_prefix} Friendly unit dead")
         if self.factory_id:
-            logger.info(f'removing from {self.factory_id} units also')
-            fkey = 'light' if self.unit.unit_type == 'LIGHT' else 'heavy'
-            popped = getattr(self.master.factories.friendly[self.factory_id], f'{fkey}_units').pop(
-                self.unit_id, None
-            )
+            logger.info(f"removing from {self.factory_id} units also")
+            fkey = "light" if self.unit.unit_type == "LIGHT" else "heavy"
+            popped = getattr(
+                self.master.factories.friendly[self.factory_id], f"{fkey}_units"
+            ).pop(self.unit_id, None)
             if popped is None:
-                logger.warning(f'{self.log_prefix}  was not in {self.factory_id} units')
-
+                logger.warning(f"{self.log_prefix}  was not in {self.factory_id} units")

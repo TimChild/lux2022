@@ -11,18 +11,25 @@ import numpy as np
 import pandas as pd
 
 import util
+import actions
 from config import get_logger
 from factory_action_planner import FactoryDesires, FactoryInfo
 from master_state import MasterState, AllUnits
 from mining_planner import MiningPlanner
 from new_path_finder import Pather
 from rubble_clearing_planner import RubbleClearingPlanner
+from combat_planner import CombatPlanner
 from unit_manager import FriendlyUnitManger, UnitManager, EnemyUnitManager
 
 logger = get_logger(__name__)
 
 
-def find_collisions(this_unit: UnitManager, other_units: Iterable[UnitManager], max_step: int, other_is_enemy: bool) -> Dict[str, Collision]:
+def find_collisions(
+    this_unit: UnitManager,
+    other_units: Iterable[UnitManager],
+    max_step: int,
+    other_is_enemy: bool,
+) -> Dict[str, Collision]:
     """Find the first collision point between this_unit and each other_unit
     I.e. Only first collision coordinate when comparing the two paths
     """
@@ -124,6 +131,7 @@ class UnitInfo:
     len_action_queue: int
     distance_to_factory: Optional[float]
     is_heavy: bool
+    unit_type: str
     enough_power_to_move: bool
     power: int
     ice: int
@@ -159,6 +167,7 @@ class UnitsToAct:
 @dataclass
 class Collision:
     """First collision only"""
+
     unit_id: str
     other_unit_id: str
     other_unit_is_enemy: bool
@@ -217,26 +226,45 @@ class UnitPaths(abc.ABC):
         return dict(**self.light, **self.heavy)
 
 
-def calculate_collisions(all_units: AllUnits, check_steps: int = 2) -> Dict[str, AllCollisionsForUnit]:
+def calculate_collisions(
+    all_units: AllUnits, check_steps: int = 2
+) -> Dict[str, AllCollisionsForUnit]:
     """Calculate first collisions in the next <check_steps> for all units"""
     all_unit_collisions = {}
     for unit_id, unit in all_units.friendly.all.items():
         collisions_for_unit = AllCollisionsForUnit(
             with_friendly=CollisionsForUnit(
-                light=find_collisions(unit, all_units.friendly.light.values(), max_step=check_steps, other_is_enemy=False),
-                heavy=find_collisions(unit, all_units.friendly.heavy.values(), max_step=check_steps,
-                                      other_is_enemy=False),
+                light=find_collisions(
+                    unit,
+                    all_units.friendly.light.values(),
+                    max_step=check_steps,
+                    other_is_enemy=False,
+                ),
+                heavy=find_collisions(
+                    unit,
+                    all_units.friendly.heavy.values(),
+                    max_step=check_steps,
+                    other_is_enemy=False,
+                ),
             ),
             with_enemy=CollisionsForUnit(
-                light=find_collisions(unit, all_units.enemy.light.values(), max_step=check_steps, other_is_enemy=True),
-                heavy=find_collisions(unit, all_units.enemy.heavy.values(), max_step=check_steps,
-                                      other_is_enemy=True),
+                light=find_collisions(
+                    unit,
+                    all_units.enemy.light.values(),
+                    max_step=check_steps,
+                    other_is_enemy=True,
+                ),
+                heavy=find_collisions(
+                    unit,
+                    all_units.enemy.heavy.values(),
+                    max_step=check_steps,
+                    other_is_enemy=True,
+                ),
             ),
         )
         if collisions_for_unit.num_collisions() > 0:
             all_unit_collisions[unit_id] = collisions_for_unit
     return all_unit_collisions
-
 
 
 @dataclass
@@ -248,7 +276,9 @@ class ActionDecisionData:
 
 
 def decide_action(
-    data: ActionDecisionData,
+    unit_info: UnitInfo,
+    factory_desires: FactoryDesires,
+    factory_info: FactoryInfo,
     close_units: Union[None, CloseUnits],
 ) -> str:
     def attack_or_run_away(
@@ -268,59 +298,68 @@ def decide_action(
                 enemy_power = close_units.other_unit_powers[
                     close_units.other_unit_types.index(unit_type)
                 ]
-                if enemy_power < data.power - power_threshold:
+                if enemy_power < unit_info.power - power_threshold:
                     return "attack"
             elif len(close_enemies_within_2) > 1:
                 return "run_away"
         return None
 
     action = None
-    if data.unit_type == "LIGHT":
+    if unit_info.unit_type == "LIGHT":
         action = attack_or_run_away(close_units, "LIGHT", 10)
         if action is None:
-            if data.ore_desired:
+            if factory_info.light_mining_ore < factory_desires.light_mining_ore:
                 action = "mine_ore"
-            elif data.rubble_clearing_desired:
+            elif (
+                factory_info.light_clearing_rubble
+                < factory_desires.light_clearing_rubble
+            ):
                 action = "clear_rubble"
             else:
                 action = "do_nothing"
     else:  # unit_type == "HEAVY"
         action = attack_or_run_away(close_units, "HEAVY", 100)
         if action is None:
-            if data.ore_desired:
-                action = "mine_ore"
-            else:
+            if factory_info.heavy_mining_ice < factory_desires.heavy_mining_ice:
                 action = "mine_ice"
+            elif factory_info.heavy_mining_ore < factory_desires.heavy_mining_ore:
+                action = "mine_ore"
+            elif factory_info.heavy_attacking < factory_desires.heavy_attacking:
+                action = "attack"
 
     return action
 
 
-def should_unit_act(unit: FriendlyUnitManger, upcoming_collisions: Dict[str, AllCollisionsForUnit], close_enemies: Dict[str, CloseUnits]):
+def should_unit_act(
+    unit: FriendlyUnitManger,
+    upcoming_collisions: Dict[str, AllCollisionsForUnit],
+    close_enemies: Dict[str, CloseUnits],
+):
     unit_id = unit.unit_id
     should_act = False
     # If not enough power to do something meaningful
     if unit.power < (
-            unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
+        unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
     ):
-        logger.debug(
-            f"Not enough power -- {unit_id} should not consider acting"
-        )
+        logger.debug(f"Not enough power -- {unit_id} should not consider acting")
         should_act = False
     # If no queue
     elif len(unit.action_queue) == 0:
         logger.debug(f"No actions -- {unit_id} should consider acting")
         should_act = True
     # If colliding with friendly
-    elif unit_id in upcoming_collisions and upcoming_collisions[unit_id].num_collisions(friendly=True, enemy=False) > 0:
-        logger.debug(
-            f"Collision with friendly -- {unit_id} should consider acting"
-        )
+    elif (
+        unit_id in upcoming_collisions
+        and upcoming_collisions[unit_id].num_collisions(friendly=True, enemy=False) > 0
+    ):
+        logger.debug(f"Collision with friendly -- {unit_id} should consider acting")
         should_act = True
     # If colliding with enemy
-    elif unit_id in upcoming_collisions and upcoming_collisions[unit_id].num_collisions(friendly=False, enemy=True) > 0:
-        logger.debug(
-            f"Collision with enemy -- {unit_id} should consider acting"
-        )
+    elif (
+        unit_id in upcoming_collisions
+        and upcoming_collisions[unit_id].num_collisions(friendly=False, enemy=True) > 0
+    ):
+        logger.debug(f"Collision with enemy -- {unit_id} should consider acting")
         should_act = True
     # If close to enemy
     elif unit_id in close_enemies:
@@ -329,6 +368,67 @@ def should_unit_act(unit: FriendlyUnitManger, upcoming_collisions: Dict[str, All
     # TODO: If about to do invalid action:
     # TODO: pickup more power than available, dig where no resource, transfer to unoccupied location
     return should_act
+
+
+def _decide_collision_avoidance(
+    unit, other_unit, is_enemy, power_threshold_low, power_threshold_high
+) -> Tuple[float, bool]:
+    """
+    Handle collision cases based on unit types and their friendly or enemy status.
+
+    Args: unit: A Unit object representing the primary unit. other_unit: A Unit object representing the other
+    unit to compare against. power_threshold_low: A numeric value representing the lower threshold for the
+    power difference between the two units. power_threshold_high: A numeric value representing the upper
+    threshold for the power difference between the two units.
+
+    Returns: tuple of float, bool for weighting and allowing collisions (weighting means prefer move towards
+    -ve or away +ve)
+    """
+    unit_type = unit.unit_type  # "LIGHT" or "HEAVY"
+    other_unit_type = other_unit.unit_type  # "LIGHT" or "HEAVY"
+
+    power_difference = unit.power - other_unit.power
+
+    if unit_type == "HEAVY":
+        if other_unit_type == "HEAVY":
+            if is_enemy:
+                if power_difference > power_threshold_high:
+                    # Path toward and try to collide
+                    return -1, True
+                elif power_difference < power_threshold_low:
+                    # Path away and avoid colliding
+                    return 1, False
+                else:
+                    # Just avoid colliding
+                    return 0, False
+            else:  # other_unit is friendly
+                # Just avoid colliding
+                return 0, False
+        elif other_unit_type == "LIGHT":
+            if is_enemy:
+                # Ignore the other unit completely
+                return 0, True
+            else:  # other_unit is friendly
+                # Avoid colliding
+                return 0, False
+    elif unit_type == "LIGHT":
+        if other_unit_type == "HEAVY" and is_enemy:
+            # Path away and avoid colliding
+            return 1, False
+        elif other_unit_type == "LIGHT" and is_enemy:
+            if power_difference > power_threshold_high:
+                # Path toward and try to collide
+                return -1, True
+            elif power_difference < power_threshold_low:
+                # Path away and avoid colliding
+                return 1, False
+            else:
+                # Just avoid colliding
+                return 0, False
+        else:  # other_unit is friendly
+            # Just avoid colliding
+            return 0, False
+    raise RuntimeError(f"Shouldn't reach here")
 
 
 class UnitActionPlanner:
@@ -343,9 +443,14 @@ class UnitActionPlanner:
     # If this many actions the same, don't update unit
     actions_same_check = 3
     # Number of steps to block other unit path locations for
-    avoid_collision_steps = 5
+    avoid_collision_steps = 10
 
-    def __init__(self, master: MasterState, factory_desires: Dict[str, FactoryDesires], factory_infos: Dict[str, FactoryInfo]):
+    def __init__(
+        self,
+        master: MasterState,
+        factory_desires: Dict[str, FactoryDesires],
+        factory_infos: Dict[str, FactoryInfo],
+    ):
         """Assuming this is called after beginning of turn update"""
         self.master = master
         self.factory_desires = factory_desires
@@ -356,9 +461,7 @@ class UnitActionPlanner:
         self._upcoming_collisions: AllCollisionsForUnit = None
         self._close_units: AllCloseUnits = None
 
-    def _get_units_to_act(
-        self, units: Dict[str, FriendlyUnitManger]
-    ) -> UnitsToAct:
+    def _get_units_to_act(self, units: Dict[str, FriendlyUnitManger]) -> UnitsToAct:
         """
         Determines which units should potentially act this turn, and which should continue with current actions
         Does this based on:
@@ -377,11 +480,15 @@ class UnitActionPlanner:
         )
 
         all_unit_collisions = self._calculate_collisions()
-        all_unit_close_to_enemy = self.calculate_close_enemies()
+        all_unit_close_to_enemy = self._calculate_close_enemies()
         needs_to_act = {}
         should_not_act = {}
         for unit_id, unit in units.items():
-            should_act = should_unit_act(unit, upcoming_collisions=all_unit_collisions, close_enemies=all_unit_close_to_enemy)
+            should_act = should_unit_act(
+                unit,
+                upcoming_collisions=all_unit_collisions,
+                close_enemies=all_unit_close_to_enemy,
+            )
             if should_act:
                 needs_to_act[unit_id] = unit
             else:
@@ -390,10 +497,12 @@ class UnitActionPlanner:
 
     def _calculate_collisions(self) -> Dict[str, AllCollisionsForUnit]:
         """Calculates the upcoming collisions based on action queues of all units"""
-        all_collisions = calculate_collisions(self.master.units, check_steps=self.check_collision_steps)
+        all_collisions = calculate_collisions(
+            self.master.units, check_steps=self.check_collision_steps
+        )
         return all_collisions
 
-    def calculate_close_units(self) -> AllCloseUnits:
+    def _calculate_close_units(self) -> AllCloseUnits:
         """Calculates which friendly units are close to any other unit"""
         if self._close_units is None:
             friendly = {}
@@ -425,9 +534,9 @@ class UnitActionPlanner:
             self._close_units = all_close_units
         return self._close_units
 
-    def calculate_close_enemies(self) -> Dict[str, CloseUnits]:
+    def _calculate_close_enemies(self) -> Dict[str, CloseUnits]:
         """Calculate the close enemy units to all friendly units"""
-        close_units = self.calculate_close_units()
+        close_units = self._calculate_close_units()
         return close_units.close_to_enemy
 
     @functools.lru_cache(maxsize=128)
@@ -472,6 +581,7 @@ class UnitActionPlanner:
                     else np.nan
                 ),
                 is_heavy=unit.unit_type == "HEAVY",
+                unit_type=unit.unit_type,
                 enough_power_to_move=(
                     unit.power
                     > unit.unit_config.MOVE_COST
@@ -521,7 +631,7 @@ class UnitActionPlanner:
             ordered_infos[unit_id] = unit_infos[unit_id]
         return ordered_infos
 
-    def base_costmap(self) -> np.ndarray:
+    def _get_base_costmap(self) -> np.ndarray:
         """
         Calculates the base costmap based on:
             - rubble array
@@ -538,7 +648,7 @@ class UnitActionPlanner:
             self._costmap = costmap
         return self._costmap
 
-    def update_costmap_with_path(
+    def _update_costmap_with_path(
         self,
         costmap: np.ndarray,
         unit_pos: util.POS_TYPE,
@@ -643,7 +753,7 @@ class UnitActionPlanner:
 
         return costmap
 
-    def update_costmap_with_unit(
+    def _add_other_unit_to_costmap(
         self,
         costmap: np.ndarray,
         this_unit: FriendlyUnitManger,
@@ -652,66 +762,6 @@ class UnitActionPlanner:
     ) -> np.ndarray:
         """Add or removes cost from cost map based on distance and path of nearby unit"""
 
-        def handle_collision_case(
-            unit, other_unit, is_enemy, power_threshold_low, power_threshold_high
-        ) -> Tuple[float, bool]:
-            """
-            Handle collision cases based on unit types and their friendly or enemy status.
-
-            Args: unit: A Unit object representing the primary unit. other_unit: A Unit object representing the other
-            unit to compare against. power_threshold_low: A numeric value representing the lower threshold for the
-            power difference between the two units. power_threshold_high: A numeric value representing the upper
-            threshold for the power difference between the two units.
-
-            Returns: tuple of float, bool for weighting and allowing collisions (weighting means prefer move towards
-            -ve or away +ve)
-            """
-            unit_type = unit.unit_type  # "LIGHT" or "HEAVY"
-            other_unit_type = other_unit.unit_type  # "LIGHT" or "HEAVY"
-
-            power_difference = unit.power - other_unit.power
-
-            if unit_type == "HEAVY":
-                if other_unit_type == "HEAVY":
-                    if is_enemy:
-                        if power_difference > power_threshold_high:
-                            # Path toward and try to collide
-                            return -1, True
-                        elif power_difference < power_threshold_low:
-                            # Path away and avoid colliding
-                            return 1, False
-                        else:
-                            # Just avoid colliding
-                            return 0, False
-                    else:  # other_unit is friendly
-                        # Just avoid colliding
-                        return 0, False
-                elif other_unit_type == "LIGHT":
-                    if is_enemy:
-                        # Ignore the other unit completely
-                        return 0, True
-                    else:  # other_unit is friendly
-                        # Avoid colliding
-                        return 0, False
-            elif unit_type == "LIGHT":
-                if other_unit_type == "HEAVY" and is_enemy:
-                    # Path away and avoid colliding
-                    return 1, False
-                elif other_unit_type == "LIGHT" and is_enemy:
-                    if power_difference > power_threshold_high:
-                        # Path toward and try to collide
-                        return -1, True
-                    elif power_difference < power_threshold_low:
-                        # Path away and avoid colliding
-                        return 1, False
-                    else:
-                        # Just avoid colliding
-                        return 0, False
-                else:  # other_unit is friendly
-                    # Just avoid colliding
-                    return 0, False
-            raise RuntimeError(f"Shouldn't reach here")
-
         if this_unit.unit_type == "LIGHT":
             # If we have 10 more energy, prefer moving toward
             low_power_diff, high_power_diff = -1, 10
@@ -719,7 +769,7 @@ class UnitActionPlanner:
             low_power_diff, high_power_diff = -1, 100
 
         # TODO: Actually use avoidance or remove it completely
-        avoidance, allow_collision = handle_collision_case(
+        avoidance, allow_collision = _decide_collision_avoidance(
             this_unit,
             other_unit,
             is_enemy=other_is_enemy,
@@ -733,8 +783,8 @@ class UnitActionPlanner:
             # Ignore unit
             pass
         else:
-            other_path = other_unit.current_path()
-            costmap = self.update_costmap_with_path(
+            other_path = other_unit.current_path(max_len=self.avoid_collision_steps)
+            costmap = self._update_costmap_with_path(
                 costmap,
                 this_unit.pos,
                 other_path,
@@ -744,7 +794,7 @@ class UnitActionPlanner:
             )
         return costmap
 
-    def get_travel_costmap(
+    def _get_travel_costmap_for_unit(
         self,
         base_costmap: np.ndarray,
         units_to_act: UnitsToAct,
@@ -761,7 +811,7 @@ class UnitActionPlanner:
         logger.function_call(f"Calculating costmap with paths for unit {unit.unit_id}")
         new_cost = base_costmap.copy()
 
-        all_close_units = self.calculate_close_units()
+        all_close_units = self._calculate_close_units()
         units_yet_to_act = units_to_act.needs_to_act.keys()
 
         # If close to enemy, add those paths
@@ -771,7 +821,7 @@ class UnitActionPlanner:
             # For each nearby enemy unit
             for other_id in close_units.other_unit_ids:
                 other_unit = self.master.units.enemy.get_unit(other_id)
-                new_cost = self.update_costmap_with_unit(
+                new_cost = self._add_other_unit_to_costmap(
                     new_cost, this_unit=unit, other_unit=other_unit, other_is_enemy=True
                 )
 
@@ -789,7 +839,7 @@ class UnitActionPlanner:
                     )
                     continue
                 other_unit = self.master.units.friendly.get_unit(other_id)
-                new_cost = self.update_costmap_with_unit(
+                new_cost = self._add_other_unit_to_costmap(
                     new_cost,
                     this_unit=unit,
                     other_unit=other_unit,
@@ -799,19 +849,21 @@ class UnitActionPlanner:
         logger.debug(f"Done calculating costmap")
         return new_cost
 
-    def calculate_actions_for_unit(
+    def _calculate_actions_for_unit(
         self,
         base_costmap: np.ndarray,
         travel_costmap: np.ndarray,
         unit_info: UnitInfo,
         unit: FriendlyUnitManger,
         factory_desires: FactoryDesires,
+        factory_info: FactoryInfo,
         mining_planner: MiningPlanner,
         rubble_clearing_planner: RubbleClearingPlanner,
+        combat_planner: CombatPlanner,
     ) -> bool:
         """Calculate new actions for this unit"""
         logger.function_call(
-            f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, role = {unit.status.role}"
+            f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, current_action = {unit.status.current_action}"
         )
         # def calculate_unit_actions(unit: FriendlyUnitManger, unit_must_move: bool, poss_close_enemy: [None, CloseUnits], row: pd.Series):
         #     _success = False
@@ -845,8 +897,8 @@ class UnitActionPlanner:
         # unit_before = copy.deepcopy(unit)
         unit.action_queue = []
 
-        close_units = self.calculate_close_units()
-        possible_close_enemy: [None, CloseUnits] = close_units.close_to_enemy.pop(
+        close_units = self._calculate_close_units()
+        possible_close_enemy: [None, CloseUnits] = close_units.close_to_enemy.get(
             unit.unit_id, None
         )
         # action_type = decide_action(df_row, possible_close_enemy)
@@ -854,22 +906,22 @@ class UnitActionPlanner:
         # TODO: If close to enemy and should attack - do it
         # TODO: If close to enemy and run away - do it
         # TODO: Collect some factory obs to help decide what to do
-        decision_data = ActionDecisionData(
-            unit_type=unit.unit_type,
-            power=unit.power,
-            ore_desired=False,
-            rubble_clearing_desired=True,
-        )
 
-        desired_action = decide_action(decision_data, possible_close_enemy)
+        desired_action = decide_action(
+            unit_info=unit_info,
+            factory_desires=factory_desires,
+            factory_info=factory_info,
+            close_units=possible_close_enemy,
+        )
         logger.info(f"desired action is {desired_action}")
-        success = self.calculate_unit_actions(
+        success = self._calculate_unit_actions(
             unit,
             desired_action=desired_action,
             unit_must_move=unit_must_move,
             possible_close_enemy=possible_close_enemy,
             mining_planner=mining_planner,
             rubble_planner=rubble_clearing_planner,
+            combat_planner=combat_planner,
         )
 
         # TEMPORARY
@@ -894,7 +946,9 @@ class UnitActionPlanner:
         self,
         mining_planner: MiningPlanner,
         rubble_clearing_planner: RubbleClearingPlanner,
+        combat_planner: CombatPlanner,
         factory_desires: Dict[str, FactoryDesires],
+        factory_infos: Dict[str, FactoryInfo],
     ) -> Dict[str, List[np.ndarray]]:
         """
         Processes the units by choosing the actions the units should take this turn in order of priority
@@ -906,13 +960,11 @@ class UnitActionPlanner:
             f"process_units called with mining_planner: {mining_planner}, rubble_clearing_planner: {rubble_clearing_planner}"
         )
 
-        units_to_act = self._get_units_to_act(
-            self.master.units.friendly.all
-        )
+        units_to_act = self._get_units_to_act(self.master.units.friendly.all)
         unit_infos = self._collect_unit_data(units_to_act.needs_to_act)
         sorted_unit_infos = self._sort_units_by_priority(unit_infos)
 
-        base_costmap = self.base_costmap()
+        base_costmap = self._get_base_costmap()
 
         for unit_id, unit_info in sorted_unit_infos.items():
             # Note: Row is a pd.Series of the unit_data_df
@@ -928,21 +980,12 @@ class UnitActionPlanner:
                 unit.factory_id = factory_id
                 factory.assign_unit(unit)
 
-            # if unit.factory_id:
-            #     row['ore_desired'] = self.master.factories.friendly[unit.factory_id]
-            # else:
-            #     row['ore_desired'] = False
-            # if unit.unit_type == 'LIGHT':
-            #     row['rubble_clearing_desired'] = True
-            # else:
-            #     row['rubble_clearing_desired'] = False
-
             logger.info(
                 f"\n\nProcessing unit {unit.unit_id}({unit.pos}): "
                 f"is_heavy={unit_info.is_heavy}, enough_power_to_move={unit_info.enough_power_to_move}, "
                 f"power={unit_info.power}, ice={unit_info.ice}, ore={unit_info.ore}"
             )
-            travel_costmap = self.get_travel_costmap(
+            travel_costmap = self._get_travel_costmap_for_unit(
                 unit=unit,
                 base_costmap=base_costmap,
                 units_to_act=units_to_act,
@@ -950,14 +993,16 @@ class UnitActionPlanner:
 
             unit_before = copy.deepcopy(unit)
             # Figure out new actions for unit  (i.e. RoutePlanners)
-            success = self.calculate_actions_for_unit(
+            success = self._calculate_actions_for_unit(
                 base_costmap=base_costmap,
                 travel_costmap=travel_costmap,
                 unit_info=unit_info,
                 unit=unit,
                 factory_desires=factory_desires[unit.factory_id],
+                factory_info=factory_infos[unit.factory_id],
                 mining_planner=mining_planner,
                 rubble_clearing_planner=rubble_clearing_planner,
+                combat_planner=combat_planner,
             )
 
             # If first X actions are the same, don't update (unnecessary cost for unit)
@@ -983,7 +1028,7 @@ class UnitActionPlanner:
                 actions[unit_id] = unit.action_queue[:20]
         return actions
 
-    def calculate_unit_actions(
+    def _calculate_unit_actions(
         self,
         unit: FriendlyUnitManger,
         desired_action: str,
@@ -991,47 +1036,47 @@ class UnitActionPlanner:
         possible_close_enemy: [None, CloseUnits],
         mining_planner: MiningPlanner,
         rubble_planner: RubbleClearingPlanner,
+        combat_planner: CombatPlanner,
     ):
-        if desired_action == "attack":
-            possible_close_enemy: CloseUnits
-            index_of_closest = possible_close_enemy.other_unit_distances.index(
-                min(possible_close_enemy.other_unit_distances)
-            )
-            enemy_loc = possible_close_enemy.other_unit_positions[index_of_closest]
-            path_to_enemy = self.master.pathfinder.fast_path(unit.pos, enemy_loc)
-            if len(path_to_enemy) > 0:
-                self.master.pathfinder.append_path_to_actions(unit, path_to_enemy)
-                return True
-            else:
-                return False
-        elif desired_action == "run_away":
-            path_to_factory = util.calc_path_to_factory(
-                self.master.pathfinder,
-                unit.pos,
-                self.master.factories.friendly[unit.factory_id].factory_loc,
-            )
-            if len(path_to_factory) > 0:
-                self.master.pathfinder.append_path_to_actions(unit, path_to_factory)
-                return True
-            else:
-                return False
-        elif desired_action == "mine_ore":
+        unit.status.previous_action = unit.status.current_action
+        unit.status.current_action = actions.NOTHING
+        success = False
+        if desired_action == actions.ATTACK:
+            success = combat_planner.attack(unit, possible_close_enemy)
+        elif desired_action == actions.RUN_AWAY:
+            success = combat_planner.run_away(unit)
+        elif desired_action == actions.MINE_ORE:
             rec = mining_planner.recommend(
                 unit, util.ORE, unit_must_move=unit_must_move
             )
-            return mining_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
-        elif desired_action == "mine_ice":
+            if rec is not None:
+                success = mining_planner.carry_out(
+                    unit, rec, unit_must_move=unit_must_move
+                )
+            else:
+                success = False
+        elif desired_action == actions.MINE_ICE:
             rec = mining_planner.recommend(
                 unit, util.ICE, unit_must_move=unit_must_move
             )
-            return mining_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
-        elif desired_action == "clear_rubble":
+            if rec is not None:
+                success = mining_planner.carry_out(
+                    unit, rec, unit_must_move=unit_must_move
+                )
+            else:
+                success = False
+        elif desired_action == actions.CLEAR_RUBBLE:
             rec = rubble_planner.recommend(unit)
-            return rubble_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
-        elif desired_action == "do_nothing":
-            return True
-        logger.error(f"{desired_action} not understood as an action")
-        return False
+            success = rubble_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
+        elif desired_action == actions.NOTHING:
+            success = True
+            pass
+        else:
+            logger.error(f"{desired_action} not understood as an action")
+
+        unit.status.current_action = desired_action
+        unit.status.last_action_success = success
+        return success
 
 
 #######################################

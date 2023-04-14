@@ -2,15 +2,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict
 import copy
 
 from lux.kit import GameState
 from lux.factory import Factory
 
 from factory_manager import FriendlyFactoryManager
-from unit_manager import FriendlyUnitManger
-from actions import Recommendation
 
 
 from master_state import MasterState, Planner
@@ -40,6 +38,13 @@ class FactoryInfo:
     connected_zeros: int
     lichen_tiles: int
     total_lichen: int
+    # Below should be equivalent to factory desires
+    light_mining_ore: int
+    light_clearing_rubble: int
+    light_attacking: int
+    heavy_mining_ice: int
+    heavy_mining_ore: int
+    heavy_attacking: int
 
     def update(self, new: FactoryInfo):
         # never changes
@@ -65,10 +70,11 @@ class FactoryInfo:
 @dataclass
 class FactoryDesires:
     heavy_mining_ice: int = 1
+    heavy_mining_ore: int = 0
+    heavy_attacking: int = 0
     light_mining_ore: int = 0
     light_clearing_rubble: int = 0
     light_attacking: int = 0
-    heavy_attacking: int = 0
 
     def copy(self) -> FactoryDesires:
         return copy.copy(self)
@@ -203,6 +209,9 @@ class FactoryActionPlanner:
         lichen = self.master.game_state.board.lichen
         lichen[lichen_locations != 1] = 0
 
+        current_light_actions = factory.get_light_actions()
+        current_heavy_actions = factory.get_heavy_actions()
+
         factory_info = FactoryInfo(
             factory=factory.factory,
             factory_id=factory.unit_id,
@@ -224,6 +233,12 @@ class FactoryActionPlanner:
             ),
             lichen_tiles=int(np.sum(lichen_locations)),
             total_lichen=int(np.sum(lichen)),
+            light_mining_ore=len(current_light_actions.mining_ore),
+            light_clearing_rubble=len(current_light_actions.clearing_rubble),
+            light_attacking=len(current_light_actions.attacking),
+            heavy_mining_ice=len(current_heavy_actions.mining_ice),
+            heavy_mining_ore=len(current_heavy_actions.mining_ore),
+            heavy_attacking=len(current_heavy_actions.attacking),
         )
         return factory_info
 

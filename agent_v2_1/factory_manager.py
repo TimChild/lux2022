@@ -1,58 +1,40 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
-import numpy as np
-import pandas as pd
 
-from lux.kit import GameState
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Dict
+import numpy as np
+
 from lux.factory import Factory
 
 from config import get_logger
 from master_state import MasterState
-from util import (
-    manhattan,
-    nearest_non_zero,
-    convolve_array_kernel,
-    factory_map_kernel,
-    count_connected_values,
-)
+import util
 
-from actions import Recommendation
+import actions
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManger
+
     pass
 
 logger = get_logger(__name__)
 
 
-class BuildHeavyRecommendation(Recommendation):
-    role = 'heavy'
+class BuildHeavyRecommendation(actions.Recommendation):
+    role = "heavy"
     value = 0
 
     def to_action_queue(self, plan: MasterState) -> int:
         return 1
 
 
-# class FactoryRecommendation(Recommendation):
-#     role = 'factory ice'
-#
-#     def __init__(self, value: int):
-#         self.value = value
-#
-#
-# class FactoryPlanner(Planner):
-#     def recommend(self, unit: FactoryManager):
-#         if unit.factory.power > 1000:
-#             pass
-#
-#
-#         return FactoryRecommendation
-#
-#     def carry_out(self, unit: FactoryManager, recommendation: Recommendation):
-#         pass
-#
-#     def update(self):
-#         pass
+@dataclass
+class UnitActions:
+    mining_ice: Dict[str, FriendlyUnitManger]
+    mining_ore: Dict[str, FriendlyUnitManger]
+    clearing_rubble: Dict[str, FriendlyUnitManger]
+    attacking: Dict[str, FriendlyUnitManger]
+    nothing: Dict[str, FriendlyUnitManger]
 
 
 class FactoryManager:
@@ -70,7 +52,7 @@ class FactoryManager:
 
 class EnemyFactoryManager(FactoryManager):
     def dead(self):
-        logger.info(f'dead, nothing else to do')
+        logger.info(f"dead, nothing else to do")
 
 
 class FriendlyFactoryManager(FactoryManager):
@@ -78,15 +60,63 @@ class FriendlyFactoryManager(FactoryManager):
         super().__init__(factory)
         self.master = master_state
 
-        self.light_units = {}
-        self.heavy_units = {}
+        self.light_units: Dict[str, FriendlyUnitManger] = {}
+        self.heavy_units: Dict[str, FriendlyUnitManger] = {}
+
+        # caching
+        self._light_actions = None
+        self._heavy_actions = None
+
+    def update(self, factory: Factory):
+        super().update(factory)
+        self._light_actions = None
+        self._heavy_actions = None
 
     def assign_unit(self, unit: FriendlyUnitManger):
-        logger.debug(f'Assigning {unit.log_prefix} to {self.factory.unit_id}')
-        if unit.unit_type == 'LIGHT':
+        logger.debug(f"Assigning {unit.log_prefix} to {self.factory.unit_id}")
+        if unit.unit_type == "LIGHT":
             self.light_units[unit.unit_id] = unit
-        elif unit.unit_id == 'HEAVY':
+        elif unit.unit_id == "HEAVY":
             self.heavy_units[unit.unit_id] = unit
+
+    def get_light_actions(self) -> UnitActions:
+        if self._light_actions is None:
+            self._light_actions = self._get_actions(self.light_units)
+        return self._light_actions
+
+    def get_heavy_actions(self) -> UnitActions:
+        if self._heavy_actions is None:
+            self._heavy_actions = self._get_actions(self.heavy_units)
+        return self._heavy_actions
+
+    def _get_actions(self, units: Dict[str, FriendlyUnitManger]) -> UnitActions:
+        return UnitActions(
+            mining_ice={
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action == actions.MINE_ICE
+            },
+            mining_ore={
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action == actions.MINE_ORE
+            },
+            clearing_rubble={
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action == actions.CLEAR_RUBBLE
+            },
+            attacking={
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action == actions.ATTACK
+            },
+            nothing={
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action == actions.NOTHING
+            },
+        )
 
     @property
     def factory_loc(self) -> np.ndarray:
@@ -99,12 +129,11 @@ class FriendlyFactoryManager(FactoryManager):
     def power(self) -> int:
         return self.factory.power
 
-
     def dead(self):
         """Called when factory is detected as dead"""
-        logger.info(f'dead, looking for assigned units')
+        logger.info(f"dead, looking for assigned units")
 
         for unit_id, unit in self.master.units.friendly.all.items():
             if unit.factory_id == self.unit_id:
-                logger.info(f'Removing {self.unit_id} assignment for unit {unit_id}')
+                logger.info(f"Removing {self.unit_id} assignment for unit {unit_id}")
                 unit.factory_id = None

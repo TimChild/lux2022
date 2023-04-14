@@ -105,11 +105,11 @@ class FactoryMaps:
 
         if by_team:
             friendly = by_team[player]
-            enemy = by_team['player_0' if player == 'player_1' else 'player_1']
+            enemy = by_team["player_0" if player == "player_1" else "player_1"]
             factory_maps = cls(all=factory_map, friendly=friendly, enemy=enemy)
             return factory_maps
         logger.info(
-            f'No factories to update with (game_state.teams = {game_state.teams})'
+            f"No factories to update with (game_state.teams = {game_state.teams})"
         )
         return None
 
@@ -158,7 +158,7 @@ class AllUnits:
         else:
             unit = self.enemy.get_unit(unit_id)
         if unit is None:
-            raise KeyError(f'{unit_id} does not exist in friendly or enemy units')
+            raise KeyError(f"{unit_id} does not exist in friendly or enemy units")
 
     def nearest_unit(
         self, pos: tuple[int, int], friendly=True, enemy=True, light=True, heavy=True
@@ -166,7 +166,7 @@ class AllUnits:
         """Get unit_id, dist of nearest unit to pos
         Note: Returns '', 999 if no unit found
         """
-        nearest_id = ''
+        nearest_id = ""
         nearest_dist = 999
         if friendly:
             new_id, new_dist = self.friendly.nearest_unit(pos, light=light, heavy=heavy)
@@ -199,10 +199,10 @@ class Units(abc.ABC):
         """Get the unit_id of unit at given position"""
         if self.unit_positions is None:
             logger.error(
-                f'Requesting unit at {pos} before initializing unit_positions',
+                f"Requesting unit at {pos} before initializing unit_positions",
             )
             raise RuntimeError(
-                f'self.unit_positions is None. Must be initialized first'
+                f"self.unit_positions is None. Must be initialized first"
             )
         return self.unit_positions.unit_at_position(pos)
 
@@ -210,7 +210,7 @@ class Units(abc.ABC):
         """Replace existing saved unit with an update of itself (i.e. should be the same unit, but with possibly new info)"""
         if unit_id != unit.unit_id:
             raise RuntimeError(
-                f'{unit_id} != {unit.unit_id}. When replacing unit in master, it must be the same unit!'
+                f"{unit_id} != {unit.unit_id}. When replacing unit in master, it must be the same unit!"
             )
         if unit_id in self.light:
             self.light[unit_id] = unit
@@ -238,7 +238,7 @@ class Units(abc.ABC):
             for unit_id, other_pos in unit_positions.items()
         }
         if not distances:
-            return '', 999
+            return "", 999
         nearest_id = min(distances, key=distances.get)
         return nearest_id, distances[nearest_id]
 
@@ -255,7 +255,7 @@ class Units(abc.ABC):
         for u_dict in (self.light, self.heavy):
             # If anything in light/heavy list that isn't in full list, must be dead
             for k in set(u_dict.keys()) - set(units.keys()):
-                logger.info(f'Removing unit {k}, assumed dead')
+                logger.info(f"Removing unit {k}, assumed dead")
                 dead_unit = u_dict.pop(k)
                 dead_unit.dead()
 
@@ -278,7 +278,7 @@ class EnemyUnits(Units):
         """
         from unit_manager import EnemyUnitManager  # Avoiding circular import
 
-        unit_dicts = {'LIGHT': self.light, 'HEAVY': self.heavy}
+        unit_dicts = {"LIGHT": self.light, "HEAVY": self.heavy}
         for unit_id, unit in units.items():
             u_dict = unit_dicts[unit.unit_type]
 
@@ -311,7 +311,7 @@ class FriendlyUnits(Units):
         from unit_manager import FriendlyUnitManger  # Avoiding circular import
 
         # For all units on team
-        unit_dicts = {'LIGHT': self.light, 'HEAVY': self.heavy}
+        unit_dicts = {"LIGHT": self.light, "HEAVY": self.heavy}
         for unit_id, unit in units.items():
             u_dict = unit_dicts[unit.unit_type]
 
@@ -328,7 +328,7 @@ class FriendlyUnits(Units):
 
                 # Convert to factory_id
                 if factory_id_num >= 0:
-                    factory_id = f'factory_{factory_id_num}'
+                    factory_id = f"factory_{factory_id_num}"
 
                 else:
                     logger.error(
@@ -346,9 +346,11 @@ class FriendlyUnits(Units):
                 # Add this unit to the factory list of units (light_units or heavy_units depending on unit_type
                 factory = self.master.factories.friendly.get(factory_id, None)
                 if factory is not None:
-                    getattr(factory, f'{unit.unit_type.lower()}_units')[unit_id] = new_unit
+                    getattr(factory, f"{unit.unit_type.lower()}_units")[
+                        unit_id
+                    ] = new_unit
                 else:
-                    logger.error(f'No factory exists for {factory_id}')
+                    logger.error(f"No factory exists for {factory_id}")
 
         # Remove dead units
         self._remove_dead(units)
@@ -381,7 +383,7 @@ class Factories:
         # Remove dead
         for k in set(f_dict.keys()) - set(factories.keys()):
             dead_factory = f_dict.pop(k)
-            logger.info(f'Friendly {k} died, being removed')
+            logger.info(f"Friendly {k} died, being removed")
             dead_factory.dead()
 
         # Update Enemy Factories
@@ -397,7 +399,7 @@ class Factories:
         # Remove dead
         for k in set(f_dict.keys()) - set(factories.keys()):
             dead_factory = f_dict.pop(k)
-            logger.info(f'Friendly {k} died, being removed')
+            logger.info(f"Friendly {k} died, being removed")
             dead_factory.dead()
 
 

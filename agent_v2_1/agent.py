@@ -10,6 +10,7 @@ from lux.utils import my_turn_to_place_factory
 from master_state import MasterState
 from mining_planner import MiningPlanner
 from rubble_clearing_planner import RubbleClearingPlanner
+from combat_planner import CombatPlanner
 from factory_action_planner import FactoryActionPlanner
 
 from config import get_logger
@@ -77,6 +78,7 @@ class Agent:
         self.mining_planner = MiningPlanner(self.master)
         self.rubble_clearing_planner = RubbleClearingPlanner(self.master)
         self.factory_action_planner = FactoryActionPlanner(self.master)
+        self.combat_planner = CombatPlanner(self.master)
 
     def bid(self, obs):
         """Bid for starting factory (default to 0)"""
@@ -149,11 +151,15 @@ class Agent:
         factory_desires = self.factory_action_planner.get_factory_desires()
         factory_infos = self.factory_action_planner.get_factory_infos()
 
-        tp = UnitActionPlanner(self.master, factory_desires=factory_desires, factory_infos=factory_infos)
+        tp = UnitActionPlanner(
+            self.master, factory_desires=factory_desires, factory_infos=factory_infos
+        )
         unit_actions = tp.decide_unit_actions(
             mining_planner=self.mining_planner,
             rubble_clearing_planner=self.rubble_clearing_planner,
+            combat_planner=self.combat_planner,
             factory_desires=factory_desires,
+            factory_infos=factory_infos,
         )
 
         logger.verbose(f"{self.player} Unit actions: {unit_actions}")

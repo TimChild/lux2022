@@ -34,7 +34,7 @@ from lux.cargo import UnitCargo
 
 if TYPE_CHECKING:
     from path_finder import PathFinder, CollisionParams
-    from unit_manager import FriendlyUnitManger
+    from unit_manager import FriendlyUnitManger, UnitManager
     from factory_manager import FriendlyFactoryManager
 
 logger = get_logger(__name__)
@@ -43,29 +43,29 @@ POS_TYPE = Union[Tuple[int, int], np.ndarray, Tuple[np.ndarray]]
 PATH_TYPE = Union[List[Tuple[int, int]], np.ndarray]
 
 
-UTIL_VERSION = 'AGENT_V2'
+UTIL_VERSION = "AGENT_V2"
 
 ENV_CFG = EnvConfig()
 LIGHT_UNIT = Unit(
     team_id=-1,
-    unit_id='none',
-    unit_type='LIGHT',
+    unit_id="none",
+    unit_type="LIGHT",
     pos=np.array((0, 0)),
     power=1000,
     cargo=UnitCargo(),
     env_cfg=ENV_CFG,
-    unit_cfg=ENV_CFG.ROBOTS['LIGHT'],
+    unit_cfg=ENV_CFG.ROBOTS["LIGHT"],
     action_queue=[],
 )
 HEAVY_UNIT = Unit(
     team_id=-1,
-    unit_id='none',
-    unit_type='HEAVY',
+    unit_id="none",
+    unit_type="HEAVY",
     pos=np.array((0, 0)),
     power=1000,
     cargo=UnitCargo(),
     env_cfg=ENV_CFG,
-    unit_cfg=ENV_CFG.ROBOTS['HEAVY'],
+    unit_cfg=ENV_CFG.ROBOTS["HEAVY"],
     action_queue=[],
 )
 
@@ -179,15 +179,15 @@ class MyEnv:
             self.obs, rewards, dones, infos = self.env.step(actions)
             if any(dones.values()) and self.env_step < 1000:
                 logger.warning(
-                    f'One of the players dones came back True, previous state restored, use myenv.get_actions() to '
-                    f'repeat gathering latest turns actions'
+                    f"One of the players dones came back True, previous state restored, use myenv.get_actions() to "
+                    f"repeat gathering latest turns actions"
                 )
                 self.undo()
                 return False
         except Exception as e:
             logger.warning(
-                f'Error caught while running step, previous state restored, use myenv.get_actions() to '
-                f'repeat gathering actions'
+                f"Error caught while running step, previous state restored, use myenv.get_actions() to "
+                f"repeat gathering actions"
             )
             self.undo()
             raise e
@@ -236,7 +236,7 @@ def num_turns_of_actions(actions: Union[np.ndarray, List[np.ndarray]]) -> int:
 
 
 def power_cost_of_actions(
-    rubble: np.ndarray, unit: FriendlyUnitManger, actions: List[np.ndarray]
+    rubble: np.ndarray, unit: UnitManager, actions: List[np.ndarray]
 ):
     """Power requirements of a list of actions
 
@@ -361,7 +361,9 @@ def pad_and_crop(small_arr, large_arr, x1, y1, fill_value=0):
     return padded_arr
 
 
-def connected_array_values_from_pos(arr: np.ndarray, pos: POS_TYPE, connected_value=0) -> np.ndarray:
+def connected_array_values_from_pos(
+    arr: np.ndarray, pos: POS_TYPE, connected_value=0
+) -> np.ndarray:
     """Figure out what area of zeros is connected to factory and return that array"""
     struct = ndimage.generate_binary_structure(rank=2, connectivity=1)
     # Note:
@@ -664,7 +666,7 @@ def list_of_tuples_to_array(lst: List[List[Tuple[int, int]]]) -> np.ndarray:
 def path_to_actions(path):
     """Converts path to actions (combines same direction moves by setting higher n)"""
     if len(path) == 0:
-        logger.warning(f'path_to_actions got empty path {path}')
+        logger.warning(f"path_to_actions got empty path {path}")
         return []
     pos = path[0]
     directions = []
@@ -681,7 +683,9 @@ def path_to_actions(path):
     return actions
 
 
-def actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray], max_len: int = 20) -> np.ndarray:
+def actions_to_path(
+    start_pos: POS_TYPE, actions: List[np.ndarray], max_len: int = 20
+) -> np.ndarray:
     """Convert list of actions (from start_pos) into a path
     Note: First value in path is current position
     """
@@ -729,14 +733,14 @@ def move_to_new_spot_on_factory(
                     best_cost = new_cost
         except IndexError as e:
             logger.info(
-                f'Index error for ({new_x, new_y}), probably near edge of map, ignoring this position'
+                f"Index error for ({new_x, new_y}), probably near edge of map, ignoring this position"
             )
     # Move unit to best location if available
     if best_direction is not None:
         pathfinder.append_direction_to_actions(unit, best_direction)
         success = True
     else:
-        logger.error(f'No best_direction to move on factory')
+        logger.error(f"No best_direction to move on factory")
     return success
 
 
@@ -893,7 +897,7 @@ def _plotly_add_board(fig, state: GameState):
             z=state.board.rubble.T,
             colorscale="OrRd",
             name="Rubble",
-            uid=f'{step}_Rubble',
+            uid=f"{step}_Rubble",
             showscale=False,
         )
     )
@@ -920,7 +924,7 @@ def _plotly_add_board(fig, state: GameState):
                 z=arr,
                 colorscale=cmap,
                 name=name,
-                uid=f'{step}_{name}',
+                uid=f"{step}_{name}",
                 hoverinfo="skip",
                 showscale=False,
             )
@@ -957,7 +961,7 @@ def _plotly_add_factories(fig, state: GameState):
             custom_data = [
                 [
                     factory.unit_id,
-                    f'player_{factory.team_id}',
+                    f"player_{factory.team_id}",
                     factory.power,
                     factory.cargo.ice,
                     factory.cargo.ore,
@@ -983,7 +987,7 @@ def _plotly_add_factories(fig, state: GameState):
                     y=[y],
                     z=[unit_num],
                     name=name,
-                    uid=f'{step}_{name}',
+                    uid=f"{step}_{name}",
                     customdata=custom_data,
                     hovertemplate=hovertemplate,
                     showscale=False,
@@ -1054,7 +1058,7 @@ def _plotly_add_units(fig, state: GameState, add_path=True):
                     y=[y],
                     z=[unit_num],
                     name=name,
-                    uid=f'{step}_{name}',
+                    uid=f"{step}_{name}",
                     customdata=custom_data,
                     hovertemplate=hovertemplate,
                     showscale=False,
@@ -1073,11 +1077,11 @@ def plotly_plot_path(fig, path, step=-1):
         go.Scatter(
             x=path[:, 0],
             y=path[:, 1],
-            name='path',
-            uid=f'{step}_path',
+            name="path",
+            uid=f"{step}_path",
             mode="markers",
             marker=dict(symbol="circle-open", size=5, color="black"),
-            hoverinfo='skip',
+            hoverinfo="skip",
             showlegend=False,
         )
     )
@@ -1559,7 +1563,7 @@ def calc_path_to_factory(
     # Path to the nearest tile anyway
     else:
         logger.warning(
-            f'No path to any factory tile without collisions from {pos}  (best factory loc would be {original_nearest_location}), returning path without considering collisions'
+            f"No path to any factory tile without collisions from {pos}  (best factory loc would be {original_nearest_location}), returning path without considering collisions"
         )
         path = pathfinder.fast_path(
             pos,
@@ -1600,7 +1604,7 @@ def path_to_factory_edge_nearest_pos(
         factory_loc = set_middle_of_factory_loc_zero(factory_loc)
     assert np.sum(factory_loc) == 8
     if pos_to_be_near is None:
-        raise ValueError(f'Need to provide pos_to_be_near')
+        raise ValueError(f"Need to provide pos_to_be_near")
 
     original_factory_loc = factory_loc
     factory_loc = factory_loc.copy()
@@ -1624,7 +1628,7 @@ def path_to_factory_edge_nearest_pos(
                 return path
         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
 
-    logger.warning(f'No path to edge of factory found without collisions')
+    logger.warning(f"No path to edge of factory found without collisions")
     return np.array([[]])
     # if max_delay_by_move_center > 0:
     #     logger.info(f'Adding delay to finding path to edge of factory')
@@ -1661,7 +1665,7 @@ def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type="LIGHT") -
     unit_cfg = LIGHT_UNIT.unit_cfg if unit_type == "LIGHT" else HEAVY_UNIT.unit_cfg
     path = np.array(path)
     if path.ndim != 2:
-        raise ValueError(f'Path should be (N,2) in shape, got {path.shape}')
+        raise ValueError(f"Path should be (N,2) in shape, got {path.shape}")
 
     if len(path) <= 1:
         return 0
@@ -1671,5 +1675,4 @@ def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type="LIGHT") -
         cost += math.ceil(
             unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_pos
         )
-        # cost -= unit_cfg.CHARGE  # Charging only happens during DAY
     return cost

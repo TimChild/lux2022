@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+
 @dataclass
 class MiningRoutes:
     paths: list
@@ -39,7 +40,7 @@ class MiningRoutes:
 class MiningRecommendation(Recommendation):
     """Recommended mining action between a resource and factory"""
 
-    role = 'miner'
+    role = "miner"
 
     def __init__(
         self, distance_from_factory: float, resource_pos, factory_id, resource_type: int
@@ -132,8 +133,12 @@ class MiningRoutePlanner:
                 cost_to_resource,
                 cost_from_resource_to_factory,
             ) = self._path_to_and_from_resource()
+
             power_remaining = (
-                self.unit.power - cost_to_resource - cost_from_resource_to_factory
+                self.unit.power
+                - self.unit.power_cost_of_actions(rubble=self.rubble)
+                - cost_to_resource
+                - cost_from_resource_to_factory
             )
 
             if len(path_to_resource) == 0:
@@ -146,7 +151,7 @@ class MiningRoutePlanner:
                 success = self._resource_then_factory(path_to_resource, power_remaining)
             else:
                 # Go to factory first
-                logger.info('pathing to factory first')
+                logger.info("pathing to factory first")
                 direct_path_to_factory = self._path_to_factory(
                     from_pos=self.resource_pos,
                 )
@@ -154,18 +159,22 @@ class MiningRoutePlanner:
                     self.pathfinder.append_path_to_actions(
                         self.unit, direct_path_to_factory
                     )
-                else:  # No path to factory
-                    success = False
+                else:  # No path to factory (would still be 1 if on factory)
+                    return False
 
                 if self.unit.cargo.ice > 0:
-                    logger.info(f'dropping off {self.unit.cargo.ice} ice before from_factory')
+                    logger.info(
+                        f"dropping off {self.unit.cargo.ice} ice before from_factory"
+                    )
                     self.unit.action_queue.append(
                         self.unit.transfer(
                             CENTER, ICE, self.unit.unit_config.CARGO_SPACE
                         )
                     )
                 if self.unit.cargo.ore > 0:
-                    logger.info(f'dropping off {self.unit.cargo.ore} ore before from_factory')
+                    logger.info(
+                        f"dropping off {self.unit.cargo.ore} ore before from_factory"
+                    )
                     self.unit.action_queue.append(
                         self.unit.transfer(
                             CENTER, ORE, self.unit.unit_config.CARGO_SPACE
@@ -183,7 +192,7 @@ class MiningRoutePlanner:
         self, path_to_resource, power_remaining_after_moves
     ) -> bool:
         success = True
-        logger.info('pathing to resource first')
+        logger.info("pathing to resource first")
         # Move to resource
         self.pathfinder.append_path_to_actions(self.unit, path_to_resource)
 
@@ -194,7 +203,7 @@ class MiningRoutePlanner:
         if n_digs >= 1:
             self.unit.action_queue.append(self.unit.dig(n=n_digs))
         else:
-            logger.error(f'n_digs = {n_digs}, should always be greater than 1')
+            logger.error(f"n_digs = {n_digs}, should always be greater than 1")
             success = False
 
         # Move to factory
@@ -245,36 +254,63 @@ class MiningRoutePlanner:
         travel_cost = cost_to_resource + cost_from_resource_to_factory
 
         # Aim for as many digs as battery capacity would allow
-        available_power = self.unit.power - power_cost_of_actions(
-            self.rubble, self.unit, self.unit.action_queue
+        # How much power do we have at start of run
+        available_power = self.unit.power - self.unit.power_cost_of_actions(
+            rubble=self.rubble
         )
         if available_power < 0:
-            logger.warning(f'{self.unit.log_prefix}: available_power negative, setting zero instead')
+            logger.warning(
+                f"{self.unit.log_prefix}: available_power ({available_power}) negative, setting zero instead"
+            )
             available_power = 0
-        logger.info(f'available_power = {available_power}')
+        logger.info(f"available_power = {available_power}")
 
+        # How many digs can we do
         target_digs = int(
-            (self.unit.unit_config.BATTERY_CAPACITY - travel_cost)
-            / self.unit.unit_config.DIG_COST,
+            np.floor(
+                (self.unit.unit_config.BATTERY_CAPACITY - travel_cost)
+                / self.unit.unit_config.DIG_COST
+            )
         )
-        target_power = travel_cost + target_digs * self.unit.unit_config.DIG_COST
-        logger.info(f'target_power = {target_power}')
+        # Don't dig more than cargo capacity allows
+        target_digs = int(
+            min(
+                self.unit.unit_config.CARGO_SPACE
+                / self.unit.unit_config.DIG_RESOURCE_GAIN,
+                target_digs,
+            )
+        )
 
-        # Assume nothing else picking up power
-        factory_power = self.factory.power + util.num_turns_of_actions(self.unit.action_queue)
-        logger.info(f'factory_power = {target_power}')
+        # Total cost of planned route
+        target_power = travel_cost + target_digs * self.unit.unit_config.DIG_COST
+        logger.info(f"target_power = {target_power}")
+
+        # Assume nothing else picking up power from factory
+        # TODO: Make a factory.power_at_turn() method to keep track of upcoming power requests from factory
+        factory_power = self.factory.power + util.num_turns_of_actions(
+            self.unit.action_queue
+        )
+        logger.info(f"factory_power = {target_power}")
 
         # Pickup power and update n_digs
-        if factory_power > target_power - available_power:
+        if factory_power + available_power > target_power:
             power_to_pickup = target_power - available_power
             logger.info(
-                f'picking up {power_to_pickup} power to achieve target of {target_power}'
+                f"picking up {power_to_pickup} power to achieve target of {target_power}"
             )
             if power_to_pickup > 0:
-                self.unit.action_queue.append(self.unit.pickup(POWER, min(self.unit.unit_config.BATTERY_CAPACITY, power_to_pickup)))
+                self.unit.action_queue.append(
+                    self.unit.pickup(
+                        POWER,
+                        min(self.unit.unit_config.BATTERY_CAPACITY, power_to_pickup),
+                    )
+                )
             n_digs = target_digs
-        elif factory_power + available_power - travel_cost > self.unit.unit_config.DIG_COST * 3:
-            logger.info(f'picking up available power {factory_power}')
+        elif (
+            factory_power + available_power - travel_cost
+            > self.unit.unit_config.DIG_COST * 3
+        ):
+            logger.info(f"picking up available power {factory_power}")
             self.unit.action_queue.append(self.unit.pickup(POWER, factory_power))
             n_digs = int(
                 np.floor(
@@ -283,7 +319,7 @@ class MiningRoutePlanner:
                 )
             )
         else:
-            # Not enough energy to do a mining run, return now (everything up to this point is still useful to do)
+            # Not enough energy to do a mining run, return now leave unit on factory
             logger.warning(
                 f"{self.factory.unit_id} doesn't have enough energy for {self.unit.unit_id} to do a "
                 f"mining run to {self.resource_pos} from {self.unit.pos}"
@@ -304,7 +340,7 @@ class MiningRoutePlanner:
             self.unit.action_queue.append(self.unit.dig(n=n_digs))
         else:
             logger.error(
-                f'{self.unit.unit_id} n_digs = {n_digs}, unit heading off to not mine anything. should always be greater than 1'
+                f"{self.unit.unit_id} n_digs = {n_digs}, unit heading off to not mine anything. should always be greater than 1"
             )
             return False
 
@@ -339,7 +375,7 @@ class MiningRoutePlanner:
         )
         if len(path) == 0:
             logger.error(
-                f'Apparently no way to get to the edge of the factory without colliding from {self.unit.pos}',
+                f"Apparently no way to get to the edge of the factory without colliding from {self.unit.pos}",
             )
             return False
         elif len(path) > 0:
@@ -379,7 +415,7 @@ class MiningPlanner(Planner):
         self._mining_routes = None
 
     def __repr__(self):
-        return f'MiningPlanner[step={self.master.step}]'
+        return f"MiningPlanner[step={self.master.step}]"
 
     @property
     def ice(self):
@@ -415,11 +451,14 @@ class MiningPlanner(Planner):
             self.carry_out(unit, rec, unit_must_move=unit_must_move)
             success = True
         else:
-            logger.error(f'Mining planner returned None for {unit.unit_id}')
+            logger.error(f"Mining planner returned None for {unit.unit_id}")
         return success
 
     def recommend(
-        self, unit: FriendlyUnitManger, resource_type: int = ICE, unit_must_move: bool = False
+        self,
+        unit: FriendlyUnitManger,
+        resource_type: int = ICE,
+        unit_must_move: bool = False,
     ) -> [None, MiningRecommendation]:
         # Which resource are we looking for?
         if resource_type == ICE:
@@ -428,7 +467,7 @@ class MiningPlanner(Planner):
             resource_map = self.ore.copy()
         else:
             raise NotImplementedError(
-                f'{resource_type} not recognized, should be {ICE} or {ORE}'
+                f"{resource_type} not recognized, should be {ICE} or {ORE}"
             )
 
         # If unit must move, make sure not to recommend resource under unit
