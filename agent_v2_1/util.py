@@ -1702,11 +1702,11 @@ def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type="LIGHT") -
     assert unit_type in ["LIGHT", "HEAVY"]
     unit_cfg = LIGHT_UNIT.unit_cfg if unit_type == "LIGHT" else HEAVY_UNIT.unit_cfg
     path = np.array(path)
-    if path.ndim != 2:
-        raise ValueError(f"Path should be (N,2) in shape, got {path.shape}")
-
     if len(path) <= 1:
         return 0
+    elif path.ndim != 2:
+        raise ValueError(f"Path should be (N,2) in shape, got {path.shape}")
+
     cost = 0
     for pos in path[1:]:
         rubble_at_pos = rubble[pos[0], pos[1]]
