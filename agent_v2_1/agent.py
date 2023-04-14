@@ -60,120 +60,6 @@ class FactoryTurnPlanner:
         #         factory_actions[factory_id] = f_action
 
 
-#######################################
-
-
-# def find_collisions2(all_unit_paths: AllUnitPaths) -> List[Collision]:
-#     """
-#     Find collisions between friendly units and all units (friendly and enemy) in the given paths.
-#
-#     Args:
-#         all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
-#
-#     Returns:
-#         A list of Collision objects containing information about each detected collision.
-#     """
-#     raise NotImplementedError('Need to make some modifications first')
-#     collisions = []
-#
-#     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
-#     enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
-#     all_units = {**friendly_units, **enemy_units}
-#
-#     for unit_id, unit_path in friendly_units.items():
-#         for other_unit_id, other_unit_path in all_units.items():
-#             # Skip self-comparison
-#             if unit_id == other_unit_id:
-#                 continue
-#
-#             # Broadcast and compare the paths to find collisions
-#             unit_path_broadcasted = unit_path[:, np.newaxis]
-#             other_unit_path_broadcasted = other_unit_path[np.newaxis, :]
-#
-#             # Calculate the differences in positions at each step
-#             diff = np.abs(unit_path_broadcasted - other_unit_path_broadcasted)
-#
-#             # Find the indices where both x and y differences are zero (i.e., collisions)
-#             collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
-#
-#             # Create Collision objects for each detected collision
-#             for index in collision_indices:
-#                 collision = Collision(
-#                     unit_id=unit_id,
-#                     other_unit_id=other_unit_id,
-#                     pos=tuple(unit_path[index[0]]),
-#                     step=index[0],
-#                 )
-#                 collisions.append(collision)
-#
-#     return collisions
-#
-#
-# def find_collisions3(all_unit_paths: AllUnitPaths) -> List[Collision]:
-#     """
-#     Find collisions between friendly units and all units (friendly and enemy) in the given paths.
-#
-#     Args:
-#         all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
-#
-#     Returns:
-#         A list of Collision objects containing information about each detected collision.
-#     """
-#
-#     def pad_paths(paths_dict: Dict[str, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
-#         max_path_length = max([path.shape[0] for path in paths_dict.values()])
-#         padded_paths = []
-#         unit_ids = []
-#         for unit_id, path in paths_dict.items():
-#             padding_length = max_path_length - path.shape[0]
-#             padded_path = np.pad(
-#                 path,
-#                 ((0, padding_length), (0, 0)),
-#                 mode='constant',
-#                 constant_values=np.nan,
-#             )
-#             padded_paths.append(padded_path)
-#             unit_ids.append(unit_id)
-#
-#         return np.array(padded_paths), unit_ids
-#
-#     raise NotImplementedError('Need to make some modifications first')
-#     collisions = []
-#
-#     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
-#     enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
-#     all_units = {**friendly_units, **enemy_units}
-#
-#     friendly_paths, friendly_ids = pad_paths(friendly_units)
-#     enemy_paths, enemy_ids = pad_paths(enemy_units)
-#     all_paths, all_ids = pad_paths(all_units)
-#
-#     # Broadcast and compare the friendly paths with all paths to find collisions
-#     diff = np.abs(friendly_paths[:, :, np.newaxis] - all_paths[np.newaxis, :, :])
-#
-#     # Find the indices where both x and y differences are zero (i.e., collisions)
-#     collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
-#
-#     # Create Collision objects for each detected collision
-#     for index in collision_indices:
-#         unit_id = friendly_ids[index[0]]
-#         other_unit_id = all_ids[index[2]]
-#
-#         # Skip self-comparison
-#         if unit_id == other_unit_id:
-#             continue
-#
-#         collision = Collision(
-#             unit_id=unit_id,
-#             other_unit_id=other_unit_id,
-#             pos=tuple(friendly_paths[index[0], index[1]]),
-#             step=index[1],
-#         )
-#         collisions.append(collision)
-#
-#     return collisions
-
-
 class Agent:
     def __init__(self, player: str, env_cfg: EnvConfig):
         logger.info(f"Initializing agent for player {player}")
@@ -263,7 +149,7 @@ class Agent:
         factory_desires = self.factory_action_planner.get_factory_desires()
 
         tp = TurnPlanner(self.master, factory_desires)
-        unit_actions = tp.process_units(
+        unit_actions = tp.decide_unit_actions(
             mining_planner=self.mining_planner,
             rubble_clearing_planner=self.rubble_clearing_planner,
             factory_desires=factory_desires,

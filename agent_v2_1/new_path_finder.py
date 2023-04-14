@@ -1,42 +1,16 @@
 from __future__ import annotations
-
-import functools
-from dataclasses import dataclass, field, InitVar
-from typing import Tuple, List, TYPE_CHECKING, Iterable, Dict, Optional, Union
+from typing import Tuple, List, TYPE_CHECKING, Union
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
 import numpy as np
-from lux.utils import direction_to
 
 from config import get_logger
 import util
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager
-    from factory_manager import FactoryManager
-    from lux.factory import Factory
-    from unit_action_planner import AllUnitPaths
 
 logger = get_logger(__name__)
-
-
-# @dataclass(frozen=True)
-# class CollisionParams:
-#     look_ahead_turns: int
-#     ignore_ids: Tuple[str, ...]
-#     friendly_light: bool = True
-#     friendly_heavy: bool = True
-#     enemy_light: bool = True
-#     enemy_heavy: bool = True
-#     starting_step: int = (
-#         0  # E.g. 0 for starting this turn, 1 if one action before this pathing
-#     )
-#
-#     def __post_init__(self):
-#         # Ensure ignore_ids is a tuple even if provided as a list
-#         object.__setattr__(self, 'ignore_ids', tuple(self.ignore_ids))
-#
-
 
 
 def _get_sub_area(costmap: np.ndarray, lowers, uppers):

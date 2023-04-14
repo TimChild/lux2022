@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import abc
+from collections import OrderedDict
 import copy
 import functools
 from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Union
+from typing import List, Tuple, Dict, Union, Optional
 
 import numpy as np
 import pandas as pd
@@ -84,6 +85,32 @@ def find_collisions1(
                     collisions.append(collision)
 
     return collisions
+
+
+@dataclass
+class UnitInfo:
+    unit: FriendlyUnitManger
+    unit_id: str
+    len_action_queue: int
+    distance_to_factory: Optional[float]
+    is_heavy: bool
+    enough_power_to_move: bool
+    power: int
+    ice: int
+    ore: int
+
+
+def unit_infos_to_df(unit_infos: Dict[str, UnitInfo]) -> pd.DataFrame:
+    # Convert the list of UnitInfo instances to a list of dictionaries
+    unit_info_dicts = [unit_info.__dict__ for unit_info in unit_infos.values()]
+
+    # Create a DataFrame from the list of dictionaries
+    df = pd.DataFrame(unit_info_dicts)
+
+    # Set the 'unit_id' column as the DataFrame index
+    df.index = df["unit_id"]
+    # df.set_index("unit_id", inplace=True)
+    return df
 
 
 @dataclass
@@ -283,7 +310,7 @@ class TurnPlanner:
         self._upcoming_collisions: Collisions = None
         self._close_units: AllCloseUnits = None
 
-    def units_should_consider_acting(
+    def _units_should_consider_acting(
         self, units: Dict[str, FriendlyUnitManger]
     ) -> UnitsToAct:
         """
@@ -433,7 +460,9 @@ class TurnPlanner:
         )
         return unit_distance_map
 
-    def collect_unit_data(self, units: Dict[str, FriendlyUnitManger]) -> pd.DataFrame:
+    def _collect_unit_data(
+        self, units: Dict[str, FriendlyUnitManger]
+    ) -> Dict[str, UnitInfo]:
         """
         Collects data from units and stores it in a pandas dataframe.
 
@@ -443,35 +472,38 @@ class TurnPlanner:
         Returns:
             A pandas dataframe containing the unit data.
         """
-        data = []
+        data = {}
         for unit_id, unit in units.items():
             unit_factory = self.master.factories.friendly.get(unit.factory_id, None)
             unit_distance_map = self._unit_distance_map(unit_id)
 
-            data.append(
-                {
-                    "unit": unit,
-                    "unit_id": unit.unit_id,
-                    "len_action_queue": len(unit.action_queue),
-                    "distance_to_factory": unit_distance_map[
+            unit_info = UnitInfo(
+                unit=unit,
+                unit_id=unit.unit_id,
+                len_action_queue=len(unit.action_queue),
+                distance_to_factory=(
+                    unit_distance_map[
                         unit_factory.factory.pos[0], unit_factory.factory.pos[1]
                     ]
                     if unit_factory
-                    else np.nan,
-                    "is_heavy": unit.unit_type == "HEAVY",
-                    "enough_power_to_move": unit.power
+                    else np.nan
+                ),
+                is_heavy=unit.unit_type == "HEAVY",
+                enough_power_to_move=(
+                    unit.power
                     > unit.unit_config.MOVE_COST
-                    + unit.unit_config.ACTION_QUEUE_POWER_COST,
-                    "power": unit.power,
-                    "ice": unit.cargo.ice,
-                    "ore": unit.cargo.ore,
-                }
+                    + unit.unit_config.ACTION_QUEUE_POWER_COST
+                ),
+                power=unit.power,
+                ice=unit.cargo.ice,
+                ore=unit.cargo.ore,
             )
+            data[unit_id] = unit_info
+        return data
 
-        df = pd.DataFrame(data)
-        return df
-
-    def sort_units_by_priority(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _sort_units_by_priority(
+        self, unit_infos: Dict[str, UnitInfo]
+    ) -> OrderedDict[str, UnitInfo]:
         """
         Sorts units by priority based on the provided dataframe.
 
@@ -482,25 +514,29 @@ class TurnPlanner:
             A sorted pandas dataframe with units ordered by priority.
         """
         logger.function_call(f"sort_units_by_priority called")
+        if len(unit_infos) == 0:
+            logger.debug("No unit_infos data to sort, returning as is")
+            return unit_infos
 
-        if not df.empty:
-            sorted_df = df.sort_values(
-                by=["is_heavy", "enough_power_to_move", "power", "ice", "ore"],
-                ascending=[False, False, True, False, True],
-            )
-            logger.debug(f"Sorted units by priority")
-            highest = sorted_df.iloc[0]
-            lowest = sorted_df.iloc[-1]
-            logger.debug(
-                f"Unit with highest priority: {highest.unit_id}  ({highest.unit.pos}), is_heavy={highest.is_heavy}, power={highest.power}, ice={highest.ice}, ore={highest.ore}, len_acts={highest.len_action_queue}"
-            )
-            logger.debug(
-                f"Unit with lowest priority: {lowest.unit_id}  ({lowest.unit.pos}), is_heavy={lowest.is_heavy}, power={lowest.power}, ice={lowest.ice}, ore={lowest.ore}, len_acts={lowest.len_action_queue}"
-            )
-            return sorted_df
-        else:
-            logger.debug("Empty dataframe, returning without sorting.")
-            return df
+        df = unit_infos_to_df(unit_infos)
+
+        sorted_df = df.sort_values(
+            by=["is_heavy", "enough_power_to_move", "power", "ice", "ore"],
+            ascending=[False, False, True, False, True],
+        )
+        logger.debug(f"Sorted units by priority")
+        highest = sorted_df.iloc[0]
+        lowest = sorted_df.iloc[-1]
+        logger.debug(
+            f"Unit with highest priority: {highest.unit_id}  ({highest.unit.pos}), is_heavy={highest.is_heavy}, power={highest.power}, ice={highest.ice}, ore={highest.ore}, len_acts={highest.len_action_queue}"
+        )
+        logger.debug(
+            f"Unit with lowest priority: {lowest.unit_id}  ({lowest.unit.pos}), is_heavy={lowest.is_heavy}, power={lowest.power}, ice={lowest.ice}, ore={lowest.ore}, len_acts={lowest.len_action_queue}"
+        )
+        ordered_infos = OrderedDict()
+        for unit_id in sorted_df.index:
+            ordered_infos[unit_id] = unit_infos[unit_id]
+        return ordered_infos
 
     def base_costmap(self) -> np.ndarray:
         """
@@ -784,7 +820,7 @@ class TurnPlanner:
         self,
         base_costmap: np.ndarray,
         travel_costmap: np.ndarray,
-        df_row: pd.Series,
+        unit_info: UnitInfo,
         unit: FriendlyUnitManger,
         factory_desires: FactoryDesires,
         mining_planner: MiningPlanner,
@@ -871,7 +907,7 @@ class TurnPlanner:
 
         return success
 
-    def process_units(
+    def decide_unit_actions(
         self,
         mining_planner: MiningPlanner,
         rubble_clearing_planner: RubbleClearingPlanner,
@@ -887,17 +923,18 @@ class TurnPlanner:
             f"process_units called with mining_planner: {mining_planner}, rubble_clearing_planner: {rubble_clearing_planner}"
         )
 
-        units_to_act = self.units_should_consider_acting(self.master.units.friendly.all)
-        unit_data_df = self.collect_unit_data(units_to_act.needs_to_act)
-        sorted_data_df = self.sort_units_by_priority(unit_data_df)
+        units_to_act = self._units_should_consider_acting(
+            self.master.units.friendly.all
+        )
+        unit_infos = self._collect_unit_data(units_to_act.needs_to_act)
+        sorted_unit_infos = self._sort_units_by_priority(unit_infos)
 
         base_costmap = self.base_costmap()
 
-        for index, row in sorted_data_df.iterrows():
+        for unit_id, unit_info in sorted_unit_infos.items():
             # Note: Row is a pd.Series of the unit_data_df
             # Remove from needs_to_act queue since we are calculating these actions now
-            unit = row.unit
-            unit: FriendlyUnitManger
+            unit = unit_info.unit
             units_to_act.needs_to_act.pop(unit.unit_id)
 
             # Re-assign unit to a factory if necessary
@@ -918,9 +955,9 @@ class TurnPlanner:
             #     row['rubble_clearing_desired'] = False
 
             logger.info(
-                f"\n\nProcessing unit {unit.unit_id}({unit.pos}) at index {index}: "
-                f"is_heavy={row.is_heavy}, enough_power_to_move={row.enough_power_to_move}, "
-                f"power={row.power}, ice={row.ice}, ore={row.ore}"
+                f"\n\nProcessing unit {unit.unit_id}({unit.pos}): "
+                f"is_heavy={unit_info.is_heavy}, enough_power_to_move={unit_info.enough_power_to_move}, "
+                f"power={unit_info.power}, ice={unit_info.ice}, ore={unit_info.ore}"
             )
             travel_costmap = self.get_travel_costmap(
                 unit=unit,
@@ -933,7 +970,7 @@ class TurnPlanner:
             success = self.calculate_actions_for_unit(
                 base_costmap=base_costmap,
                 travel_costmap=travel_costmap,
-                df_row=row,
+                unit_info=unit_info,
                 unit=unit,
                 factory_desires=factory_desires[unit.factory_id],
                 mining_planner=mining_planner,
@@ -1012,3 +1049,117 @@ class TurnPlanner:
             return True
         logger.error(f"{desired_action} not understood as an action")
         return False
+
+
+#######################################
+
+
+# def find_collisions2(all_unit_paths: AllUnitPaths) -> List[Collision]:
+#     """
+#     Find collisions between friendly units and all units (friendly and enemy) in the given paths.
+#
+#     Args:
+#         all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
+#
+#     Returns:
+#         A list of Collision objects containing information about each detected collision.
+#     """
+#     raise NotImplementedError('Need to make some modifications first')
+#     collisions = []
+#
+#     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
+#     enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
+#     all_units = {**friendly_units, **enemy_units}
+#
+#     for unit_id, unit_path in friendly_units.items():
+#         for other_unit_id, other_unit_path in all_units.items():
+#             # Skip self-comparison
+#             if unit_id == other_unit_id:
+#                 continue
+#
+#             # Broadcast and compare the paths to find collisions
+#             unit_path_broadcasted = unit_path[:, np.newaxis]
+#             other_unit_path_broadcasted = other_unit_path[np.newaxis, :]
+#
+#             # Calculate the differences in positions at each step
+#             diff = np.abs(unit_path_broadcasted - other_unit_path_broadcasted)
+#
+#             # Find the indices where both x and y differences are zero (i.e., collisions)
+#             collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
+#
+#             # Create Collision objects for each detected collision
+#             for index in collision_indices:
+#                 collision = Collision(
+#                     unit_id=unit_id,
+#                     other_unit_id=other_unit_id,
+#                     pos=tuple(unit_path[index[0]]),
+#                     step=index[0],
+#                 )
+#                 collisions.append(collision)
+#
+#     return collisions
+#
+#
+# def find_collisions3(all_unit_paths: AllUnitPaths) -> List[Collision]:
+#     """
+#     Find collisions between friendly units and all units (friendly and enemy) in the given paths.
+#
+#     Args:
+#         all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
+#
+#     Returns:
+#         A list of Collision objects containing information about each detected collision.
+#     """
+#
+#     def pad_paths(paths_dict: Dict[str, np.ndarray]) -> Tuple[np.ndarray, List[str]]:
+#         max_path_length = max([path.shape[0] for path in paths_dict.values()])
+#         padded_paths = []
+#         unit_ids = []
+#         for unit_id, path in paths_dict.items():
+#             padding_length = max_path_length - path.shape[0]
+#             padded_path = np.pad(
+#                 path,
+#                 ((0, padding_length), (0, 0)),
+#                 mode='constant',
+#                 constant_values=np.nan,
+#             )
+#             padded_paths.append(padded_path)
+#             unit_ids.append(unit_id)
+#
+#         return np.array(padded_paths), unit_ids
+#
+#     raise NotImplementedError('Need to make some modifications first')
+#     collisions = []
+#
+#     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
+#     enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
+#     all_units = {**friendly_units, **enemy_units}
+#
+#     friendly_paths, friendly_ids = pad_paths(friendly_units)
+#     enemy_paths, enemy_ids = pad_paths(enemy_units)
+#     all_paths, all_ids = pad_paths(all_units)
+#
+#     # Broadcast and compare the friendly paths with all paths to find collisions
+#     diff = np.abs(friendly_paths[:, :, np.newaxis] - all_paths[np.newaxis, :, :])
+#
+#     # Find the indices where both x and y differences are zero (i.e., collisions)
+#     collision_indices = np.argwhere(np.all(diff == 0, axis=-1))
+#
+#     # Create Collision objects for each detected collision
+#     for index in collision_indices:
+#         unit_id = friendly_ids[index[0]]
+#         other_unit_id = all_ids[index[2]]
+#
+#         # Skip self-comparison
+#         if unit_id == other_unit_id:
+#             continue
+#
+#         collision = Collision(
+#             unit_id=unit_id,
+#             other_unit_id=other_unit_id,
+#             pos=tuple(friendly_paths[index[0], index[1]]),
+#             step=index[1],
+#         )
+#         collisions.append(collision)
+#
+#     return collisions
