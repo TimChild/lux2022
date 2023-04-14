@@ -311,7 +311,10 @@ class RubbleRoutePlanner:
                 # Decide what to do based on values
                 if (
                     power_remaining
-                    > self.unit.unit_config.DIG_COST + self.unit.unit_config.MOVE_COST*self.rubble[new_pos[0], new_pos[1]]*self.unit.unit_config.RUBBLE_MOVEMENT_COST
+                    > self.unit.unit_config.DIG_COST
+                    + self.unit.unit_config.MOVE_COST
+                    * self.rubble[new_pos[0], new_pos[1]]
+                    * self.unit.unit_config.RUBBLE_MOVEMENT_COST
                     and (value_at_pos > 0 or value_to_move > 0)
                 ):
                     # If enough power, get next action
@@ -380,7 +383,9 @@ class RubbleRoutePlanner:
             if len(path) > 0:
                 self.pathfinder.append_path_to_actions(self.unit, path)
             else:
-                logger.error(f'{self.unit.log_prefix} No path from {self.unit.pos} to {new_pos}')
+                logger.error(
+                    f"{self.unit.log_prefix} No path from {self.unit.pos} to {new_pos}"
+                )
                 return False
 
         # Not near any high value, shouldn't get here

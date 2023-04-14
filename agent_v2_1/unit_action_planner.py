@@ -635,7 +635,7 @@ class UnitActionPlanner:
         """
         Calculates the base costmap based on:
             - rubble array
-            - most travelled?
+            - Enemy factories impassible
 
         Returns:
             A numpy array representing the costmap.
@@ -924,8 +924,6 @@ class UnitActionPlanner:
             combat_planner=combat_planner,
         )
 
-        # TEMPORARY
-        # success = calculate_unit_actions(unit, unit_must_move, possible_close_enemy, df_row)
         # If current location is going to be occupied by another unit, the first action must be to move!
         if unit_must_move:
             q = unit.action_queue

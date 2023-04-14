@@ -100,14 +100,14 @@ class UnitManager(abc.ABC):
     def power(self, value):
         self.unit.power = value
 
-    def actions_to_path(self, actions: [None, List[np.ndarray]] = None) -> np.ndarray:
+    def actions_to_path(self, actions: [None, List[np.ndarray]] = None, max_len=20) -> np.ndarray:
         """
         Return a list of coordinates of the path the actions represent starting from unit.pos
         (which may have been updated since beginning of turn)
         """
         if actions is None:
             actions = self.unit.action_queue
-        return util.actions_to_path(self.unit.pos, actions)
+        return util.actions_to_path(self.unit.pos, actions, max_len=max_len)
 
     @abc.abstractmethod
     def dead(self):

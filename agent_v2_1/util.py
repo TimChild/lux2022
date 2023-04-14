@@ -1,6 +1,7 @@
 from __future__ import annotations
 from collections import deque
 import functools
+from tqdm.auto import tqdm
 import sys
 
 from deprecation import deprecated
@@ -104,7 +105,6 @@ RECHARGE = 5
 
 ################# General #################
 
-
 class MyEnv:
     def __init__(self, seed: int, Agent, OtherAgent):
         self.seed = seed
@@ -142,7 +142,7 @@ class MyEnv:
     def get_early_actions(self):
         """Get next early setup actions"""
         actions = {}
-        for player in self.env.agents:
+        for player in self.agents:
             o = self.obs[player]
             acts = self.agents[player].early_setup(self.env_step, o)
             actions[player] = acts
@@ -178,14 +178,14 @@ class MyEnv:
             self.real_env_steps = self.env.state.real_env_steps
             self.obs, rewards, dones, infos = self.env.step(actions)
             if any(dones.values()) and self.env_step < 1000:
-                logger.warning(
+                print(
                     f"One of the players dones came back True, previous state restored, use myenv.get_actions() to "
                     f"repeat gathering latest turns actions"
                 )
                 self.undo()
                 return False
         except Exception as e:
-            logger.warning(
+            print(
                 f"Error caught while running step, previous state restored, use myenv.get_actions() to "
                 f"repeat gathering actions"
             )
@@ -203,7 +203,9 @@ class MyEnv:
 
     def run_to_step(self, real_env_step: int):
         """Keep running until reaching real_env_step"""
-        while self.real_env_steps < real_env_step:
+        num_steps = real_env_step - self.real_env_steps
+        for _ in tqdm(range(num_steps),  total=num_steps):
+        # while self.real_env_steps < real_env_step:
             success = self.step()
             if not success:
                 break
@@ -212,6 +214,41 @@ class MyEnv:
         """Display the current env state"""
         return show_env(self.env)
 
+
+class MyReplayEnv(MyEnv):
+    def __init__(self, seed, Agent, replay_json, other_player='player_1'):
+        super().__init__(seed, Agent, Agent)
+        self.replay_json = replay_json
+        self.other_player = other_player
+
+        # Overwrite some things from MyEnv
+        self.other_agent = None
+        self.agents = {self.agent.player: self.agent}
+
+    def get_early_actions(self):
+        actions = super().get_early_actions()
+        actions[self.other_player] = self.get_replay_actions()
+        return actions
+
+    def get_actions(self):
+        actions = super().get_actions()
+        actions[self.other_player] = self.get_replay_actions()
+        return actions
+
+    def get_replay_actions(self, step=None, player=None):
+        if step is None:
+            step = self.env_step
+        if player is None:
+            player = self.other_player
+        all_step_actions = self.replay_json['actions']
+        if len(all_step_actions) > step:
+            actions = all_step_actions[step][player]
+            for k, acts in actions.items():
+                if isinstance(acts, list):
+                    actions[k] = np.array(acts, dtype=int)
+            return actions
+        logger.info(f'No more replay actions for {self.other_player} stopped at {len(all_step_actions)}')
+        return {}
 
 def nearest_non_zero(
     array: np.ndarray, pos: Union[np.ndarray, Tuple[int, int]]

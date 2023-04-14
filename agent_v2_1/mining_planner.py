@@ -146,14 +146,14 @@ class MiningRoutePlanner:
                 return False
 
             # Decide which to do
-            if power_remaining > 3 * self.unit.unit_config.DIG_COST:
+            if power_remaining > len(path_to_resource)//2 * self.unit.unit_config.DIG_COST:
                 # Go to resource first
                 success = self._resource_then_factory(path_to_resource, power_remaining)
             else:
                 # Go to factory first
                 logger.info("pathing to factory first")
                 direct_path_to_factory = self._path_to_factory(
-                    from_pos=self.resource_pos,
+                    from_pos=self.unit.pos,
                 )
                 if len(direct_path_to_factory) > 0:
                     self.pathfinder.append_path_to_actions(

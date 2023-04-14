@@ -159,7 +159,7 @@ class FactoryActionPlanner:
             f"Desires before HeavyIce={desires.heavy_mining_ice}, LightRubble={desires.light_clearing_rubble}, LightOre={desires.light_mining_ore}, LightAttack={desires.light_attacking}, HeavyAttack={desires.heavy_attacking}"
         )
         # Early game
-        if step < 200:
+        if step < 1000:
             # Add more light units
             if info.power > 1000 and info.metal > 10:
                 if desires.light_mining_ore < 1 and desires.heavy_mining_ore == 0:
