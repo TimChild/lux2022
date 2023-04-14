@@ -66,9 +66,12 @@ def _adjust_path_back(path: np.ndarray, lowers):
     return path
 
 
-def _get_bounds(start, end, margin, map_shape):
+def _get_bounds(start: util.POS_TYPE, end: util.POS_TYPE, margin: int, map_shape):
     """Get bound of reduced area map"""
     # Convert to coords array
+    start, end = np.array(start), np.array(end)
+    if start.shape != (2,) or end.shape != (2,):
+        raise ValueError(f"One of {start}, or {end} is not a correct position")
     coords = np.array([start, end])
 
     # Bounds of start, end (x, y)

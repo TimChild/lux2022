@@ -19,6 +19,7 @@ from util import (
 from actions import Recommendation
 
 if TYPE_CHECKING:
+    from unit_manager import FriendlyUnitManger
     pass
 
 logger = get_logger(__name__)
@@ -80,6 +81,13 @@ class FriendlyFactoryManager(FactoryManager):
         self.light_units = {}
         self.heavy_units = {}
 
+    def assign_unit(self, unit: FriendlyUnitManger):
+        logger.debug(f'Assigning {unit.log_prefix} to {self.factory.unit_id}')
+        if unit.unit_type == 'LIGHT':
+            self.light_units[unit.unit_id] = unit
+        elif unit.unit_id == 'HEAVY':
+            self.heavy_units[unit.unit_id] = unit
+
     @property
     def factory_loc(self) -> np.ndarray:
         """Return an array with shape of map with 1s where factory is"""
@@ -91,47 +99,6 @@ class FriendlyFactoryManager(FactoryManager):
     def power(self) -> int:
         return self.factory.power
 
-    @staticmethod
-    def place_factory(game_state: GameState, player):
-        """Place factory in early_setup"""
-        # how many factories you have left to place
-        factories_to_place = game_state.teams[player].factories_to_place
-
-        # how much water and metal you have in your starting pool to give to new factories
-        water_left = game_state.teams[player].water
-        metal_left = game_state.teams[player].metal
-
-        # All possible spawns
-        potential_spawns = list(zip(*np.where(game_state.board.valid_spawns_mask == 1)))
-        df = pd.DataFrame(potential_spawns, columns=['x', 'y'])
-        df['pos'] = df.apply(lambda row: (row.x, row.y), axis=1)
-
-        # Find distance to ice
-        ice = game_state.board.ice
-        df["ice_dist"] = df.apply(
-            lambda row: manhattan(row.pos, nearest_non_zero(ice, row.pos)), axis=1
-        )
-        df = df.sort_values("ice_dist")
-
-        # Keep only top X distance to ice
-        df = df.iloc[:20]
-
-        # Value based nearby zero-rubble
-        rubble = game_state.board.rubble
-        count_arr = count_connected_values(rubble, value=0)
-        factory_map_kernel(2, dist_multiplier=0.5)
-        kernel = factory_map_kernel(3, dist_multiplier=0.5)
-        conv_count_arr = convolve_array_kernel(count_arr, kernel)
-        df['zero_rubble_value'] = df.apply(
-            lambda row: (conv_count_arr[row.x, row.y]), axis=1
-        )
-        df = df.sort_values(['ice_dist', 'zero_rubble_value'], ascending=[True, False])
-        # return df
-
-        # TODO: Calculate how close to nearest enemy factory for top X
-        # TODO: Calculate how close to nearest ore (not so important?)
-
-        return dict(spawn=df.iloc[0].pos, metal=150, water=150)
 
     def dead(self):
         """Called when factory is detected as dead"""
