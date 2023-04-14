@@ -46,7 +46,6 @@ class UnitManager(abc.ABC):
         self.unit = unit
         self.start_of_turn_pos = unit.pos
 
-    @property
     def current_path(self) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
         return util.actions_to_path(self.start_of_turn_pos, self.action_queue)

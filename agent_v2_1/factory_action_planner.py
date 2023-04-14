@@ -110,6 +110,9 @@ class FactoryActionPlanner:
     def get_factory_desires(self) -> Dict[str, FactoryDesires]:
         return self._factory_desires
 
+    def get_factory_infos(self) -> Dict[str, FactoryInfo]:
+        return self._factory_infos
+
     def _update_factory_info(self):
         """Update info about the factory (uses a sort of rolling average in updating)"""
         for f_id, factory in self.master.factories.friendly.items():

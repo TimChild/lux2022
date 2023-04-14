@@ -12,7 +12,7 @@ import pandas as pd
 
 import util
 from config import get_logger
-from factory_action_planner import FactoryDesires
+from factory_action_planner import FactoryDesires, FactoryInfo
 from master_state import MasterState
 from mining_planner import MiningPlanner
 from new_path_finder import Pather
@@ -207,7 +207,7 @@ class AllUnitPaths:
 
     def update_path(self, unit: UnitManager):
         """Update the path of a unit that is already in AllUnitPaths"""
-        unit_id, path = unit.unit_id, unit.current_path
+        unit_id, path = unit.unit_id, unit.current_path()
         if unit_id not in self.unit_location_dict:
             raise KeyError(
                 f"{unit_id} is not in the AllUnitPaths. Only have {self.unit_location_dict.keys()}"
@@ -287,7 +287,43 @@ def decide_action(
     return action
 
 
-class TurnPlanner:
+def should_unit_act(unit: FriendlyUnitManger, upcoming_collisions: Collisions, close_enemies: Dict[str, CloseUnits]):
+    unit_id = unit.unit_id
+    should_act = False
+    # If not enough power to do something meaningful
+    if unit.power < (
+            unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
+    ):
+        logger.debug(
+            f"Not enough power -- {unit_id} should not consider acting"
+        )
+        should_act = False
+    # If no queue
+    elif len(unit.action_queue) == 0:
+        logger.debug(f"No actions -- {unit_id} should consider acting")
+        should_act = True
+    # If colliding with friendly
+    elif unit_id in upcoming_collisions.friendly:
+        logger.debug(
+            f"Collision with friendly -- {unit_id} should consider acting"
+        )
+        should_act = True
+    # If colliding with enemy
+    elif unit_id in upcoming_collisions.enemy:
+        logger.debug(
+            f"Collision with enemy -- {unit_id} should consider acting"
+        )
+        should_act = True
+    # If close to enemy
+    elif unit_id in close_enemies:
+        logger.debug(f"Close to enemy -- {unit_id} should consider acting")
+        should_act = True
+    # TODO: If about to do invalid action:
+    # TODO: pickup more power than available, dig where no resource, transfer to unoccupied location
+    return should_act
+
+
+class UnitActionPlanner:
     # Look for close units within this distance
     search_dist = 4
     # What is considered a close unit when considering future paths
@@ -301,16 +337,18 @@ class TurnPlanner:
     # Number of steps to block other unit path locations for
     avoid_collision_steps = 5
 
-    def __init__(self, master: MasterState, factory_desires: Dict[str, FactoryDesires]):
+    def __init__(self, master: MasterState, factory_desires: Dict[str, FactoryDesires], factory_infos: Dict[str, FactoryInfo]):
         """Assuming this is called after beginning of turn update"""
         self.master = master
+        self.factory_desires = factory_desires
+        self.factory_infos = factory_infos
 
         # Caching
         self._costmap: np.ndarray = None
         self._upcoming_collisions: Collisions = None
         self._close_units: AllCloseUnits = None
 
-    def _units_should_consider_acting(
+    def _get_units_to_act(
         self, units: Dict[str, FriendlyUnitManger]
     ) -> UnitsToAct:
         """
@@ -330,81 +368,50 @@ class TurnPlanner:
             f"units_should_consider_acting called with len(units): {len(units)}"
         )
 
-        upcoming_collisions = self.calculate_collisions()
+        upcoming_collisions = self._calculate_collisions()
         close_to_enemy = self.calculate_close_enemies()
         needs_to_act = {}
         should_not_act = {}
         for unit_id, unit in units.items():
-            should_act = False
-            # If not enough power to do something meaningful
-            if unit.power < (
-                unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
-            ):
-                logger.debug(
-                    f"Not enough power -- {unit_id} should not consider acting"
-                )
-                should_act = False
-            # If no queue
-            elif len(unit.action_queue) == 0:
-                logger.debug(f"No actions -- {unit_id} should consider acting")
-                should_act = True
-            # If colliding with friendly
-            elif unit_id in upcoming_collisions.friendly:
-                logger.debug(
-                    f"Collision with friendly -- {unit_id} should consider acting"
-                )
-                should_act = True
-            # If colliding with enemy
-            elif unit_id in upcoming_collisions.enemy:
-                logger.debug(
-                    f"Collision with enemy -- {unit_id} should consider acting"
-                )
-                should_act = True
-            # If close to enemy
-            elif unit_id in close_to_enemy:
-                logger.debug(f"Close to enemy -- {unit_id} should consider acting")
-                should_act = True
-            # TODO: If about to do invalid action:
-            # TODO: pickup more power than available, dig where no resource, transfer to unoccupied location
-
+            should_act = should_unit_act(unit, upcoming_collisions=upcoming_collisions, close_enemies=close_to_enemy)
             if should_act:
                 needs_to_act[unit_id] = unit
             else:
                 should_not_act[unit_id] = unit
         return UnitsToAct(needs_to_act=needs_to_act, should_not_act=should_not_act)
 
-    def get_unit_paths(self) -> AllUnitPaths:
+    def _get_all_unit_paths(self) -> AllUnitPaths:
         """Gets the current unit paths"""
         units = self.master.units
         # Collect all current paths of units
         friendly_paths = FriendlyUnitPaths(
             light={
-                unit_id: unit.current_path
+                unit_id: unit.current_path()
                 for unit_id, unit in units.friendly.light.items()
             },
             heavy={
-                unit_id: unit.current_path
+                unit_id: unit.current_path()
                 for unit_id, unit in units.friendly.heavy.items()
             },
         )
         enemy_paths = EnemyUnitPaths(
             light={
-                unit_id: unit.current_path
+                unit_id: unit.current_path()
                 for unit_id, unit in units.enemy.light.items()
             },
             heavy={
-                unit_id: unit.current_path
+                unit_id: unit.current_path()
                 for unit_id, unit in units.enemy.heavy.items()
             },
         )
         all_unit_paths = AllUnitPaths(friendly=friendly_paths, enemy=enemy_paths)
         return all_unit_paths
 
-    def calculate_collisions(self) -> Collisions:
+    def _calculate_collisions(self) -> Collisions:
         """Calculates the upcoming collisions based on action queues of all units"""
         # if self._upcoming_collisions is None:
         if True:  # TODO: Can I cache this?
-            all_unit_paths = self.get_unit_paths()
+            all_unit_paths = self._get_all_unit_paths()
             collisions = all_unit_paths.calculate_collisions(
                 check_steps=self.check_collision_steps
             )
@@ -750,7 +757,7 @@ class TurnPlanner:
             # Ignore unit
             pass
         else:
-            other_path = other_unit.current_path
+            other_path = other_unit.current_path()
             costmap = self.update_costmap_with_path(
                 costmap,
                 this_unit.pos,
@@ -923,7 +930,7 @@ class TurnPlanner:
             f"process_units called with mining_planner: {mining_planner}, rubble_clearing_planner: {rubble_clearing_planner}"
         )
 
-        units_to_act = self._units_should_consider_acting(
+        units_to_act = self._get_units_to_act(
             self.master.units.friendly.all
         )
         unit_infos = self._collect_unit_data(units_to_act.needs_to_act)

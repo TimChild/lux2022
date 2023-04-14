@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import numpy as np
 
-from unit_action_planner import TurnPlanner
+from unit_action_planner import UnitActionPlanner
 from lux.kit import obs_to_game_state
 from lux.config import EnvConfig
 from lux.utils import my_turn_to_place_factory
@@ -147,8 +147,9 @@ class Agent:
 
         factory_actions = self.factory_action_planner.decide_factory_actions()
         factory_desires = self.factory_action_planner.get_factory_desires()
+        factory_infos = self.factory_action_planner.get_factory_infos()
 
-        tp = TurnPlanner(self.master, factory_desires)
+        tp = UnitActionPlanner(self.master, factory_desires=factory_desires, factory_infos=factory_infos)
         unit_actions = tp.decide_unit_actions(
             mining_planner=self.mining_planner,
             rubble_clearing_planner=self.rubble_clearing_planner,
