@@ -217,39 +217,6 @@ class UnitPaths(abc.ABC):
         return dict(**self.light, **self.heavy)
 
 
-@dataclass
-class AllUnitPaths:
-    friendly: UnitPaths
-    enemy: UnitPaths
-
-    def __post_init__(self):
-        self.unit_location_dict = {
-            unit_id: d
-            for d in [
-                self.friendly.light,
-                self.friendly.heavy,
-                self.enemy.light,
-                self.enemy.heavy,
-            ]
-            for unit_id in d
-        }
-
-    # def get_unit(self, unit_id: str):
-    #     for paths in [self.friendly, self.enemy]:
-    #         if unit_id in paths.all:
-    #             return paths.all[unit_id]
-    #     raise ValueError(f"{unit_id} not in AllUnitPaths")
-
-    # def update_path(self, unit: UnitManager):
-    #     """Update the path of a unit that is already in AllUnitPaths"""
-    #     unit_id, path = unit.unit_id, unit.current_path()
-    #     if unit_id not in self.unit_location_dict:
-    #         raise KeyError(
-    #             f"{unit_id} is not in the AllUnitPaths. Only have {self.unit_location_dict.keys()}"
-    #         )
-    #     self.unit_location_dict[unit_id][unit_id] = path
-
-
 def calculate_collisions(all_units: AllUnits, check_steps: int = 2) -> Dict[str, AllCollisionsForUnit]:
     """Calculate first collisions in the next <check_steps> for all units"""
     all_unit_collisions = {}
@@ -421,46 +388,10 @@ class UnitActionPlanner:
                 should_not_act[unit_id] = unit
         return UnitsToAct(needs_to_act=needs_to_act, should_not_act=should_not_act)
 
-    def _get_all_unit_paths(self, max_len: int) -> AllUnitPaths:
-        """Gets the current unit paths"""
-        units = self.master.units
-        # Collect all current paths of units
-        friendly_paths = UnitPaths(
-            light={
-                unit_id: unit.current_path(max_len=max_len)
-                for unit_id, unit in units.friendly.light.items()
-            },
-            heavy={
-                unit_id: unit.current_path(max_len=max_len)
-                for unit_id, unit in units.friendly.heavy.items()
-            },
-        )
-        enemy_paths = UnitPaths(
-            light={
-                unit_id: unit.current_path(max_len=max_len)
-                for unit_id, unit in units.enemy.light.items()
-            },
-            heavy={
-                unit_id: unit.current_path(max_len=max_len)
-                for unit_id, unit in units.enemy.heavy.items()
-            },
-        )
-        all_unit_paths = AllUnitPaths(friendly=friendly_paths, enemy=enemy_paths)
-        return all_unit_paths
-
     def _calculate_collisions(self) -> Dict[str, AllCollisionsForUnit]:
         """Calculates the upcoming collisions based on action queues of all units"""
-        # if self._upcoming_collisions is None:
-        # if True:  # TODO: Can I cache this?
-        #     all_unit_paths = self._get_all_unit_paths(self.avoid_collision_steps)
-        #     collisions = all_unit_paths.calculate_collisions(
-        #         check_steps=self.check_collision_steps
-        #     )
-        #     self._upcoming_collisions = collisions
-        # return self._upcoming_collisions
         all_collisions = calculate_collisions(self.master.units, check_steps=self.check_collision_steps)
         return all_collisions
-
 
     def calculate_close_units(self) -> AllCloseUnits:
         """Calculates which friendly units are close to any other unit"""
