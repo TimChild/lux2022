@@ -309,7 +309,9 @@ def decide_action(
         action = attack_or_run_away(close_units, "LIGHT", 10)
         if action is None:
             if factory_info.light_mining_ore < factory_desires.light_mining_ore:
-                logger.debug(f'{factory_info.factory_id}: Adding light ore miner, light_ore={factory_info.light_mining_ore}, desires={factory_desires.light_mining_ore}')
+                logger.debug(
+                    f"{factory_info.factory_id}: Adding light ore miner, light_ore={factory_info.light_mining_ore}, desires={factory_desires.light_mining_ore}"
+                )
                 action = actions.MINE_ORE
             elif (
                 factory_info.light_clearing_rubble
@@ -327,7 +329,9 @@ def decide_action(
                 action = actions.MINE_ORE
             elif factory_info.heavy_attacking < factory_desires.heavy_attacking:
                 action = actions.ATTACK
-    logger.debug(f'action should be {action}')
+            else:
+                action = actions.NOTHING
+    logger.debug(f"action should be {action}")
     return action
 
 
@@ -637,6 +641,7 @@ class UnitActionPlanner:
         Calculates the base costmap based on:
             - rubble array
             - Enemy factories impassible
+            - Center of friendly factories (in case a unit is built there)
 
         Returns:
             A numpy array representing the costmap.
@@ -646,6 +651,12 @@ class UnitActionPlanner:
             costmap += 1  # Zeros aren't traversable
             enemy_factory_map = self.master.maps.factory_maps.enemy
             costmap[enemy_factory_map >= 0] = -1  # Not traversable
+
+            # Make center of factories impassible (in case unit is built there)
+            # TODO: Only block center if unit actually being built
+            for factory_id, factory in self.master.factories.friendly.items():
+                pos = factory.pos
+                costmap[pos[0], pos[1]] = -1
             self._costmap = costmap
         return self._costmap
 
@@ -694,6 +705,45 @@ class UnitActionPlanner:
         other_path = other_path[1:]
         other_path_distance = other_path_distance[1:]
 
+        # If action queue is about to end, then it's going to stay in the same position
+        if len(other_path) == 0:
+            other_path = [other_pos_now]
+            other_path_distance = [other_dist_now]
+
+        if allow_collision is False:
+            # Enemy may change plans, on first step don't allow being even 1 dist away
+            if is_enemy and other_dist_now <= 2:
+                logger.info(
+                    f"Enemy is close at {other_pos_now}, blocking adjacent cells"
+                )
+                # Block all adjacent cells to enemy (and current enemy pos)
+                for delta in util.MOVE_DELTAS:
+                    pos = np.array(other_pos_now) + delta
+                    costmap[pos[0], pos[1]] = -1
+
+            logger.debug(f"--------------------- Starting path blocking")
+
+            # Block next X steps in other path that are equal in distance
+            for i, (p, d) in enumerate(
+                zip(other_path[: self.avoid_collision_steps], other_path_distance)
+            ):
+                logger.debug(f"--------------------- {i}, {p}, {d}")
+                if (
+                    # Prevents moving to collision manhattan dist
+                    d == i + 1
+                    or
+                    # Prevent sitting in path of collision or reaching in manhattan dist+1 (also likely)
+                    d == i
+                ):  # I.e. if distance to point on path is same as no. steps it would take to get there
+                    logger.info(f"making {p} impassable")
+                    costmap[p[0], p[1]] = -1
+
+        # If current location becomes blocked, warn that should be unblocked elsewhere
+        if costmap[unit_pos[0], unit_pos[1]] == -1:
+            logger.warning(
+                f"{unit_pos} got blocked even though that is the units current position. If cost not changed > 0 pathing will fail"
+            )
+
         # if np.all(unit_pos == (35, 10)):
         #     print(other_path, other_path_distance)
         # # If need to encourage moving away from other path
@@ -724,34 +774,6 @@ class UnitActionPlanner:
         #     ]
         #     mask = np.mean(masks, axis=0)
         #     costmap *= mask
-
-        if allow_collision is False:
-            # Enemy may change plans, on first step don't allow being even 1 dist away
-            if is_enemy and other_dist_now <= 2:
-                logger.info(
-                    f"Enemy is close at {other_pos_now}, blocking adjacent cells"
-                )
-                # Block all adjacent cells to enemy (and current enemy pos)
-                for delta in util.MOVE_DELTAS:
-                    pos = np.array(other_pos_now) + delta
-                    costmap[pos[0], pos[1]] = -1
-
-            # Block next X steps in other path that are equal in distance
-            for i, (p, d) in enumerate(
-                zip(other_path[: self.avoid_collision_steps], other_path_distance)
-            ):
-                if (
-                    d == i + 1
-                ):  # I.e. if distance to point on path is same as no. steps it would take to get there
-                    logger.info(f"making {p} impassable")
-                    costmap[p[0], p[1]] = -1
-
-        # If current location becomes blocked, warn that should be unblocked elsewhere
-        if costmap[unit_pos[0], unit_pos[1]] == -1:
-            logger.warning(
-                f"{unit_pos} got blocked even though that is the units current position. If cost not changed > 0 pathing will fail"
-            )
-
         return costmap
 
     def _add_other_unit_to_costmap(
@@ -823,7 +845,9 @@ class UnitActionPlanner:
             for other_id in close_units.other_unit_ids:
                 other_unit = self.master.units.enemy.get_unit(other_id)
                 if other_unit is None:
-                    logger.error(f'{self.master.player} step {self.master.step}: {other_id} does not exist in  master.units.enemy')
+                    logger.error(
+                        f"{self.master.player} step {self.master.step}: {other_id} does not exist in  master.units.enemy"
+                    )
                     continue
                 new_cost = self._add_other_unit_to_costmap(
                     new_cost, this_unit=unit, other_unit=other_unit, other_is_enemy=True
@@ -993,10 +1017,8 @@ class UnitActionPlanner:
                 units_to_act=units_to_act,
             )
 
-            # unit_before = copy.deepcopy(unit)  # SLOW
-            unit_actions_before = copy.copy(unit.action_queue)
-
             # Figure out new actions for unit  (i.e. RoutePlanners)
+            unit.action_queue = []
             success = self._calculate_actions_for_unit(
                 base_costmap=base_costmap,
                 travel_costmap=travel_costmap,
@@ -1012,7 +1034,7 @@ class UnitActionPlanner:
             # If first X actions are the same, don't update (unnecessary cost for unit)
             if np.all(
                 np.array(unit.action_queue[: self.actions_same_check])
-                == np.array(unit_actions_before[: self.actions_same_check])
+                == np.array(unit.start_of_turn_actions[: self.actions_same_check])
             ):
                 logger.debug(
                     f"First {self.actions_same_check} actions same, not updating unit action queue"
@@ -1075,8 +1097,19 @@ class UnitActionPlanner:
             rec = rubble_planner.recommend(unit)
             success = rubble_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
         elif desired_action == actions.NOTHING:
+            unit.action_queue = []
+            if unit_must_move:
+                if not unit.factory_id:
+                    logger.error(
+                        f"Unit must move, but has action {actions.NOTHING} and no factory assigned"
+                    )
+                else:
+                    util.move_to_new_spot_on_factory(
+                        self.master.pathfinder,
+                        unit,
+                        self.master.factories.friendly[unit.factory_id],
+                    )
             success = True
-            pass
         else:
             logger.error(f"{desired_action} not understood as an action")
 

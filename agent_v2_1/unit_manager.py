@@ -1,6 +1,7 @@
 from typing import Optional, Tuple, List
 import numpy as np
 import abc
+import copy
 from dataclasses import dataclass
 from typing import Union
 
@@ -39,6 +40,7 @@ class UnitManager(abc.ABC):
 
         # Keep track of pos a start of turn because pos will be updated while planning what to do next
         self.start_of_turn_pos = unit.pos
+        self.start_of_turn_actions = []
 
     def power_cost_of_actions(self, rubble: np.ndarray):
         return util.power_cost_of_actions(
@@ -53,6 +55,7 @@ class UnitManager(abc.ABC):
         """Beginning of turn update"""
         self.unit = unit
         self.start_of_turn_pos = unit.pos
+        self.start_of_turn_actions = copy.copy(unit.action_queue)
 
     def current_path(self, max_len: int = 10) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
@@ -100,7 +103,9 @@ class UnitManager(abc.ABC):
     def power(self, value):
         self.unit.power = value
 
-    def actions_to_path(self, actions: [None, List[np.ndarray]] = None, max_len=20) -> np.ndarray:
+    def actions_to_path(
+        self, actions: [None, List[np.ndarray]] = None, max_len=20
+    ) -> np.ndarray:
         """
         Return a list of coordinates of the path the actions represent starting from unit.pos
         (which may have been updated since beginning of turn)
