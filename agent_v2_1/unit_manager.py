@@ -46,9 +46,9 @@ class UnitManager(abc.ABC):
         self.unit = unit
         self.start_of_turn_pos = unit.pos
 
-    def current_path(self) -> np.ndarray:
+    def current_path(self, max_len: int = 10) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
-        return util.actions_to_path(self.start_of_turn_pos, self.action_queue)
+        return util.actions_to_path(self.start_of_turn_pos, self.action_queue, max_len=max_len)
 
     @property
     def action_queue(self) -> List[np.ndarray]:

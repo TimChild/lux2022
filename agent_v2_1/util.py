@@ -681,13 +681,14 @@ def path_to_actions(path):
     return actions
 
 
-def actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray]) -> np.ndarray:
+def actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray], max_len: int = 20) -> np.ndarray:
     """Convert list of actions (from start_pos) into a path
     Note: First value in path is current position
     """
     path = [start_pos]
     pos = start_pos
-    for action in actions:
+    actions = copy.copy(actions)
+    for i, action in enumerate(actions):
         for _ in range(action[ACT_N]):
             if action[0] == MOVE:
                 direction = action[1]
@@ -695,6 +696,16 @@ def actions_to_path(start_pos: POS_TYPE, actions: List[np.ndarray]) -> np.ndarra
                 direction = CENTER
             pos = pos + MOVE_DELTAS[direction]
             path.append(pos)
+            # If only calculating to specific max_len, return once reached
+            if max_len and len(path) >= max_len:
+                return np.array(path)
+        # Account for repeat actions
+        if action[ACT_REPEAT] > 0:
+            loop_act = copy.copy(action)
+            loop_act[ACT_N] = action[ACT_REPEAT]
+            loop_act[ACT_REPEAT] -= 1
+            actions.append(loop_act)
+
     return np.array(path)
 
 

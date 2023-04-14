@@ -5,7 +5,7 @@ from collections import OrderedDict
 import copy
 import functools
 from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Union, Optional
+from typing import List, Tuple, Dict, Union, Optional, Iterable
 
 import numpy as np
 import pandas as pd
@@ -13,7 +13,7 @@ import pandas as pd
 import util
 from config import get_logger
 from factory_action_planner import FactoryDesires, FactoryInfo
-from master_state import MasterState
+from master_state import MasterState, AllUnits
 from mining_planner import MiningPlanner
 from new_path_finder import Pather
 from rubble_clearing_planner import RubbleClearingPlanner
@@ -22,69 +22,99 @@ from unit_manager import FriendlyUnitManger, UnitManager, EnemyUnitManager
 logger = get_logger(__name__)
 
 
-def find_collisions1(
-    all_unit_paths: AllUnitPaths, check_num_steps: int = None
-) -> List[Collision]:
+def find_collisions(this_unit: UnitManager, other_units: Iterable[UnitManager], max_step: int, other_is_enemy: bool) -> Dict[str, Collision]:
+    """Find the first collision point between this_unit and each other_unit
+    I.e. Only first collision coordinate when comparing the two paths
     """
-    Find collisions between friendly units and all units (friendly and enemy) in the given paths.
-
-    Args:
-        all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
-
-    Returns:
-        A list of Collision objects containing information about each detected collision.
-    """
-    collisions = []
-
-    friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
-    enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
-
-    for unit_id, unit_path in friendly_units.items():
-        # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-        #     print('looking at unit_19')
-        logger.debug(f"Checking collisions for {unit_id}")
-        for other_unit_id, other_unit_path in {**friendly_units, **enemy_units}.items():
-            # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-            #     print('other', other_unit_id)
-            # Skip self-comparison
-            if unit_id == other_unit_id:
-                continue
-
-            # Find the minimum path length to avoid index out of range errors
-            min_path_length = min(len(unit_path), len(other_unit_path))
-            # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-            #     print('min', min_path_length)
-
-            # Optionally only check fewer steps
-            _check = (
-                min_path_length
-                if check_num_steps is None
-                else min(min_path_length, check_num_steps)
-            )
-            # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-            #     print('check', _check)
-            #     print('other_path', other_unit_path)
-
-            # Check if there's a collision at any step up to check_num_steps
-            for step in range(_check):
-                # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-                #     print('other_path at step',step,  other_unit_path[step])
-                if np.array_equal(unit_path[step], other_unit_path[step]):
-                    logger.debug(
-                        f"Collision found at step {step} pos {unit_path[step]} with {other_unit_id}"
-                    )
-                    collision = Collision(
-                        unit_id=unit_id,
-                        other_unit_id=other_unit_id,
-                        other_unit_is_enemy=False
-                        if other_unit_id in friendly_units
-                        else True,
-                        pos=tuple(unit_path[step]),
-                        step=step,
-                    )
-                    collisions.append(collision)
-
+    this_path = this_unit.current_path(max_len=max_step)
+    collisions = {}
+    for other in other_units:
+        # Don't include collisions with self
+        if this_unit.unit_id == other.unit_id:
+            continue
+        other_path = other.current_path(max_len=max_step)
+        # Note: zip stops iterating when end of a path is reached
+        for i, (this_pos, other_pos) in enumerate(zip(this_path, other_path)):
+            if np.array_equal(this_pos, other_pos):
+                logger.debug(
+                    f"Collision found at step {i} at pos {this_pos} between {this_unit.unit_id} and {other.unit_id}"
+                )
+                collision = Collision(
+                    unit_id=this_unit.unit_id,
+                    other_unit_id=other.unit_id,
+                    other_unit_is_enemy=other_is_enemy,
+                    pos=this_pos,
+                    step=i,
+                )
+                collisions[other.unit_id] = collision
+                # Don't find any more collisions for this path
+                break
     return collisions
+
+
+# def find_collisions1(
+#     all_unit_paths: AllUnitPaths, check_num_steps: int = None
+# ) -> List[Collision]:
+#     """
+#     Find collisions between friendly units and all units (friendly and enemy) in the given paths.
+#
+#     Args:
+#         all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
+#
+#     Returns:
+#         A list of Collision objects containing information about each detected collision.
+#     """
+#     collisions = []
+#
+#     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
+#     enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
+#
+#     for unit_id, unit_path in friendly_units.items():
+#         # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+#         #     print('looking at unit_19')
+#         logger.debug(f"Checking collisions for {unit_id}")
+#         for other_unit_id, other_unit_path in {**friendly_units, **enemy_units}.items():
+#             # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+#             #     print('other', other_unit_id)
+#             # Skip self-comparison
+#             if unit_id == other_unit_id:
+#                 continue
+#
+#             # Find the minimum path length to avoid index out of range errors
+#             min_path_length = min(len(unit_path), len(other_unit_path))
+#             # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+#             #     print('min', min_path_length)
+#
+#             # Optionally only check fewer steps
+#             _check = (
+#                 min_path_length
+#                 if check_num_steps is None
+#                 else min(min_path_length, check_num_steps)
+#             )
+#             # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+#             #     print('check', _check)
+#             #     print('other_path', other_unit_path)
+#
+#             # Check if there's a collision at any step up to check_num_steps
+#             for step in range(_check):
+#                 # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
+#                 #     print('other_path at step',step,  other_unit_path[step])
+#                 if np.array_equal(unit_path[step], other_unit_path[step]):
+#                     logger.debug(
+#                         f"Collision found at step {step} pos {unit_path[step]} with {other_unit_id}"
+#                     )
+#                     collision = Collision(
+#                         unit_id=unit_id,
+#                         other_unit_id=other_unit_id,
+#                         other_unit_is_enemy=False
+#                         if other_unit_id in friendly_units
+#                         else True,
+#                         pos=tuple(unit_path[step]),
+#                         step=step,
+#                     )
+#                     collisions.append(collision)
+#
+#     return collisions
 
 
 @dataclass
@@ -129,7 +159,6 @@ class UnitsToAct:
 @dataclass
 class Collision:
     """First collision only"""
-
     unit_id: str
     other_unit_id: str
     other_unit_is_enemy: bool
@@ -138,9 +167,25 @@ class Collision:
 
 
 @dataclass
-class Collisions:
-    friendly: Dict[str, Collision]  # Collisions with friendly unit
-    enemy: Dict[str, Collision]  # Collisions with enemy units
+class CollisionsForUnit:
+    light: Dict[str, Collision]
+    heavy: Dict[str, Collision]
+
+
+@dataclass
+class AllCollisionsForUnit:
+    with_friendly: CollisionsForUnit
+    with_enemy: CollisionsForUnit
+
+    def num_collisions(self, friendly=True, enemy=False):
+        num = 0
+        if enemy:
+            num += len(self.with_enemy.light)
+            num += len(self.with_enemy.heavy)
+        if friendly:
+            num += len(self.with_friendly.light)
+            num += len(self.with_friendly.heavy)
+        return num
 
 
 @dataclass
@@ -173,19 +218,9 @@ class UnitPaths(abc.ABC):
 
 
 @dataclass
-class FriendlyUnitPaths(UnitPaths):
-    pass
-
-
-@dataclass
-class EnemyUnitPaths(UnitPaths):
-    pass
-
-
-@dataclass
 class AllUnitPaths:
-    friendly: FriendlyUnitPaths = FriendlyUnitPaths
-    enemy: EnemyUnitPaths = EnemyUnitPaths
+    friendly: UnitPaths
+    enemy: UnitPaths
 
     def __post_init__(self):
         self.unit_location_dict = {
@@ -199,36 +234,42 @@ class AllUnitPaths:
             for unit_id in d
         }
 
-    def get_unit(self, unit_id: str):
-        for paths in [self.friendly, self.enemy]:
-            if unit_id in paths.all:
-                return paths.all[unit_id]
-        raise ValueError(f"{unit_id} not in AllUnitPaths")
+    # def get_unit(self, unit_id: str):
+    #     for paths in [self.friendly, self.enemy]:
+    #         if unit_id in paths.all:
+    #             return paths.all[unit_id]
+    #     raise ValueError(f"{unit_id} not in AllUnitPaths")
 
-    def update_path(self, unit: UnitManager):
-        """Update the path of a unit that is already in AllUnitPaths"""
-        unit_id, path = unit.unit_id, unit.current_path()
-        if unit_id not in self.unit_location_dict:
-            raise KeyError(
-                f"{unit_id} is not in the AllUnitPaths. Only have {self.unit_location_dict.keys()}"
-            )
-        self.unit_location_dict[unit_id][unit_id] = path
+    # def update_path(self, unit: UnitManager):
+    #     """Update the path of a unit that is already in AllUnitPaths"""
+    #     unit_id, path = unit.unit_id, unit.current_path()
+    #     if unit_id not in self.unit_location_dict:
+    #         raise KeyError(
+    #             f"{unit_id} is not in the AllUnitPaths. Only have {self.unit_location_dict.keys()}"
+    #         )
+    #     self.unit_location_dict[unit_id][unit_id] = path
 
-    def calculate_collisions(self, check_steps: int = 2) -> Collisions:
-        """Calculate first collisions in the next <check_steps> for all units"""
-        collisions = find_collisions1(self, check_num_steps=check_steps)
-        friendly = []
-        enemy = []
-        for collision in collisions:
-            if collision.other_unit_is_enemy:
-                enemy.append(collision)
-            else:
-                friendly.append(collision)
-        collisions = Collisions(
-            friendly={collision.unit_id: collision for collision in friendly},
-            enemy={collision.unit_id: collision for collision in enemy},
+
+def calculate_collisions(all_units: AllUnits, check_steps: int = 2) -> Dict[str, AllCollisionsForUnit]:
+    """Calculate first collisions in the next <check_steps> for all units"""
+    all_unit_collisions = {}
+    for unit_id, unit in all_units.friendly.all.items():
+        collisions_for_unit = AllCollisionsForUnit(
+            with_friendly=CollisionsForUnit(
+                light=find_collisions(unit, all_units.friendly.light.values(), max_step=check_steps, other_is_enemy=False),
+                heavy=find_collisions(unit, all_units.friendly.heavy.values(), max_step=check_steps,
+                                      other_is_enemy=False),
+            ),
+            with_enemy=CollisionsForUnit(
+                light=find_collisions(unit, all_units.enemy.light.values(), max_step=check_steps, other_is_enemy=True),
+                heavy=find_collisions(unit, all_units.enemy.heavy.values(), max_step=check_steps,
+                                      other_is_enemy=True),
+            ),
         )
-        return collisions
+        if collisions_for_unit.num_collisions() > 0:
+            all_unit_collisions[unit_id] = collisions_for_unit
+    return all_unit_collisions
+
 
 
 @dataclass
@@ -287,7 +328,7 @@ def decide_action(
     return action
 
 
-def should_unit_act(unit: FriendlyUnitManger, upcoming_collisions: Collisions, close_enemies: Dict[str, CloseUnits]):
+def should_unit_act(unit: FriendlyUnitManger, upcoming_collisions: Dict[str, AllCollisionsForUnit], close_enemies: Dict[str, CloseUnits]):
     unit_id = unit.unit_id
     should_act = False
     # If not enough power to do something meaningful
@@ -303,13 +344,13 @@ def should_unit_act(unit: FriendlyUnitManger, upcoming_collisions: Collisions, c
         logger.debug(f"No actions -- {unit_id} should consider acting")
         should_act = True
     # If colliding with friendly
-    elif unit_id in upcoming_collisions.friendly:
+    elif unit_id in upcoming_collisions and upcoming_collisions[unit_id].num_collisions(friendly=True, enemy=False) > 0:
         logger.debug(
             f"Collision with friendly -- {unit_id} should consider acting"
         )
         should_act = True
     # If colliding with enemy
-    elif unit_id in upcoming_collisions.enemy:
+    elif unit_id in upcoming_collisions and upcoming_collisions[unit_id].num_collisions(friendly=False, enemy=True) > 0:
         logger.debug(
             f"Collision with enemy -- {unit_id} should consider acting"
         )
@@ -345,7 +386,7 @@ class UnitActionPlanner:
 
         # Caching
         self._costmap: np.ndarray = None
-        self._upcoming_collisions: Collisions = None
+        self._upcoming_collisions: AllCollisionsForUnit = None
         self._close_units: AllCloseUnits = None
 
     def _get_units_to_act(
@@ -368,58 +409,61 @@ class UnitActionPlanner:
             f"units_should_consider_acting called with len(units): {len(units)}"
         )
 
-        upcoming_collisions = self._calculate_collisions()
-        close_to_enemy = self.calculate_close_enemies()
+        all_unit_collisions = self._calculate_collisions()
+        all_unit_close_to_enemy = self.calculate_close_enemies()
         needs_to_act = {}
         should_not_act = {}
         for unit_id, unit in units.items():
-            should_act = should_unit_act(unit, upcoming_collisions=upcoming_collisions, close_enemies=close_to_enemy)
+            should_act = should_unit_act(unit, upcoming_collisions=all_unit_collisions, close_enemies=all_unit_close_to_enemy)
             if should_act:
                 needs_to_act[unit_id] = unit
             else:
                 should_not_act[unit_id] = unit
         return UnitsToAct(needs_to_act=needs_to_act, should_not_act=should_not_act)
 
-    def _get_all_unit_paths(self) -> AllUnitPaths:
+    def _get_all_unit_paths(self, max_len: int) -> AllUnitPaths:
         """Gets the current unit paths"""
         units = self.master.units
         # Collect all current paths of units
-        friendly_paths = FriendlyUnitPaths(
+        friendly_paths = UnitPaths(
             light={
-                unit_id: unit.current_path()
+                unit_id: unit.current_path(max_len=max_len)
                 for unit_id, unit in units.friendly.light.items()
             },
             heavy={
-                unit_id: unit.current_path()
+                unit_id: unit.current_path(max_len=max_len)
                 for unit_id, unit in units.friendly.heavy.items()
             },
         )
-        enemy_paths = EnemyUnitPaths(
+        enemy_paths = UnitPaths(
             light={
-                unit_id: unit.current_path()
+                unit_id: unit.current_path(max_len=max_len)
                 for unit_id, unit in units.enemy.light.items()
             },
             heavy={
-                unit_id: unit.current_path()
+                unit_id: unit.current_path(max_len=max_len)
                 for unit_id, unit in units.enemy.heavy.items()
             },
         )
         all_unit_paths = AllUnitPaths(friendly=friendly_paths, enemy=enemy_paths)
         return all_unit_paths
 
-    def _calculate_collisions(self) -> Collisions:
+    def _calculate_collisions(self) -> Dict[str, AllCollisionsForUnit]:
         """Calculates the upcoming collisions based on action queues of all units"""
         # if self._upcoming_collisions is None:
-        if True:  # TODO: Can I cache this?
-            all_unit_paths = self._get_all_unit_paths()
-            collisions = all_unit_paths.calculate_collisions(
-                check_steps=self.check_collision_steps
-            )
-            self._upcoming_collisions = collisions
-        return self._upcoming_collisions
+        # if True:  # TODO: Can I cache this?
+        #     all_unit_paths = self._get_all_unit_paths(self.avoid_collision_steps)
+        #     collisions = all_unit_paths.calculate_collisions(
+        #         check_steps=self.check_collision_steps
+        #     )
+        #     self._upcoming_collisions = collisions
+        # return self._upcoming_collisions
+        all_collisions = calculate_collisions(self.master.units, check_steps=self.check_collision_steps)
+        return all_collisions
+
 
     def calculate_close_units(self) -> AllCloseUnits:
-        """Calculates which units are close to enemies"""
+        """Calculates which friendly units are close to any other unit"""
         if self._close_units is None:
             friendly = {}
             enemy = {}
@@ -451,6 +495,7 @@ class UnitActionPlanner:
         return self._close_units
 
     def calculate_close_enemies(self) -> Dict[str, CloseUnits]:
+        """Calculate the close enemy units to all friendly units"""
         close_units = self.calculate_close_units()
         return close_units.close_to_enemy
 
