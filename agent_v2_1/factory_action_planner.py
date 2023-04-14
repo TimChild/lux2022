@@ -162,16 +162,20 @@ class FactoryActionPlanner:
         if step < 200:
             # Add more light units
             if info.power > 1000 and info.metal > 10:
-                if desires.light_mining_ore < 3:
+                if desires.light_mining_ore < 1 and desires.heavy_mining_ore == 0:
                     desires.light_mining_ore += 1
-                elif desires.light_clearing_rubble < 3:
+                elif desires.light_clearing_rubble < 2:
                     desires.light_clearing_rubble += 1
                 elif desires.light_attacking < 1:
                     desires.light_attacking += 1
                 else:
                     # Add heavy
                     if info.power > 2000 and info.metal > 100:
-                        desires.heavy_mining_ice += 1
+                        if desires.heavy_mining_ice < 2:
+                            desires.heavy_mining_ice += 1
+                        elif desires.heavy_mining_ore < 1:
+                            desires.heavy_mining_ice += 1
+                            desires.light_mining_ore = 0
         # Early mid game
         elif step < 500:
             pass
