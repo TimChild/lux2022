@@ -108,6 +108,7 @@ RECHARGE = 5
 
 ################# General #################
 
+
 def timeout_decorator(timeout):
     def decorator(fn):
         def wrapper(*args, **kwargs):
@@ -121,7 +122,9 @@ def timeout_decorator(timeout):
             thread.join(timeout)
 
             if thread.is_alive():
-                raise TimeoutError(f"Function '{fn.__name__}' timed out after {timeout} seconds")
+                raise TimeoutError(
+                    f"Function '{fn.__name__}' timed out after {timeout} seconds"
+                )
             else:
                 return result_container["result"]
 
@@ -233,8 +236,8 @@ class MyEnv:
     def run_to_step(self, real_env_step: int):
         """Keep running until reaching real_env_step"""
         num_steps = real_env_step - self.real_env_steps
-        for _ in tqdm(range(num_steps),  total=num_steps):
-        # while self.real_env_steps < real_env_step:
+        for _ in tqdm(range(num_steps), total=num_steps):
+            # while self.real_env_steps < real_env_step:
             success = self.step()
             if not success:
                 break
@@ -245,7 +248,7 @@ class MyEnv:
 
 
 class MyReplayEnv(MyEnv):
-    def __init__(self, seed, Agent, replay_json, other_player='player_1'):
+    def __init__(self, seed, Agent, replay_json, other_player="player_1"):
         super().__init__(seed, Agent, Agent)
         self.replay_json = replay_json
         self.other_player = other_player
@@ -269,15 +272,18 @@ class MyReplayEnv(MyEnv):
             step = self.env_step
         if player is None:
             player = self.other_player
-        all_step_actions = self.replay_json['actions']
+        all_step_actions = self.replay_json["actions"]
         if len(all_step_actions) > step:
             actions = all_step_actions[step][player]
             for k, acts in actions.items():
                 if isinstance(acts, list):
                     actions[k] = np.array(acts, dtype=int)
             return actions
-        logger.info(f'No more replay actions for {self.other_player} stopped at {len(all_step_actions)}')
+        logger.info(
+            f"No more replay actions for {self.other_player} stopped at {len(all_step_actions)}"
+        )
         return {}
+
 
 def nearest_non_zero(
     array: np.ndarray, pos: Union[np.ndarray, Tuple[int, int]]
@@ -592,7 +598,7 @@ def manhattan_distance_between_values(input_array, value=0):
     mask = input_array == value
 
     # Calculate the Manhattan distance using distance_transform_cdt function from SciPy
-    output_array = distance_transform_cdt(mask, metric='taxicab')
+    output_array = distance_transform_cdt(mask, metric="taxicab")
 
     return output_array
 
@@ -649,7 +655,6 @@ def find_border_coords(arr, value=0):
 ################# Moving #################
 def manhattan(a, b):
     return sum(abs(val1 - val2) for val1, val2 in zip(a, b))
-
 
 
 def count_consecutive(lst: Union[List[int], np.ndarray]) -> Tuple[List[int], List[int]]:
@@ -783,6 +788,31 @@ def move_to_new_spot_on_factory(
     else:
         logger.error(f"No best_direction to move on factory")
     return success
+
+
+def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManger):
+    success = False
+    pos = np.array(unit.pos)
+    best_direction = None
+    best_cost = 999
+    for direction, delta in zip(MOVE_DIRECTIONS[1:], MOVE_DELTAS[1:]):
+        new_x, new_y = pos + delta
+        try:
+            new_cost = pathfinder.full_costmap[new_x, new_y]
+            if 0 < new_cost < best_cost:
+                best_direction = direction
+                best_cost = new_cost
+        except IndexError as e:
+            logger.info(
+                f"Index error for ({new_x, new_y}), probably near edge of map, ignoring this position"
+            )
+            continue
+    if best_direction is None:
+        logger.error(
+            f"{unit.log_prefix}: No adjacent direction to move, not doing anything"
+        )
+    else:
+        pathfinder.append_direction_to_actions(unit, best_direction)
 
 
 ################### Plotting #################
@@ -1647,7 +1677,6 @@ def path_to_factory_edge_nearest_pos(
     if pos_to_be_near is None:
         raise ValueError(f"Need to provide pos_to_be_near")
 
-    original_factory_loc = factory_loc
     factory_loc = factory_loc.copy()
 
     attempts = 0

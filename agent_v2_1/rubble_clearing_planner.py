@@ -256,10 +256,15 @@ class RubbleRoutePlanner:
 
     def make_route(self, unit_must_move: bool) -> bool:
         if unit_must_move:
+            logger.info(
+                f"Acknowledged must move, setting rubble to zero under unit at pos {self.unit.pos}"
+            )
             # Don't count rubble under current position (will ensure move from this location)
             self._future_rubble[self.unit.pos_slice] = 0
             # If on factory, move to new spot first
             if self._unit_starting_on_factory():
+                logger.info(f"Also moving on factory to get out of the way")
+                #  TODO: make the move toward the best area to rubble clear instead of just anywhere on factory
                 success = move_to_new_spot_on_factory(
                     self.pathfinder, self.unit, self.factory
                 )
@@ -366,6 +371,11 @@ class RubbleRoutePlanner:
             rubble_after = int(
                 max(0, pos_rubble - n * self.unit.unit_config.DIG_RUBBLE_REMOVED)
             )
+            if n <= 0:
+                logger.error(
+                    f"digs_required={digs_required}, digs planned (n)={n}, << MUST BE POSITIVE"
+                )
+                return False
             logger.info(f"digs_required={digs_required}, digs planned (n)={n}")
             self.unit.action_queue.append(self.unit.dig(n=n))
             self._future_rubble[self.unit.pos[0], self.unit.pos[1]] = rubble_after

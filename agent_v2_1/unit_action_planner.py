@@ -281,6 +281,13 @@ def decide_action(
     factory_info: FactoryInfo,
     close_units: Union[None, CloseUnits],
 ) -> str:
+    """
+    Decide what type of action unit should be doing based on Factory preferences
+
+    Note: Should only switch from current job to attack/run_away or if it back at the factory
+
+    """
+    logger.function_call(f'Deciding action for {unit_info.unit_id}')
     def attack_or_run_away(
         close_units: CloseUnits,
         unit_type: str,
@@ -306,31 +313,53 @@ def decide_action(
 
     action = None
     if unit_info.unit_type == "LIGHT":
+        logger.debug(f'Deciding between light unit actions')
         action = attack_or_run_away(close_units, "LIGHT", 10)
         if action is None:
-            if factory_info.light_mining_ore < factory_desires.light_mining_ore:
-                logger.debug(
-                    f"{factory_info.factory_id}: Adding light ore miner, light_ore={factory_info.light_mining_ore}, desires={factory_desires.light_mining_ore}"
-                )
-                action = actions.MINE_ORE
-            elif (
-                factory_info.light_clearing_rubble
-                < factory_desires.light_clearing_rubble
-            ):
-                action = actions.CLEAR_RUBBLE
+            logger.debug(f'should not attack or run_away, deciding what next')
+            # If not on factory, continue doing whatever it was doing before
+            if not unit_info.unit.on_own_factory() and unit_info.unit.status.current_action != actions.NOTHING:
+                action = unit_info.unit.status.current_action
+                logger.debug(f'Unit NOT on factory and currently assigned, should continue same job ({action})')
+            # If on factory, it can switch jobs to whatever is necessary
             else:
-                action = actions.NOTHING
+                logger.debug(f'Unit on factory, can decide a new type of action depending on factory needs')
+                # Make sure factory info is updated (i.e. if this unit stopped mining_ice, then num needs decreasing)
+                factory_info.remove_unit_from_current_count(unit_info.unit)
+                if factory_info.light_mining_ore < factory_desires.light_mining_ore:
+                    logger.debug(
+                        f"{factory_info.factory_id}: Adding light ore miner, light_ore={factory_info.light_mining_ore}, desires={factory_desires.light_mining_ore}"
+                    )
+                    action = actions.MINE_ORE
+                elif (
+                    factory_info.light_clearing_rubble
+                    < factory_desires.light_clearing_rubble
+                ):
+                    action = actions.CLEAR_RUBBLE
+                else:
+                    action = actions.NOTHING
     else:  # unit_type == "HEAVY"
+        logger.debug(f'Deciding between heavy unit actions')
         action = attack_or_run_away(close_units, "HEAVY", 100)
         if action is None:
-            if factory_info.heavy_mining_ice < factory_desires.heavy_mining_ice:
-                action = actions.MINE_ICE
-            elif factory_info.heavy_mining_ore < factory_desires.heavy_mining_ore:
-                action = actions.MINE_ORE
-            elif factory_info.heavy_attacking < factory_desires.heavy_attacking:
-                action = actions.ATTACK
+            logger.debug(f'should not attack or run_away, deciding what next')
+            # If not on factory, continue doing whatever it was doing before
+            if not unit_info.unit.on_own_factory() and unit_info.unit.status.current_action != actions.NOTHING:
+                action = unit_info.unit.status.current_action
+                logger.debug(f'Unit NOT on factory and currently assigned, should continue same job ({action})')
+            # If on factory, it can switch jobs to whatever is necessary
             else:
-                action = actions.NOTHING
+                logger.debug(f'Unit on factory, can decide a new type of action depending on factory needs')
+                # Make sure factory info is updated (i.e. if this unit stopped mining_ice, then num needs decreasing)
+                factory_info.remove_unit_from_current_count(unit_info.unit)
+                if factory_info.heavy_mining_ice < factory_desires.heavy_mining_ice:
+                    action = actions.MINE_ICE
+                elif factory_info.heavy_mining_ore < factory_desires.heavy_mining_ore:
+                    action = actions.MINE_ORE
+                elif factory_info.heavy_attacking < factory_desires.heavy_attacking:
+                    action = actions.ATTACK
+                else:
+                    action = actions.NOTHING
     logger.debug(f"action should be {action}")
     return action
 
@@ -968,6 +997,110 @@ class UnitActionPlanner:
 
         return success
 
+    def _calculate_unit_actions(
+        self,
+        unit: FriendlyUnitManger,
+        desired_action: str,
+        unit_must_move: bool,
+        possible_close_enemy: [None, CloseUnits],
+        mining_planner: MiningPlanner,
+        rubble_planner: RubbleClearingPlanner,
+        combat_planner: CombatPlanner,
+    ):
+        unit.status.previous_action = unit.status.current_action
+        unit.status.current_action = actions.NOTHING
+        success = False
+        if desired_action == actions.ATTACK:
+            success = combat_planner.attack(unit, possible_close_enemy)
+        elif desired_action == actions.RUN_AWAY:
+            success = combat_planner.run_away(unit)
+        elif desired_action == actions.MINE_ORE:
+            rec = mining_planner.recommend(
+                unit, util.ORE, unit_must_move=unit_must_move
+            )
+            if rec is not None:
+                success = mining_planner.carry_out(
+                    unit, rec, unit_must_move=unit_must_move
+                )
+            else:
+                success = False
+        elif desired_action == actions.MINE_ICE:
+            rec = mining_planner.recommend(
+                unit, util.ICE, unit_must_move=unit_must_move
+            )
+            if rec is not None:
+                success = mining_planner.carry_out(
+                    unit, rec, unit_must_move=unit_must_move
+                )
+            else:
+                success = False
+        elif desired_action == actions.CLEAR_RUBBLE:
+            rec = rubble_planner.recommend(unit)
+            success = rubble_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
+        elif desired_action == actions.NOTHING:
+            logger.debug(
+                f"Setting action queue to empty to do action {actions.NOTHING}"
+            )
+            unit.action_queue = []
+            if unit_must_move:
+                if not unit.factory_id:
+                    logger.error(
+                        f"Unit must move, but has action {actions.NOTHING} and no factory assigned"
+                    )
+                else:
+                    # If on factory, stay on factory
+                    if unit.on_own_factory():
+                        success = util.move_to_new_spot_on_factory(
+                            self.master.pathfinder,
+                            unit,
+                            self.master.factories.friendly[unit.factory_id],
+                        )
+                        # Just try move
+                        if not success:
+                            util.move_to_cheapest_adjacent_space(
+                                self.master.pathfinder, unit
+                            )
+                    # Otherwise just move
+                    else:
+                        util.move_to_cheapest_adjacent_space(
+                            self.master.pathfinder, unit
+                        )
+            success = True
+        else:
+            logger.error(f"{desired_action} not understood as an action")
+
+        unit.status.current_action = desired_action
+        unit.status.last_action_success = success
+        return success
+
+    # def _deassign_unit_work(self, factory_infos: Dict[str, FactoryInfo], unit: FriendlyUnitManger):
+    #     """Remove currently assigned work since will be deciding again
+    #
+    #     Actually, this is too risky because it will mean reshuffling all the jobs every time units come near something
+    #
+    #     """
+    #     raise NotImplementedError('not a good idea I think')
+    #     unit.status.previous_action = unit.status.current_action
+    #     unit.status.current_action = actions.NOTHING
+    #     if unit.factory_id and unit.factory_id in factory_infos:
+    #         info = factory_infos[unit.factory_id]
+    #         if unit.unit_type == 'HEAVY':
+    #             if unit.status.previous_action == actions.MINE_ICE:
+    #                 info.heavy_mining_ice -= 1
+    #             elif unit.status.previous_action == actions.MINE_ORE:
+    #                 info.heavy_mining_ore -= 1
+    #             elif unit.status.previous_action == actions.ATTACK:
+    #                 info.heavy_attacking -= 1
+    #         else:
+    #             if unit.status.previous_action == actions.MINE_ORE:
+    #                 info.light_mining_ore -= 1
+    #             elif unit.status.previous_action == actions.CLEAR_RUBBLE:
+    #                 info.light_clearing_rubble -= 1
+    #             elif unit.status.previous_action == actions.ATTACK:
+    #                 info.light_attacking -= 1
+
+
+
     def decide_unit_actions(
         self,
         mining_planner: MiningPlanner,
@@ -987,6 +1120,9 @@ class UnitActionPlanner:
         )
 
         units_to_act = self._get_units_to_act(self.master.units.friendly.all)
+        # for unit_id, unit in units_to_act.needs_to_act.items():
+        #     self._deassign_unit_work(factory_infos, unit)
+
         unit_infos = self._collect_unit_data(units_to_act.needs_to_act)
         sorted_unit_infos = self._sort_units_by_priority(unit_infos)
 
@@ -1045,77 +1181,24 @@ class UnitActionPlanner:
                 units_to_act.should_not_act[unit.unit_id] = unit
                 # self.master.units.friendly.replace_unit(unit.unit_id, unit_before)
             else:
+                logger.debug(
+                    f"Unit has updated actions, first few actions are {unit.action_queue[:3]}"
+                )
                 units_to_act.has_updated_actions[unit.unit_id] = unit
 
-        actions = {}
+        unit_actions = {}
 
         # TODO: One last check for collisions?
 
         for unit_id, unit in units_to_act.has_updated_actions.items():
             if len(unit.action_queue) > 0:
-                actions[unit_id] = unit.action_queue[:20]
-        return actions
-
-    def _calculate_unit_actions(
-        self,
-        unit: FriendlyUnitManger,
-        desired_action: str,
-        unit_must_move: bool,
-        possible_close_enemy: [None, CloseUnits],
-        mining_planner: MiningPlanner,
-        rubble_planner: RubbleClearingPlanner,
-        combat_planner: CombatPlanner,
-    ):
-        unit.status.previous_action = unit.status.current_action
-        unit.status.current_action = actions.NOTHING
-        success = False
-        if desired_action == actions.ATTACK:
-            success = combat_planner.attack(unit, possible_close_enemy)
-        elif desired_action == actions.RUN_AWAY:
-            success = combat_planner.run_away(unit)
-        elif desired_action == actions.MINE_ORE:
-            rec = mining_planner.recommend(
-                unit, util.ORE, unit_must_move=unit_must_move
-            )
-            if rec is not None:
-                success = mining_planner.carry_out(
-                    unit, rec, unit_must_move=unit_must_move
-                )
+                unit_actions[unit_id] = unit.action_queue[:20]
             else:
-                success = False
-        elif desired_action == actions.MINE_ICE:
-            rec = mining_planner.recommend(
-                unit, util.ICE, unit_must_move=unit_must_move
-            )
-            if rec is not None:
-                success = mining_planner.carry_out(
-                    unit, rec, unit_must_move=unit_must_move
+                logger.error(
+                    f"Updating {unit_id} with empty actions (could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
                 )
-            else:
-                success = False
-        elif desired_action == actions.CLEAR_RUBBLE:
-            rec = rubble_planner.recommend(unit)
-            success = rubble_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
-        elif desired_action == actions.NOTHING:
-            unit.action_queue = []
-            if unit_must_move:
-                if not unit.factory_id:
-                    logger.error(
-                        f"Unit must move, but has action {actions.NOTHING} and no factory assigned"
-                    )
-                else:
-                    util.move_to_new_spot_on_factory(
-                        self.master.pathfinder,
-                        unit,
-                        self.master.factories.friendly[unit.factory_id],
-                    )
-            success = True
-        else:
-            logger.error(f"{desired_action} not understood as an action")
-
-        unit.status.current_action = desired_action
-        unit.status.last_action_success = success
-        return success
+                unit_actions[unit_id] = []
+        return unit_actions
 
 
 #######################################

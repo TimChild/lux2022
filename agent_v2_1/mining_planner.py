@@ -118,16 +118,19 @@ class MiningRoutePlanner:
         - Then mining route path from factory back to factory
         """
         success = True
-        if self._unit_starting_on_factory() and unit_must_move:
-            success = util.move_to_new_spot_on_factory(
-                self.pathfinder, self.unit, self.factory
-            )
+        if self.unit.on_own_factory() and unit_must_move:
+            path = util.path_to_factory_edge_nearest_pos(self.pathfinder, self.factory.factory_loc, self.unit.pos, self.resource_pos)
+            if len(path) > 0:
+                self.pathfinder.append_path_to_actions(self.unit, path)
+            else:
+                success = False
             if not success:
                 return False
 
         # If not on factory, route until at factory (possibly resource first)
-        if not self._unit_starting_on_factory():
+        if not self.unit.on_own_factory():
             # collect info to decide if we should move towards resource or factory first
+            logger.debug(f"not on factory, deciding resource or factory first")
             (
                 path_to_resource,
                 cost_to_resource,
@@ -146,7 +149,10 @@ class MiningRoutePlanner:
                 return False
 
             # Decide which to do
-            if power_remaining > len(path_to_resource)//2 * self.unit.unit_config.DIG_COST:
+            if (
+                power_remaining
+                > max(2*self.unit.unit_config.DIG_COST, len(path_to_resource) // 2 * self.unit.unit_config.DIG_COST)
+            ):
                 # Go to resource first
                 success = self._resource_then_factory(path_to_resource, power_remaining)
             else:

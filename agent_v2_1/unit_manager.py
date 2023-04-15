@@ -40,7 +40,6 @@ class UnitManager(abc.ABC):
 
         # Keep track of pos a start of turn because pos will be updated while planning what to do next
         self.start_of_turn_pos = unit.pos
-        self.start_of_turn_actions = []
 
     def power_cost_of_actions(self, rubble: np.ndarray):
         return util.power_cost_of_actions(
@@ -49,13 +48,12 @@ class UnitManager(abc.ABC):
 
     @property
     def log_prefix(self) -> str:
-        return f"{self.unit_type} {self.unit_id}({self.start_of_turn_pos})({self.pos}):"
+        return f"{self.unit_type} {self.unit_id}(spos{self.start_of_turn_pos})(pos{self.pos}):"
 
     def update(self, unit: Unit):
         """Beginning of turn update"""
         self.unit = unit
         self.start_of_turn_pos = unit.pos
-        self.start_of_turn_actions = copy.copy(unit.action_queue)
 
     def current_path(self, max_len: int = 10) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
@@ -135,6 +133,25 @@ class FriendlyUnitManger(UnitManager):
             previous_action=actions.NOTHING,
             last_action_success=True,
         )
+        self.start_of_turn_actions = []
+
+    def update(self, unit: Unit):
+        super().update(unit)
+        self.start_of_turn_actions = copy.copy(unit.action_queue)
+
+    def on_own_factory(self) -> bool:
+        """Is this unit on its own factory"""
+        return self.factory_loc[self.pos[0], self.pos[1]] == 1
+
+    @property
+    def factory_loc(self) -> [None, np.ndarray]:
+        """Shortcut to the factory_loc of this unit or None if not assigned a factory"""
+        if self.factory_id:
+            factory = self.master.factories.friendly.get(self.factory_id, None)
+            if factory:
+                return factory.factory_loc
+        logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
+        return None
 
     def dead(self):
         """Called when unit is detected as dead"""

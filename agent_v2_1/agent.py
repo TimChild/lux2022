@@ -114,7 +114,7 @@ class Agent:
         """Required API for Agent. This is called every turn after early_setup is complete"""
         tstart = time.time()
         logger.warning(
-            f"======== Start of turn {self.master.game_state.real_env_steps+1} for {self.player} ============"
+            f"====================== Start of turn {self.master.game_state.real_env_steps+1} for {self.player} =============================="
         )
         self._beginning_of_step_update(step, obs, remainingOverageTime)
 
@@ -195,7 +195,7 @@ class Agent:
         logger.verbose(f"{self.player} Unit actions: {unit_actions}")
         logger.debug(f"{self.player} Factory actions: {factory_actions}")
         logger.warning(
-            f"======== End of turn {self.master.game_state.real_env_steps+1} for {self.player}: Took {time.time()-tstart:.1f}s ============"
+            f"========================= End of turn {self.master.game_state.real_env_steps+1} for {self.player}: Took {time.time()-tstart:.1f}s ==========================="
         )
         return dict(**unit_actions, **factory_actions)
         #
