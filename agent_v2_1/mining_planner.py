@@ -1,6 +1,4 @@
 from __future__ import annotations
-from cachetools import LRUCache, cached
-from cachetools.keys import hashkey
 from typing import TYPE_CHECKING, Tuple, Optional, List
 from dataclasses import dataclass
 

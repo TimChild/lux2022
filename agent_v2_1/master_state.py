@@ -11,7 +11,7 @@ from new_path_finder import Pather
 from lux.kit import GameState
 
 from config import get_logger
-from util import ORE, ICE, METAL, WATER, manhattan
+from util import ORE, ICE, manhattan
 
 if TYPE_CHECKING:
     from lux.unit import Unit
