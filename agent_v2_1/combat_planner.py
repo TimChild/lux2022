@@ -1,6 +1,5 @@
 from __future__ import annotations
-from typing import List, TYPE_CHECKING
-import numpy as np
+from typing import TYPE_CHECKING
 
 from config import get_logger
 import util
@@ -9,7 +8,6 @@ logger = get_logger(__name__)
 
 
 if TYPE_CHECKING:
-    from actions import Recommendation
     from master_state import MasterState
     from unit_action_planner import CloseUnits
     from unit_manager import FriendlyUnitManger

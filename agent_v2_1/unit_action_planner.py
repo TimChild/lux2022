@@ -1,8 +1,8 @@
 from __future__ import annotations
+from enum import Enum
 
 import abc
 from collections import OrderedDict
-import copy
 import functools
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union, Optional, Iterable
@@ -20,6 +20,7 @@ from new_path_finder import Pather
 from rubble_clearing_planner import RubbleClearingPlanner
 from combat_planner import CombatPlanner
 from unit_manager import FriendlyUnitManger, UnitManager, EnemyUnitManager
+from action_validation import ValidActionCalculator, valid_action_space
 
 logger = get_logger(__name__)
 
@@ -127,6 +128,7 @@ def find_collisions(
 @dataclass
 class UnitInfo:
     unit: FriendlyUnitManger
+    act_info: ActInfo
     unit_id: str
     len_action_queue: int
     distance_to_factory: Optional[float]
@@ -136,6 +138,40 @@ class UnitInfo:
     power: int
     ice: int
     ore: int
+
+
+@dataclass
+class UnitInfos:
+    infos: Dict[str, UnitInfo]
+
+    def sort_by_priority(self):
+        """
+        Sorts units by priority by first converting to a dataframe and then doing some ordered sorting
+        """
+        logger.function_call(f"sort_units_by_priority called")
+        if len(self.infos) == 0:
+            logger.debug("No unit_infos data to sort")
+            return None
+        df = unit_infos_to_df(self.infos)
+        sorted_df = df.sort_values(
+            by=["is_heavy", "enough_power_to_move", "power", "ice", "ore"],
+            ascending=[False, False, True, False, True],
+        )
+        highest = sorted_df.iloc[0]
+        lowest = sorted_df.iloc[-1]
+
+        logger.debug(
+            f"Unit with highest priority: {highest.unit_id}  ({highest.unit.pos}), is_heavy={highest.is_heavy}, power={highest.power}, ice={highest.ice}, ore={highest.ore}, len_acts={highest.len_action_queue}"
+        )
+        logger.debug(
+            f"Unit with lowest priority: {lowest.unit_id}  ({lowest.unit.pos}), is_heavy={lowest.is_heavy}, power={lowest.power}, ice={lowest.ice}, ore={lowest.ore}, len_acts={lowest.len_action_queue}"
+        )
+        ordered_infos = OrderedDict()
+        for unit_id in sorted_df.index:
+            ordered_infos[unit_id] = self.infos[unit_id]
+        self.infos = ordered_infos
+        logger.debug(f"Done sorting units")
+        return None
 
 
 def unit_infos_to_df(unit_infos: Dict[str, UnitInfo]) -> pd.DataFrame:
@@ -153,11 +189,11 @@ def unit_infos_to_df(unit_infos: Dict[str, UnitInfo]) -> pd.DataFrame:
 
 @dataclass
 class UnitsToAct:
-    needs_to_act: dict[str, FriendlyUnitManger]
-    should_not_act: dict[str, FriendlyUnitManger]
-    has_updated_actions: dict[str, FriendlyUnitManger] = field(default_factory=dict)
+    needs_to_act: dict[str, ActInfo]
+    should_not_act: dict[str, ActInfo]
+    has_updated_actions: dict[str, ActInfo] = field(default_factory=dict)
 
-    def get_unit(self, unit_id: str) -> FriendlyUnitManger:
+    def get_act_info(self, unit_id: str) -> ActInfo:
         for d in [self.needs_to_act, self.should_not_act, self.has_updated_actions]:
             if unit_id in d:
                 return d[unit_id]
@@ -287,12 +323,13 @@ def decide_action(
     Note: Should only switch from current job to attack/run_away or if it back at the factory
 
     """
-    logger.function_call(f'Deciding action for {unit_info.unit_id}')
+    logger.function_call(f"Deciding action for {unit_info.unit_id}")
+
     def attack_or_run_away(
         close_units: CloseUnits,
         unit_type: str,
         power_threshold: int,
-    ) -> str:
+    ) -> [None, str]:
         if close_units is not None:
             close_enemies_within_2 = [
                 enemy
@@ -313,17 +350,24 @@ def decide_action(
 
     action = None
     if unit_info.unit_type == "LIGHT":
-        logger.debug(f'Deciding between light unit actions')
+        logger.debug(f"Deciding between light unit actions")
         action = attack_or_run_away(close_units, "LIGHT", 10)
         if action is None:
-            logger.debug(f'should not attack or run_away, deciding what next')
+            logger.debug(f"should not attack or run_away, deciding what next")
             # If not on factory, continue doing whatever it was doing before
-            if not unit_info.unit.on_own_factory() and unit_info.unit.status.current_action != actions.NOTHING:
+            if (
+                not unit_info.unit.on_own_factory()
+                and unit_info.unit.status.current_action != actions.NOTHING
+            ):
                 action = unit_info.unit.status.current_action
-                logger.debug(f'Unit NOT on factory and currently assigned, should continue same job ({action})')
+                logger.debug(
+                    f"Unit NOT on factory and currently assigned, should continue same job ({action})"
+                )
             # If on factory, it can switch jobs to whatever is necessary
             else:
-                logger.debug(f'Unit on factory, can decide a new type of action depending on factory needs')
+                logger.debug(
+                    f"Unit on factory, can decide a new type of action depending on factory needs"
+                )
                 # Make sure factory info is updated (i.e. if this unit stopped mining_ice, then num needs decreasing)
                 factory_info.remove_unit_from_current_count(unit_info.unit)
                 if factory_info.light_mining_ore < factory_desires.light_mining_ore:
@@ -339,17 +383,24 @@ def decide_action(
                 else:
                     action = actions.NOTHING
     else:  # unit_type == "HEAVY"
-        logger.debug(f'Deciding between heavy unit actions')
+        logger.debug(f"Deciding between heavy unit actions")
         action = attack_or_run_away(close_units, "HEAVY", 100)
         if action is None:
-            logger.debug(f'should not attack or run_away, deciding what next')
+            logger.debug(f"should not attack or run_away, deciding what next")
             # If not on factory, continue doing whatever it was doing before
-            if not unit_info.unit.on_own_factory() and unit_info.unit.status.current_action != actions.NOTHING:
+            if (
+                not unit_info.unit.on_own_factory()
+                and unit_info.unit.status.current_action != actions.NOTHING
+            ):
                 action = unit_info.unit.status.current_action
-                logger.debug(f'Unit NOT on factory and currently assigned, should continue same job ({action})')
+                logger.debug(
+                    f"Unit NOT on factory and currently assigned, should continue same job ({action})"
+                )
             # If on factory, it can switch jobs to whatever is necessary
             else:
-                logger.debug(f'Unit on factory, can decide a new type of action depending on factory needs')
+                logger.debug(
+                    f"Unit on factory, can decide a new type of action depending on factory needs"
+                )
                 # Make sure factory info is updated (i.e. if this unit stopped mining_ice, then num needs decreasing)
                 factory_info.remove_unit_from_current_count(unit_info.unit)
                 if factory_info.heavy_mining_ice < factory_desires.heavy_mining_ice:
@@ -364,43 +415,76 @@ def decide_action(
     return action
 
 
+class ActReasons(Enum):
+    NOT_ENOUGH_POWER = "not enough power"
+    NO_ACTION_QUEUE = "no action queue"
+    COLLISION_WITH_ENEMY = "collision with enemy"
+    COLLISION_WITH_FRIENDLY = "collision with friendly"
+    CLOSE_TO_ENEMY = "close to enemy"
+    NEXT_ACTION_INVALID = "next action invalid"
+    NEXT_ACTION_PICKUP = "next action pickup"
+    NEXT_ACTION_TRANSFER = "next action transfer"
+    NO_REASON_TO_ACT = "no reason to act"
+
+
+@dataclass
+class ActInfo:
+    unit: FriendlyUnitManger
+    should_act: bool = False
+    reason: ActReasons = ActReasons.NO_REASON_TO_ACT
+
+
 def should_unit_act(
     unit: FriendlyUnitManger,
     upcoming_collisions: Dict[str, AllCollisionsForUnit],
     close_enemies: Dict[str, CloseUnits],
-):
+) -> ActInfo:
     unit_id = unit.unit_id
-    should_act = False
     # If not enough power to do something meaningful
+    should_act = ActInfo(unit=unit)
+
     if unit.power < (
         unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
     ):
-        logger.debug(f"Not enough power -- {unit_id} should not consider acting")
-        should_act = False
+        should_act.should_act = False
+        should_act.reason = ActReasons.NOT_ENOUGH_POWER
     # If no queue
     elif len(unit.action_queue) == 0:
-        logger.debug(f"No actions -- {unit_id} should consider acting")
-        should_act = True
+        should_act.should_act = True
+        should_act.reason = ActReasons.NO_ACTION_QUEUE
     # If colliding with friendly
     elif (
         unit_id in upcoming_collisions
         and upcoming_collisions[unit_id].num_collisions(friendly=True, enemy=False) > 0
     ):
-        logger.debug(f"Collision with friendly -- {unit_id} should consider acting")
-        should_act = True
+        should_act.should_act = True
+        should_act.reason = ActReasons.COLLISION_WITH_FRIENDLY
     # If colliding with enemy
     elif (
         unit_id in upcoming_collisions
         and upcoming_collisions[unit_id].num_collisions(friendly=False, enemy=True) > 0
     ):
-        logger.debug(f"Collision with enemy -- {unit_id} should consider acting")
-        should_act = True
+        should_act.should_act = True
+        should_act.reason = ActReasons.COLLISION_WITH_ENEMY
     # If close to enemy
     elif unit_id in close_enemies:
-        logger.debug(f"Close to enemy -- {unit_id} should consider acting")
-        should_act = True
-    # TODO: If about to do invalid action:
-    # TODO: pickup more power than available, dig where no resource, transfer to unoccupied location
+        should_act.should_act = True
+        should_act.reason = ActReasons.CLOSE_TO_ENEMY
+    elif unit.action_queue[0][util.ACT_TYPE] == util.PICKUP:
+        should_act.should_act = True
+        should_act.reason = ActReasons.NEXT_ACTION_PICKUP
+    elif unit.action_queue[0][util.ACT_TYPE] == util.TRANSFER:
+        should_act.should_act = True
+        should_act.reason = ActReasons.NEXT_ACTION_TRANSFER
+    else:
+        should_act.should_act = False
+        should_act.reason = ActReasons.NO_REASON_TO_ACT
+
+    if should_act.should_act:
+        logger.debug(f"{unit_id} should consider acting -- {should_act.reason}")
+    else:
+        logger.debug(f"{unit_id} should not consider acting -- {should_act.reason}")
+
     return should_act
 
 
@@ -482,18 +566,56 @@ class UnitActionPlanner:
     def __init__(
         self,
         master: MasterState,
-        factory_desires: Dict[str, FactoryDesires],
-        factory_infos: Dict[str, FactoryInfo],
     ):
         """Assuming this is called after beginning of turn update"""
         self.master = master
-        self.factory_desires = factory_desires
-        self.factory_infos = factory_infos
+
+        # Will be filled on update
+        self.factory_desires: Dict[str, FactoryDesires] = None
+        self.factory_infos: Dict[str, FactoryInfo] = None
 
         # Caching
         self._costmap: np.ndarray = None
         self._upcoming_collisions: AllCollisionsForUnit = None
         self._close_units: AllCloseUnits = None
+
+    def update(
+        self,
+        factory_infos: Dict[str, FactoryInfo],
+        factory_desires: Dict[str, FactoryDesires],
+    ):
+        """Beginning of turn update"""
+        self.factory_infos = factory_infos
+        self.factory_desires = factory_desires
+
+        # Clear caches
+        self._costmap = None
+        self._upcoming_collisions = None
+        self._close_units = None
+
+        # Validate and replace enemy actions so that their move path is correct (i.e. cannot path through friendly
+        # factories or off edge of map, so replace those moves with move.CENTER)
+        self._replace_invalid_enemy_moves()
+
+    def _replace_invalid_enemy_moves(self):
+        """Replace invalid (move) actions in enemy unit so invalid enemy paths don't mess up my stuff
+        E.g. if enemy is pathing over a friendly factory or outside of map
+        """
+        friendly_factory_map = self.master.maps.factory_maps.friendly
+        valid_move_map = np.ones_like(friendly_factory_map, dtype=bool)
+        valid_move_map[friendly_factory_map >= 0] = False
+
+        for unit_id, unit in self.master.units.enemy.all.items():
+            valid_actions = unit.valid_moving_actions(
+                costmap=valid_move_map,
+                max_len=self.avoid_collision_steps,
+                ignore_repeat=False,
+            )
+            if valid_actions.was_valid is False:
+                logger.warning(
+                    f"Enemy {unit_id} actions were invalid. First invalid at step {valid_actions.invalid_steps[0]}"
+                )
+                unit.action_queue = valid_actions.valid_actions
 
     def _get_units_to_act(self, units: Dict[str, FriendlyUnitManger]) -> UnitsToAct:
         """
@@ -523,10 +645,10 @@ class UnitActionPlanner:
                 upcoming_collisions=all_unit_collisions,
                 close_enemies=all_unit_close_to_enemy,
             )
-            if should_act:
-                needs_to_act[unit_id] = unit
+            if should_act.should_act:
+                needs_to_act[unit_id] = should_act
             else:
-                should_not_act[unit_id] = unit
+                should_not_act[unit_id] = should_act
         return UnitsToAct(needs_to_act=needs_to_act, should_not_act=should_not_act)
 
     def _calculate_collisions(self) -> Dict[str, AllCollisionsForUnit]:
@@ -586,25 +708,25 @@ class UnitActionPlanner:
         )
         return unit_distance_map
 
-    def _collect_unit_data(
-        self, units: Dict[str, FriendlyUnitManger]
-    ) -> Dict[str, UnitInfo]:
+    def _collect_unit_data(self, act_infos: Dict[str, ActInfo]) -> UnitInfos:
         """
         Collects data from units and stores it in a pandas dataframe.
 
         Args:
-            units: List of FriendlyUnitManger objects.
+            act_infos: List of ActInfo objects.
 
         Returns:
             A pandas dataframe containing the unit data.
         """
         data = {}
-        for unit_id, unit in units.items():
+        for unit_id, act_info in act_infos.items():
+            unit = act_info.unit
             unit_factory = self.master.factories.friendly.get(unit.factory_id, None)
             unit_distance_map = self._unit_distance_map(unit_id)
 
             unit_info = UnitInfo(
                 unit=unit,
+                act_info=act_info,
                 unit_id=unit.unit_id,
                 len_action_queue=len(unit.action_queue),
                 distance_to_factory=(
@@ -626,44 +748,7 @@ class UnitActionPlanner:
                 ore=unit.cargo.ore,
             )
             data[unit_id] = unit_info
-        return data
-
-    def _sort_units_by_priority(
-        self, unit_infos: Dict[str, UnitInfo]
-    ) -> OrderedDict[str, UnitInfo]:
-        """
-        Sorts units by priority based on the provided dataframe.
-
-        Args:
-            df: A pandas dataframe containing the unit data.
-
-        Returns:
-            A sorted pandas dataframe with units ordered by priority.
-        """
-        logger.function_call(f"sort_units_by_priority called")
-        if len(unit_infos) == 0:
-            logger.debug("No unit_infos data to sort, returning as is")
-            return unit_infos
-
-        df = unit_infos_to_df(unit_infos)
-
-        sorted_df = df.sort_values(
-            by=["is_heavy", "enough_power_to_move", "power", "ice", "ore"],
-            ascending=[False, False, True, False, True],
-        )
-        logger.debug(f"Sorted units by priority")
-        highest = sorted_df.iloc[0]
-        lowest = sorted_df.iloc[-1]
-        logger.debug(
-            f"Unit with highest priority: {highest.unit_id}  ({highest.unit.pos}), is_heavy={highest.is_heavy}, power={highest.power}, ice={highest.ice}, ore={highest.ore}, len_acts={highest.len_action_queue}"
-        )
-        logger.debug(
-            f"Unit with lowest priority: {lowest.unit_id}  ({lowest.unit.pos}), is_heavy={lowest.is_heavy}, power={lowest.power}, ice={lowest.ice}, ore={lowest.ore}, len_acts={lowest.len_action_queue}"
-        )
-        ordered_infos = OrderedDict()
-        for unit_id in sorted_df.index:
-            ordered_infos[unit_id] = unit_infos[unit_id]
-        return ordered_infos
+        return UnitInfos(infos=data)
 
     def _get_base_costmap(self) -> np.ndarray:
         """
@@ -1099,8 +1184,6 @@ class UnitActionPlanner:
     #             elif unit.status.previous_action == actions.ATTACK:
     #                 info.light_attacking -= 1
 
-
-
     def decide_unit_actions(
         self,
         mining_planner: MiningPlanner,
@@ -1119,20 +1202,34 @@ class UnitActionPlanner:
             f"process_units called with mining_planner: {mining_planner}, rubble_clearing_planner: {rubble_clearing_planner}"
         )
 
+        # Which units should even think about acting
         units_to_act = self._get_units_to_act(self.master.units.friendly.all)
-        # for unit_id, unit in units_to_act.needs_to_act.items():
-        #     self._deassign_unit_work(factory_infos, unit)
 
+        # Get some info on those units and determine what order they should act
         unit_infos = self._collect_unit_data(units_to_act.needs_to_act)
-        sorted_unit_infos = self._sort_units_by_priority(unit_infos)
+        unit_infos.sort_by_priority()
 
+        # Get the base costmap for travel
+        # (basically rubble converted to cost and enemy factories impassible)
         base_costmap = self._get_base_costmap()
 
-        for unit_id, unit_info in sorted_unit_infos.items():
-            # Note: Row is a pd.Series of the unit_data_df
+        # Create the action validator for this turn
+        action_validator = ValidActionCalculator(
+            units_to_act=units_to_act, factory_infos=factory_infos, maps=self.master.maps
+        )
+
+        # For each unit, decide to keep same or update actions
+        for unit_id, unit_info in unit_infos.infos.items():
             # Remove from needs_to_act queue since we are calculating these actions now
             unit = unit_info.unit
             units_to_act.needs_to_act.pop(unit.unit_id)
+
+            # So I can keep track of units in logs
+            logger.info(
+                f"\n\nProcessing unit {unit.unit_id}({unit.pos}): "
+                f"is_heavy={unit_info.is_heavy}, enough_power_to_move={unit_info.enough_power_to_move}, "
+                f"power={unit_info.power}, ice={unit_info.ice}, ore={unit_info.ore}"
+            )
 
             # Re-assign unit to a factory if necessary
             if not unit.factory_id:
@@ -1141,12 +1238,22 @@ class UnitActionPlanner:
                 factory = self.master.factories.friendly[factory_id]
                 unit.factory_id = factory_id
                 factory.assign_unit(unit)
+                logger.warning(
+                    f"Re-assigning to {factory_id} because no factory assigned"
+                )
 
-            logger.info(
-                f"\n\nProcessing unit {unit.unit_id}({unit.pos}): "
-                f"is_heavy={unit_info.is_heavy}, enough_power_to_move={unit_info.enough_power_to_move}, "
-                f"power={unit_info.power}, ice={unit_info.ice}, ore={unit_info.ore}"
-            )
+            # If only considering because action *might* be invalid, check now
+            if unit_info.act_info.reason in [ActReasons.NEXT_ACTION_PICKUP, ActReasons.NEXT_ACTION_TRANSFER]:
+                if action_validator.next_action_valid(unit):
+                    logger.debug(f'Next action IS valid, no need to update')
+                    # Make sure the next action is taken into account for next validation
+                    action_validator.apply_next_action(unit)
+                    units_to_act.should_not_act[unit_id] = unit_info.act_info
+                    continue
+                else:
+                    logger.debug(f'Next action NOT valid, will recalculate actions')
+
+            # Get the specific costmap for this unit (i.e. blocked enemies and friendly paths)
             travel_costmap = self._get_travel_costmap_for_unit(
                 unit=unit,
                 base_costmap=base_costmap,
@@ -1175,21 +1282,22 @@ class UnitActionPlanner:
                 logger.debug(
                     f"First {self.actions_same_check} actions same, not updating unit action queue"
                 )
-                #  Store the unit_before (i.e. not updated at all since it's not changing it's actions)
+                # Put the action queue back to what it was since we are not updating it
                 unit.action_queue = unit.start_of_turn_actions
+
                 # Note: some other things about unit may be wrong, e.g. pos, power. But probably not important from here on (and slow to copy)
-                units_to_act.should_not_act[unit.unit_id] = unit
-                # self.master.units.friendly.replace_unit(unit.unit_id, unit_before)
+                units_to_act.should_not_act[unit.unit_id] = unit_info.act_info
             else:
                 logger.debug(
                     f"Unit has updated actions, first few actions are {unit.action_queue[:3]}"
                 )
-                units_to_act.has_updated_actions[unit.unit_id] = unit
+                units_to_act.has_updated_actions[unit.unit_id] = unit_info.act_info
 
+            # Make sure the next action is taken into account for next validation
+            action_validator.apply_next_action(unit)
+
+        # Collect the unit actions for returning to Env
         unit_actions = {}
-
-        # TODO: One last check for collisions?
-
         for unit_id, unit in units_to_act.has_updated_actions.items():
             if len(unit.action_queue) > 0:
                 unit_actions[unit_id] = unit.action_queue[:20]
@@ -1198,6 +1306,19 @@ class UnitActionPlanner:
                     f"Updating {unit_id} with empty actions (could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
                 )
                 unit_actions[unit_id] = []
+
+        # Quick validation of actions
+        for unit_id, actions in unit_actions.items():
+            if not valid_action_space(actions):
+                logger.error(f'Invalid action (action space) in actions for unit {unit_id}, returning earlier valid actions')
+                actions = []
+                for i, action in enumerate(actions):
+                    if valid_action_space(action):
+                        actions.append(action)
+                    else:
+                        logger.error(f'Invalid action was {action} at position {i}')
+                        break
+                unit_actions[unit_id] = actions
         return unit_actions
 
 

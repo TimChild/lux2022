@@ -12,7 +12,7 @@ from factory_manager import FriendlyFactoryManager
 import actions
 
 
-from master_state import MasterState, Planner
+from master_state import MasterState
 import util
 from config import get_logger
 

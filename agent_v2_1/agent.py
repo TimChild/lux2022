@@ -16,7 +16,6 @@ from combat_planner import CombatPlanner
 from factory_action_planner import FactoryActionPlanner
 
 from config import get_logger
-import util
 
 
 logger = get_logger(__name__)

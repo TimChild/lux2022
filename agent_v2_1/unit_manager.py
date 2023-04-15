@@ -1,10 +1,9 @@
 from __future__ import annotations
-from typing import Optional, Tuple, List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING
 import numpy as np
 import abc
 import copy
 from dataclasses import dataclass
-from typing import Union
 
 from luxai_s2.unit import UnitCargo
 
@@ -16,12 +15,16 @@ import actions
 
 from config import get_logger
 from master_state import MasterState
-from actions import Recommendation
 
 if TYPE_CHECKING:
     from factory_manager import FriendlyFactoryManager
 
 logger = get_logger(__name__)
+
+
+def get_index(lst, index, default=None):
+    """Get the element at the specified index in the list, or return the default value if the index is out of range."""
+    return lst[index] if 0 <= index < len(lst) else default
 
 
 @dataclass
@@ -43,10 +46,22 @@ class UnitManager(abc.ABC):
 
         # Keep track of pos a start of turn because pos will be updated while planning what to do next
         self.start_of_turn_pos = unit.pos
+        self.start_of_turn_power = unit.power
 
     def power_cost_of_actions(self, rubble: np.ndarray):
         return util.power_cost_of_actions(
             rubble=rubble, unit=self, actions=self.action_queue
+        )
+
+    def valid_moving_actions(
+        self, costmap: np.ndarray, max_len=20, ignore_repeat=False
+    ) -> util.ValidActionsMoving:
+        return util.calculate_valid_move_actions(
+            self.start_of_turn_pos,
+            self.action_queue,
+            valid_move_map=costmap,
+            max_len=max_len,
+            ignore_repeat=ignore_repeat,
         )
 
     @property
@@ -57,6 +72,7 @@ class UnitManager(abc.ABC):
         """Beginning of turn update"""
         self.unit = unit
         self.start_of_turn_pos = unit.pos
+        self.start_of_turn_power = unit.power
 
     def current_path(self, max_len: int = 10) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""

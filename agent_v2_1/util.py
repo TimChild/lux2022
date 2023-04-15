@@ -7,16 +7,12 @@ from scipy.ndimage import distance_transform_cdt
 from collections import deque
 import functools
 from tqdm.auto import tqdm
-import sys
 
-from deprecation import deprecated
 from typing import Tuple, List, Union, Optional, TYPE_CHECKING
 import copy
 from scipy import ndimage
 from scipy.signal import convolve2d
-import dataclasses
 import numpy as np
-import pickle
 import math
 import re
 import matplotlib.pyplot as plt
@@ -32,14 +28,13 @@ from luxai_s2.unit import UnitType
 
 from config import get_logger
 from new_path_finder import Pather
-from lux.kit import obs_to_game_state, GameState, to_json
-from lux.config import UnitConfig, EnvConfig
+from lux.kit import obs_to_game_state, GameState
+from lux.config import  EnvConfig
 from lux.utils import direction_to
 from lux.unit import Unit
 from lux.cargo import UnitCargo
 
 if TYPE_CHECKING:
-    from path_finder import PathFinder, CollisionParams
     from unit_manager import FriendlyUnitManger, UnitManager
     from factory_manager import FriendlyFactoryManager
 
@@ -630,7 +625,7 @@ def direction_to(src, target):
             return 1
 
 
-def add_direction_to_pos(pos: Tuple[int, int], direction: int) -> Tuple[int, int]:
+def add_direction_to_pos(pos: POS_TYPE, direction: int) -> Tuple[int, int]:
     """Add direction to pos"""
     return np.array(pos) + MOVE_DELTAS[direction]
 
@@ -1755,14 +1750,14 @@ def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type="LIGHT") -
 
 
 @dataclass
-class ValidActions:
+class ValidActionsMoving:
     was_valid: bool
     valid_actions: List[np.ndarray]
     invalid_steps: List[int]
     invalid_reasons: List[str]
 
 
-def calculate_valid_move_actions(start_pos: POS_TYPE, action_queue: List[np.ndarray], valid_move_map: np.ndarray, max_len: int = 20, ignore_repeat=False) -> ValidActions:
+def calculate_valid_move_actions(start_pos: POS_TYPE, action_queue: List[np.ndarray], valid_move_map: np.ndarray, max_len: int = 20, ignore_repeat=False) -> ValidActionsMoving:
     """
     Will the actions create a valid path (i.e. in bounds and not through any obstructions)
     Replaces invalid moves with move.CENTER
@@ -1870,7 +1865,7 @@ def calculate_valid_move_actions(start_pos: POS_TYPE, action_queue: List[np.ndar
     if len(invalid_steps) > 0:
         was_valid = False
 
-    return ValidActions(
+    return ValidActionsMoving(
         was_valid=was_valid,
         valid_actions=valid_actions,
         invalid_steps=invalid_steps,
