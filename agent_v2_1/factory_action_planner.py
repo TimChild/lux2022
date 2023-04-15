@@ -2,18 +2,22 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
-from typing import Tuple, Dict
+from typing import Tuple, Dict, TYPE_CHECKING
 import copy
 
 from lux.kit import GameState
 from lux.factory import Factory
 
 from factory_manager import FriendlyFactoryManager
+import actions
 
 
 from master_state import MasterState, Planner
 import util
 from config import get_logger
+
+if TYPE_CHECKING:
+    from unit_manager import FriendlyUnitManger
 
 logger = get_logger(__name__)
 
@@ -46,25 +50,112 @@ class FactoryInfo:
     heavy_mining_ore: int
     heavy_attacking: int
 
-    def update(self, new: FactoryInfo):
+    @classmethod
+    def init(cls, master: MasterState, factory: FriendlyFactoryManager) -> FactoryInfo:
+        lichen_id, lichen_locations, lichen = cls._get_lichen_info(master, factory)
+        current_light_actions = factory.get_light_actions()
+        current_heavy_actions = factory.get_heavy_actions()
+        connected_zeros = cls._get_connected_zeros(master.maps.rubble, factory.pos)
+        factory_info = cls(
+            factory=factory.factory,
+            factory_id=factory.unit_id,
+            power=factory.power,
+            water=factory.factory.cargo.water,
+            ice=factory.factory.cargo.ice,
+            ore=factory.factory.cargo.ore,
+            metal=factory.factory.cargo.metal,
+            pos=factory.pos,
+            num_heavy=len(factory.heavy_units),
+            num_light=len(factory.light_units),
+            water_cost=factory.factory.water_cost(master.game_state),
+            connected_zeros=connected_zeros,
+            lichen_tiles=int(np.sum(lichen_locations)),
+            total_lichen=int(np.sum(lichen)),
+            light_mining_ore=len(current_light_actions.mining_ore),
+            light_clearing_rubble=len(current_light_actions.clearing_rubble),
+            light_attacking=len(current_light_actions.attacking),
+            heavy_mining_ice=len(current_heavy_actions.mining_ice),
+            heavy_mining_ore=len(current_heavy_actions.mining_ore),
+            heavy_attacking=len(current_heavy_actions.attacking),
+        )
+        logger.debug(
+            f"light_ore: {factory_info.light_mining_ore}, light_rubble: {factory_info.light_clearing_rubble}, heavy_ice: {factory_info.heavy_mining_ice}"
+        )
+        return factory_info
+
+    def update(self, master: MasterState, factory: FriendlyFactoryManager):
+        lichen_id, lichen_locations, lichen = self._get_lichen_info(master, factory)
+        current_light_actions = factory.get_light_actions()
+        current_heavy_actions = factory.get_heavy_actions()
+        connected_zeros = self._get_connected_zeros(master.maps.rubble, factory.pos)
+
         # never changes
         # self.factory_id
         # self.pos
 
-        # Replace some things
-        self.factory = new.factory
-        self.connected_zeros = new.connected_zeros
-        self.lichen_tiles = new.lichen_tiles
-        self.total_lichen = new.total_lichen
-        self.num_light = new.num_light
-        self.num_heavy = new.num_heavy
+        # Average some things
+        # Roughly like average of last 10 values
+        self.power = int(self.power * 0.9 + 0.1 * factory.power)
+        self.water = int(self.water * 0.9 + 0.1 * factory.factory.cargo.water)
+        self.ice = int(self.ice * 0.9 + 0.1 * factory.factory.cargo.ice)
+        self.ore = int(self.ore * 0.9 + 0.1 * factory.factory.cargo.ore)
+        self.metal = int(self.metal * 0.9 + 0.1 * factory.factory.cargo.metal)
+        self.water_cost = int(
+            self.water_cost * 0.9 + 0.1 * factory.factory.water_cost(master.game_state)
+        )
 
-        # Average others
-        for attr in ["power", "water", "ice", "ore", "metal", "water_cost"]:
-            current = getattr(self, attr)
-            # Roughly like average of last 10 values
-            val = 0.9 * current + 0.1 * getattr(new, attr)
-            setattr(self, attr, val)
+        # Replace some things
+        self.factory = factory.factory
+        self.connected_zeros = connected_zeros
+        self.lichen_tiles = int(np.sum(lichen_locations))
+        self.total_lichen = int(np.sum(lichen))
+        self.num_light = len(factory.light_units)
+        self.num_heavy = len(factory.heavy_units)
+        self.light_mining_ore = len(current_light_actions.mining_ore)
+        self.light_clearing_rubble = len(current_light_actions.clearing_rubble)
+        self.light_attacking = len(current_light_actions.attacking)
+        self.heavy_mining_ice = len(current_heavy_actions.mining_ice)
+        self.heavy_mining_ore = len(current_heavy_actions.mining_ore)
+        self.heavy_attacking = len(current_heavy_actions.attacking)
+
+    def remove_unit_from_current_count(self, unit: FriendlyUnitManger):
+        if not unit.factory_id == self.factory_id:
+            logger.error(f'Trying to update factory_info ({self.factory_id}) with unit that has factory id ({unit.factory_id})')
+            return None
+        logger.info(
+            f'Removing {unit.unit_id} assignment of {unit.status.current_action} from factory_info count ({self.factory_id})')
+        if unit.unit_type == 'HEAVY':
+            if unit.status.current_action == actions.MINE_ICE:
+                self.heavy_mining_ice -= 1
+            elif unit.status.current_action == actions.MINE_ORE:
+                self.heavy_mining_ore -= 1
+            elif unit.status.current_action == actions.ATTACK:
+                self.heavy_attacking -= 1
+        else:
+            if unit.status.current_action == actions.MINE_ORE:
+                self.light_mining_ore -= 1
+            elif unit.status.current_action == actions.CLEAR_RUBBLE:
+                self.light_clearing_rubble -= 1
+            elif unit.status.current_action == actions.ATTACK:
+                self.light_attacking -= 1
+
+    @staticmethod
+    def _get_connected_zeros(rubble: np.ndarray, factory_pos: util.POS_TYPE):
+        return int(
+            np.sum(
+                util.connected_array_values_from_pos(
+                    rubble, factory_pos, connected_value=0
+                )
+            )
+        )
+
+    @staticmethod
+    def _get_lichen_info(master: MasterState, factory: FriendlyFactoryManager):
+        lichen_id = factory.factory.strain_id
+        lichen_locations = master.game_state.board.lichen_strains == lichen_id
+        lichen = master.game_state.board.lichen
+        lichen[lichen_locations != 1] = 0
+        return lichen_id, lichen_locations, lichen
 
 
 @dataclass
@@ -111,7 +202,7 @@ class FactoryActionPlanner:
         self._update_factory_info()
 
         # Calculate new desires for first X turns and then every 50 after that
-        if self.master.step < 10 or self.master.step % 50 == 0:
+        if self.master.step < 10 or self.master.step % 20 == 0:
             self._update_factory_desires()
 
     def get_factory_desires(self) -> Dict[str, FactoryDesires]:
@@ -124,13 +215,10 @@ class FactoryActionPlanner:
         """Update info about the factory (uses a sort of rolling average in updating)"""
         for f_id, factory in self.master.factories.friendly.items():
             logger.debug(f"Updating {f_id} info")
-            prev_info = self._factory_infos.pop(f_id, None)
-            new_info = self._collect_factory_info(factory)
-            if prev_info:
-                prev_info: FactoryInfo
-                prev_info.update(new_info)
-                new_info = prev_info
-            self._factory_infos[f_id] = new_info
+            if not f_id in self._factory_infos:
+                self._factory_infos[f_id] = FactoryInfo.init(self.master, factory)
+            else:
+                self._factory_infos[f_id].update(self.master, factory)
 
     def _update_factory_desires(self):
         """Update the desires for each factory"""
@@ -207,45 +295,6 @@ class FactoryActionPlanner:
             desires.light_clearing_rubble = 1
 
         return desires
-
-    def _collect_factory_info(self, factory: FriendlyFactoryManager) -> FactoryInfo:
-        lichen_id = factory.factory.strain_id
-        lichen_locations = self.master.game_state.board.lichen_strains == lichen_id
-        lichen = self.master.game_state.board.lichen
-        lichen[lichen_locations != 1] = 0
-
-        current_light_actions = factory.get_light_actions()
-        current_heavy_actions = factory.get_heavy_actions()
-
-        factory_info = FactoryInfo(
-            factory=factory.factory,
-            factory_id=factory.unit_id,
-            power=factory.power,
-            water=factory.factory.cargo.water,
-            ice=factory.factory.cargo.ice,
-            ore=factory.factory.cargo.ore,
-            metal=factory.factory.cargo.metal,
-            pos=factory.pos,
-            num_heavy=len(factory.heavy_units),
-            num_light=len(factory.light_units),
-            water_cost=factory.factory.water_cost(self.master.game_state),
-            connected_zeros=int(
-                np.sum(
-                    util.connected_array_values_from_pos(
-                        self.master.maps.rubble, factory.pos, connected_value=0
-                    )
-                )
-            ),
-            lichen_tiles=int(np.sum(lichen_locations)),
-            total_lichen=int(np.sum(lichen)),
-            light_mining_ore=len(current_light_actions.mining_ore),
-            light_clearing_rubble=len(current_light_actions.clearing_rubble),
-            light_attacking=len(current_light_actions.attacking),
-            heavy_mining_ice=len(current_heavy_actions.mining_ice),
-            heavy_mining_ore=len(current_heavy_actions.mining_ore),
-            heavy_attacking=len(current_heavy_actions.attacking),
-        )
-        return factory_info
 
     def decide_factory_actions(self) -> Dict[str, int]:
         actions = {}
