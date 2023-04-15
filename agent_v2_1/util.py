@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
+
 from scipy.ndimage import distance_transform_cdt
 from collections import deque
 import functools
@@ -751,14 +753,13 @@ def actions_to_path(
             pos = pos + MOVE_DELTAS[direction]
             path.append(pos)
             # If only calculating to specific max_len, return once reached
-            if max_len and len(path) >= max_len:
+            if len(path) >= max_len:
                 return np.array(path)
 
         # Account for repeat actions
         if not ignore_repeat and action[ACT_REPEAT] > 0:
             loop_act = copy.copy(action)
             loop_act[ACT_N] = action[ACT_REPEAT]
-            loop_act[ACT_REPEAT] -= 1
             actions.append(loop_act)
 
     return np.array(path)
@@ -1751,3 +1752,137 @@ def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type="LIGHT") -
             unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_pos
         )
     return cost
+
+
+@dataclass
+class ValidActions:
+    was_valid: bool
+    valid_actions: List[np.ndarray]
+    invalid_steps: List[int]
+    invalid_reasons: List[str]
+
+
+def calculate_valid_move_actions(start_pos: POS_TYPE, action_queue: List[np.ndarray], valid_move_map: np.ndarray, max_len: int = 20, ignore_repeat=False) -> ValidActions:
+    """
+    Will the actions create a valid path (i.e. in bounds and not through any obstructions)
+    Replaces invalid moves with move.CENTER
+
+    Note: Actions are returned without repeats
+
+    Args:
+        start_pos: Starting position of action_queue
+        action_queue: Actions to check (should include non-move actions, they are counted as center moves)
+        valid_move_map: The costmap to check for move validity
+        max_len: Checks path up to max_len
+        ignore_repeat: Whether to only run to end of actions and not repeat them
+
+    Note: Must check all actions in one go to be able to account for repeat actions (i.e. if short list of actions that loop)
+
+    Note: Can use this to check for collisions if setting <= 0 in costmap for collisions, but mostly intended for
+    actual not possible moves (i.e. enemy factory or off edge of map)
+    """
+    pos = start_pos
+    action_queue = copy.copy(action_queue)
+    action_queue = list(action_queue)
+
+    max_x, max_y = valid_move_map.shape
+
+    valid_actions = []
+    invalid_steps = []
+    invalid_reasons = []
+    step = 0
+    for i, action in enumerate(action_queue):
+        # Not easy to build valid including repeat, so just force no repeat for now
+        action = action.copy()
+        repeat = action[ACT_REPEAT]
+        action[ACT_REPEAT] = 0
+
+        # Not moving, must be valid in terms of move
+        next_n = action[ACT_N]
+        if action[ACT_TYPE] != MOVE or (action[ACT_TYPE] == MOVE and action[ACT_DIRECTION] == CENTER):
+            # If won't exceed max len
+            if step + next_n < max_len:
+                valid_actions.append(action)
+                step += next_n
+            # Only up to max len then break
+            else:
+                action[ACT_N] = max_len - step
+                valid_actions.append(action)
+                break
+
+        # Moving, more complicated (might have to change part of move to move center)
+        else:
+            direction = action[ACT_DIRECTION]
+            valid_n = 0
+            invalid_reason = None
+            # Check where in move becomes invalid if it does
+            for j in range(next_n):
+                new_x, new_y = pos + MOVE_DELTAS[direction]
+
+                # Not valid if out of index
+                if not 0 <= new_x < max_x or not 0 <= new_y < max_y:
+                    invalid_reason = 'index_error'
+                    break
+                # Not valid if blocked
+                elif valid_move_map[new_x, new_y] <= 0:
+                    invalid_reason = 'blocked'
+                    break
+                else:
+                    valid_n += 1
+                    pos += MOVE_DELTAS[direction]
+
+                step += 1
+                # If at max len then break
+                if step == max_len:
+                    break
+
+            # Fully valid
+            if valid_n == next_n:
+                valid_actions.append(action)
+            # Max len reached but valid
+            elif valid_n < next_n and step == max_len:
+                action[ACT_N] = valid_n
+                valid_actions.append(action)
+            # Something invalid
+            else:
+                if valid_n > 0:
+                    # Append the valid part
+                    action[ACT_N] = valid_n
+                    valid_actions.append(action)
+                num_invalid = min(next_n - valid_n, max_len - step)
+                invalid_steps.extend([step+i for i in range(0, num_invalid)])
+                invalid_reasons.extend([invalid_reason] * num_invalid)
+                # Append move CENTER where invalid
+                valid_actions.append(np.array([0, 0, 0, 0, 0, num_invalid]))
+                step += num_invalid
+
+        # Break if max_len reached
+        if step >= max_len:
+            break
+
+        # Add action to end of list with 1 less repeat if necessary
+        if not ignore_repeat and repeat > 0:
+            action[ACT_N] = repeat
+            action[ACT_REPEAT] = repeat
+            action_queue.append(action)
+
+    was_valid = True
+    if len(invalid_steps) > 0:
+        was_valid = False
+
+    return ValidActions(
+        was_valid=was_valid,
+        valid_actions=valid_actions,
+        invalid_steps=invalid_steps,
+        invalid_reasons=invalid_reasons,
+    )
+
+
+
+
+
+
+
+
+
+
