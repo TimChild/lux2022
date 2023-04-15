@@ -29,7 +29,7 @@ from luxai_s2.unit import UnitType
 from config import get_logger
 from new_path_finder import Pather
 from lux.kit import obs_to_game_state, GameState
-from lux.config import  EnvConfig
+from lux.config import EnvConfig
 from lux.utils import direction_to
 from lux.unit import Unit
 from lux.cargo import UnitCargo
@@ -323,7 +323,9 @@ def power_cost_of_actions(
                 try:
                     rubble_at_target = rubble[pos[0], pos[1]]
                 except IndexError:
-                    logger.error(f'Index Error invalid position is ({pos}) continuing anyway')
+                    logger.error(
+                        f"Index Error invalid position is ({pos}) continuing anyway"
+                    )
                     rubble_at_target = 100
                 cost += math.ceil(
                     unit_cfg.MOVE_COST
@@ -730,7 +732,10 @@ def path_to_actions(path):
 
 
 def actions_to_path(
-    start_pos: POS_TYPE, actions: List[np.ndarray], max_len: int = 20, ignore_repeat: bool = False
+    start_pos: POS_TYPE,
+    actions: List[np.ndarray],
+    max_len: int = 20,
+    ignore_repeat: bool = False,
 ) -> np.ndarray:
     """Convert list of actions (from start_pos) into a path
     Note: First value in path is current position
@@ -1757,7 +1762,13 @@ class ValidActionsMoving:
     invalid_reasons: List[str]
 
 
-def calculate_valid_move_actions(start_pos: POS_TYPE, action_queue: List[np.ndarray], valid_move_map: np.ndarray, max_len: int = 20, ignore_repeat=False) -> ValidActionsMoving:
+def calculate_valid_move_actions(
+    start_pos: POS_TYPE,
+    action_queue: List[np.ndarray],
+    valid_move_map: np.ndarray,
+    max_len: int = 20,
+    ignore_repeat=False,
+) -> ValidActionsMoving:
     """
     Will the actions create a valid path (i.e. in bounds and not through any obstructions)
     Replaces invalid moves with move.CENTER
@@ -1794,7 +1805,9 @@ def calculate_valid_move_actions(start_pos: POS_TYPE, action_queue: List[np.ndar
 
         # Not moving, must be valid in terms of move
         next_n = action[ACT_N]
-        if action[ACT_TYPE] != MOVE or (action[ACT_TYPE] == MOVE and action[ACT_DIRECTION] == CENTER):
+        if action[ACT_TYPE] != MOVE or (
+            action[ACT_TYPE] == MOVE and action[ACT_DIRECTION] == CENTER
+        ):
             # If won't exceed max len
             if step + next_n < max_len:
                 valid_actions.append(action)
@@ -1816,11 +1829,11 @@ def calculate_valid_move_actions(start_pos: POS_TYPE, action_queue: List[np.ndar
 
                 # Not valid if out of index
                 if not 0 <= new_x < max_x or not 0 <= new_y < max_y:
-                    invalid_reason = 'index_error'
+                    invalid_reason = "index_error"
                     break
                 # Not valid if blocked
                 elif valid_move_map[new_x, new_y] <= 0:
-                    invalid_reason = 'blocked'
+                    invalid_reason = "blocked"
                     break
                 else:
                     valid_n += 1
@@ -1845,7 +1858,7 @@ def calculate_valid_move_actions(start_pos: POS_TYPE, action_queue: List[np.ndar
                     action[ACT_N] = valid_n
                     valid_actions.append(action)
                 num_invalid = min(next_n - valid_n, max_len - step)
-                invalid_steps.extend([step+i for i in range(0, num_invalid)])
+                invalid_steps.extend([step + i for i in range(0, num_invalid)])
                 invalid_reasons.extend([invalid_reason] * num_invalid)
                 # Append move CENTER where invalid
                 valid_actions.append(np.array([0, 0, 0, 0, 0, num_invalid]))
@@ -1871,13 +1884,3 @@ def calculate_valid_move_actions(start_pos: POS_TYPE, action_queue: List[np.ndar
         invalid_steps=invalid_steps,
         invalid_reasons=invalid_reasons,
     )
-
-
-
-
-
-
-
-
-
-

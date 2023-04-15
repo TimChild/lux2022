@@ -84,7 +84,7 @@ class Agent:
         self.unit_action_planner = UnitActionPlanner(self.master)
 
     def _beginning_of_step_update(
-            self, step: int, obs: dict, remainingOverageTime: int
+        self, step: int, obs: dict, remainingOverageTime: int
     ):
         """Use the step and obs to update any turn based info (e.g. map changes)"""
         logger.info(f"Beginning of step update for step {step}")
@@ -134,7 +134,9 @@ class Agent:
         factory_desires = self.factory_action_planner.get_factory_desires()
         factory_infos = self.factory_action_planner.get_factory_infos()
 
-        self.unit_action_planner.update(factory_desires=factory_desires, factory_infos=factory_infos)
+        self.unit_action_planner.update(
+            factory_desires=factory_desires, factory_infos=factory_infos
+        )
 
         factory_actions = self.factory_action_planner.decide_factory_actions()
 
@@ -152,7 +154,6 @@ class Agent:
             f"========================= End of turn {self.master.game_state.real_env_steps+1} for {self.player}: Took {time.time()-tstart:.1f}s ==========================="
         )
         return dict(**unit_actions, **factory_actions)
-
 
 
 if __name__ == "__main__":

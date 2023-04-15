@@ -19,7 +19,7 @@ if str(parent_dir) not in sys.path:
 from agent import Agent
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     update_logging_level(logging.ERROR)
     seed = 42
     # seed = 178220973

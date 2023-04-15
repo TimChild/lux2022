@@ -566,4 +566,3 @@ class MasterState:
 
     # def _update_allocations(self, game_state: GameState):
     #     pass
-

@@ -117,7 +117,12 @@ class MiningRoutePlanner:
         """
         success = True
         if self.unit.on_own_factory() and unit_must_move:
-            path = util.path_to_factory_edge_nearest_pos(self.pathfinder, self.factory.factory_loc, self.unit.pos, self.resource_pos)
+            path = util.path_to_factory_edge_nearest_pos(
+                self.pathfinder,
+                self.factory.factory_loc,
+                self.unit.pos,
+                self.resource_pos,
+            )
             if len(path) > 0:
                 self.pathfinder.append_path_to_actions(self.unit, path)
             else:
@@ -147,15 +152,17 @@ class MiningRoutePlanner:
                 return False
 
             # Decide which to do
-            if (
-                power_remaining
-                > max(2*self.unit.unit_config.DIG_COST, len(path_to_resource) // 2 * self.unit.unit_config.DIG_COST)
+            if power_remaining > max(
+                2 * self.unit.unit_config.DIG_COST,
+                len(path_to_resource) // 2 * self.unit.unit_config.DIG_COST,
             ):
                 # Go to resource first
                 success = self._resource_then_factory(path_to_resource, power_remaining)
             else:
                 # Go to factory first
-                logger.info(f"pathing to {self.factory.factory.unit_id} at {self.factory.pos} first")
+                logger.info(
+                    f"pathing to {self.factory.factory.unit_id} at {self.factory.pos} first"
+                )
                 direct_path_to_factory = self._path_to_factory(
                     from_pos=self.unit.pos,
                 )

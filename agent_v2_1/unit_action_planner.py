@@ -1215,7 +1215,9 @@ class UnitActionPlanner:
 
         # Create the action validator for this turn
         action_validator = ValidActionCalculator(
-            units_to_act=units_to_act, factory_infos=factory_infos, maps=self.master.maps
+            units_to_act=units_to_act,
+            factory_infos=factory_infos,
+            maps=self.master.maps,
         )
 
         # For each unit, decide to keep same or update actions
@@ -1243,15 +1245,18 @@ class UnitActionPlanner:
                 )
 
             # If only considering because action *might* be invalid, check now
-            if unit_info.act_info.reason in [ActReasons.NEXT_ACTION_PICKUP, ActReasons.NEXT_ACTION_TRANSFER]:
+            if unit_info.act_info.reason in [
+                ActReasons.NEXT_ACTION_PICKUP,
+                ActReasons.NEXT_ACTION_TRANSFER,
+            ]:
                 if action_validator.next_action_valid(unit):
-                    logger.debug(f'Next action IS valid, no need to update')
+                    logger.debug(f"Next action IS valid, no need to update")
                     # Make sure the next action is taken into account for next validation
                     action_validator.apply_next_action(unit)
                     units_to_act.should_not_act[unit_id] = unit_info.act_info
                     continue
                 else:
-                    logger.debug(f'Next action NOT valid, will recalculate actions')
+                    logger.debug(f"Next action NOT valid, will recalculate actions")
 
             # Get the specific costmap for this unit (i.e. blocked enemies and friendly paths)
             travel_costmap = self._get_travel_costmap_for_unit(
@@ -1310,13 +1315,15 @@ class UnitActionPlanner:
         # Quick validation of actions
         for unit_id, actions in unit_actions.items():
             if not valid_action_space(actions):
-                logger.error(f'Invalid action (action space) in actions for unit {unit_id}, returning earlier valid actions')
+                logger.error(
+                    f"Invalid action (action space) in actions for unit {unit_id}, returning earlier valid actions"
+                )
                 actions = []
                 for i, action in enumerate(actions):
                     if valid_action_space(action):
                         actions.append(action)
                     else:
-                        logger.error(f'Invalid action was {action} at position {i}')
+                        logger.error(f"Invalid action was {action} at position {i}")
                         break
                 unit_actions[unit_id] = actions
         return unit_actions

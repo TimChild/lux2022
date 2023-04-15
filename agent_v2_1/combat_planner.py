@@ -22,7 +22,7 @@ class CombatPlanner:
 
     def attack(self, unit: FriendlyUnitManger, close_units: CloseUnits) -> bool:
         """Note: Unit MUST move, sitting still will result in automatic death on collision"""
-        logger.function_call(f'Attacking enemy')
+        logger.function_call(f"Attacking enemy")
         # If there is an enemy already detected close, go for that
         if close_units is not None:
             index_of_closest = close_units.other_unit_distances.index(
@@ -31,7 +31,7 @@ class CombatPlanner:
             enemy_loc = close_units.other_unit_positions[index_of_closest]
         # Otherwise find the nearest enemy with lower power
         else:
-            logger.error(f'Not implemented finding far away enemies yet')
+            logger.error(f"Not implemented finding far away enemies yet")
             return False
 
         # TODO: Try to intercept enemy instead of just aiming for where they are now
@@ -41,14 +41,16 @@ class CombatPlanner:
             return True
         # Path is saying don't move... that's a bad idea for combat... at least move somewhere
         elif len(path_to_enemy) == 1:
-            logger.warning(f'{unit.log_prefix}: Attacking path said to stand still, but that could mean death, moving to cheapest adjacent tile')
+            logger.warning(
+                f"{unit.log_prefix}: Attacking path said to stand still, but that could mean death, moving to cheapest adjacent tile"
+            )
             util.move_to_cheapest_adjacent_space(self.master.pathfinder, unit)
         else:
-            logger.error(f'{unit.log_prefix}: No path to enemy')
+            logger.error(f"{unit.log_prefix}: No path to enemy")
             return False
 
     def run_away(self, unit: FriendlyUnitManger):
-        logger.function_call(f'Running away to factory')
+        logger.function_call(f"Running away to factory")
         path_to_factory = util.calc_path_to_factory(
             self.master.pathfinder,
             unit.pos,
@@ -58,5 +60,5 @@ class CombatPlanner:
             self.master.pathfinder.append_path_to_actions(unit, path_to_factory)
             return True
         else:
-            logger.error(f'{unit.log_prefix}: No path to factory')
+            logger.error(f"{unit.log_prefix}: No path to factory")
             return False

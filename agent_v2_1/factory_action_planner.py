@@ -120,11 +120,14 @@ class FactoryInfo:
 
     def remove_unit_from_current_count(self, unit: FriendlyUnitManger):
         if not unit.factory_id == self.factory_id:
-            logger.error(f'Trying to update factory_info ({self.factory_id}) with unit that has factory id ({unit.factory_id})')
+            logger.error(
+                f"Trying to update factory_info ({self.factory_id}) with unit that has factory id ({unit.factory_id})"
+            )
             return None
         logger.info(
-            f'Removing {unit.unit_id} assignment of {unit.status.current_action} from factory_info count ({self.factory_id})')
-        if unit.unit_type == 'HEAVY':
+            f"Removing {unit.unit_id} assignment of {unit.status.current_action} from factory_info count ({self.factory_id})"
+        )
+        if unit.unit_type == "HEAVY":
             if unit.status.current_action == actions.MINE_ICE:
                 self.heavy_mining_ice -= 1
             elif unit.status.current_action == actions.MINE_ORE:
