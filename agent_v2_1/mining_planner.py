@@ -157,7 +157,7 @@ class MiningRoutePlanner:
                 success = self._resource_then_factory(path_to_resource, power_remaining)
             else:
                 # Go to factory first
-                logger.info("pathing to factory first")
+                logger.info(f"pathing to {self.factory.factory.unit_id} at {self.factory.pos} first")
                 direct_path_to_factory = self._path_to_factory(
                     from_pos=self.unit.pos,
                 )

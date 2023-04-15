@@ -291,7 +291,7 @@ class RubbleRoutePlanner:
                     path=path_to_factory,
                     rubble=self.rubble,
                     unit_type=self.unit.unit_type,
-                )
+                ) + 2*self.unit.unit_config.MOVE_COST*self._future_rubble[self.unit.pos_slice]
                 power_remaining = (
                     self.unit.power
                     - self.unit.power_cost_of_actions(self.rubble)
@@ -315,7 +315,7 @@ class RubbleRoutePlanner:
                 # Decide what to do based on values
                 if (
                     power_remaining
-                    > self.unit.unit_config.DIG_COST
+                    > self.unit.unit_config.DIG_COST*3
                     + self.unit.unit_config.MOVE_COST
                     * self.rubble[new_pos[0], new_pos[1]]
                     * self.unit.unit_config.RUBBLE_MOVEMENT_COST

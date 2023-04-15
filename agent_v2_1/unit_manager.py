@@ -1,4 +1,5 @@
-from typing import Optional, Tuple, List
+from __future__ import annotations
+from typing import Optional, Tuple, List, TYPE_CHECKING
 import numpy as np
 import abc
 import copy
@@ -17,6 +18,8 @@ from config import get_logger
 from master_state import MasterState
 from actions import Recommendation
 
+if TYPE_CHECKING:
+    from factory_manager import FriendlyFactoryManager
 
 logger = get_logger(__name__)
 
@@ -146,12 +149,18 @@ class FriendlyUnitManger(UnitManager):
     @property
     def factory_loc(self) -> [None, np.ndarray]:
         """Shortcut to the factory_loc of this unit or None if not assigned a factory"""
+        factory = self.factory
+        if factory is not None:
+            return factory.factory_loc
+
+    @property
+    def factory(self) -> [None, FriendlyFactoryManager]:
         if self.factory_id:
             factory = self.master.factories.friendly.get(self.factory_id, None)
-            if factory:
-                return factory.factory_loc
-        logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
-        return None
+            return factory
+        else:
+            logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
+            return None
 
     def dead(self):
         """Called when unit is detected as dead"""

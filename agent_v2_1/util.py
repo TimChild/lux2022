@@ -323,7 +323,11 @@ def power_cost_of_actions(
             act_type = action[ACT_TYPE]
             if act_type == MOVE:
                 pos = pos + MOVE_DELTAS[ACT_DIRECTION]
-                rubble_at_target = rubble[pos[0], pos[1]]
+                try:
+                    rubble_at_target = rubble[pos[0], pos[1]]
+                except IndexError:
+                    logger.error(f'Index Error invalid position is ({pos}) continuing anyway')
+                    rubble_at_target = 100
                 cost += math.ceil(
                     unit_cfg.MOVE_COST
                     + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_target
@@ -729,7 +733,7 @@ def path_to_actions(path):
 
 
 def actions_to_path(
-    start_pos: POS_TYPE, actions: List[np.ndarray], max_len: int = 20
+    start_pos: POS_TYPE, actions: List[np.ndarray], max_len: int = 20, ignore_repeat: bool = False
 ) -> np.ndarray:
     """Convert list of actions (from start_pos) into a path
     Note: First value in path is current position
@@ -749,8 +753,9 @@ def actions_to_path(
             # If only calculating to specific max_len, return once reached
             if max_len and len(path) >= max_len:
                 return np.array(path)
+
         # Account for repeat actions
-        if action[ACT_REPEAT] > 0:
+        if not ignore_repeat and action[ACT_REPEAT] > 0:
             loop_act = copy.copy(action)
             loop_act[ACT_N] = action[ACT_REPEAT]
             loop_act[ACT_REPEAT] -= 1
