@@ -85,7 +85,7 @@ class ValidActionCalculator:
         all_infos = dict(
             **self.units_to_act.should_not_act, **self.units_to_act.has_updated_actions
         )
-        for unit_id, act_info in all_infos:
+        for unit_id, act_info in all_infos.items():
             self.apply_next_action(act_info.unit)
 
         return self.factory_resources
@@ -104,9 +104,11 @@ class ValidActionCalculator:
         resource = action[util.ACT_RESOURCE]
         direction = action[util.ACT_DIRECTION]
 
+        unit_power = unit.start_of_turn_power
+        unit_pos = unit.start_of_turn_pos
         # Add or subtract from factory if unit is transferring to or picking up from factory
         if act_type == util.PICKUP:
-            f_num = self.maps.factory_maps.friendly[unit.pos_slice]
+            f_num = self.maps.factory_maps.friendly[unit_pos[0], unit_pos[1]]
             if not f_num >= 0:
                 return
             factory_id = factory_num_to_id(f_num)
@@ -124,8 +126,8 @@ class ValidActionCalculator:
             else:
                 logger.error(f"{resource} not understood as a resource")
         elif act_type == util.TRANSFER:
-            pos = util.add_direction_to_pos(unit.pos, direction)
-            f_num = self.maps.factory_maps.friendly[pos]
+            pos = util.add_direction_to_pos(unit_pos, direction)
+            f_num = self.maps.factory_maps.friendly[pos[0], pos[1]]
             if not f_num >= 0:
                 return
             factory_id = factory_num_to_id(f_num)
@@ -249,7 +251,7 @@ def valid_action_space(actions: Union[np.ndarray, List[np.ndarray]]) -> bool:
         bool: True if ALL actions are valid, False otherwise
     """
     low = np.array([0, 0, 0, 0, 0, 1])
-    high = np.array([5, 4, 4, 1000 + 1, 9999, 9999])
+    high = np.array([5, 4, 4, 3000 + 1, 9999, 9999])
 
     # Convert a list of actions to a 2D numpy array
     if isinstance(actions, list):

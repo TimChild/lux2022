@@ -838,6 +838,7 @@ class UnitActionPlanner:
             logger.debug(f"--------------------- Starting path blocking")
 
             # Block next X steps in other path that are equal in distance
+            max_x, max_y = costmap.shape
             for i, (p, d) in enumerate(
                 zip(other_path[: self.avoid_collision_steps], other_path_distance)
             ):
@@ -850,11 +851,17 @@ class UnitActionPlanner:
                     d == i
                 ):  # I.e. if distance to point on path is same as no. steps it would take to get there
                     logger.info(f"making {p} impassable")
-                    costmap[p[0], p[1]] = -1
+                    x, y = p
+                    if 0 <= x < max_x and 0 <= y < max_y:
+                        costmap[x, y] = -1
+                    else:
+                        logger.info(
+                            f"{p} cannot be made impassable because outside of map"
+                        )
 
         # If current location becomes blocked, warn that should be unblocked elsewhere
         if costmap[unit_pos[0], unit_pos[1]] == -1:
-            logger.warning(
+            logger.info(
                 f"{unit_pos} got blocked even though that is the units current position. If cost not changed > 0 pathing will fail"
             )
 
@@ -1303,9 +1310,9 @@ class UnitActionPlanner:
 
         # Collect the unit actions for returning to Env
         unit_actions = {}
-        for unit_id, unit in units_to_act.has_updated_actions.items():
-            if len(unit.action_queue) > 0:
-                unit_actions[unit_id] = unit.action_queue[:20]
+        for unit_id, act_info in units_to_act.has_updated_actions.items():
+            if len(act_info.unit.action_queue) > 0:
+                unit_actions[unit_id] = act_info.unit.action_queue[:20]
             else:
                 logger.error(
                     f"Updating {unit_id} with empty actions (could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
@@ -1316,15 +1323,19 @@ class UnitActionPlanner:
         for unit_id, actions in unit_actions.items():
             if not valid_action_space(actions):
                 logger.error(
-                    f"Invalid action (action space) in actions for unit {unit_id}, returning earlier valid actions"
+                    f"Invalid action (action space) in actions ({actions}) for unit {unit_id}, returning earlier valid actions"
                 )
                 actions = []
                 for i, action in enumerate(actions):
+                    logger.debug(f"Checking action {action}")
                     if valid_action_space(action):
                         actions.append(action)
                     else:
                         logger.error(f"Invalid action was {action} at position {i}")
                         break
+                if len(actions) == 0:
+                    # Move center
+                    actions = [np.array([0, 0, 0, 0, 0, 1])]
                 unit_actions[unit_id] = actions
         return unit_actions
 

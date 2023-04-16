@@ -21,7 +21,8 @@ from agent import Agent
 
 if __name__ == "__main__":
     update_logging_level(logging.ERROR)
-    seed = 42
+    # seed = 42
+    seed = 123425
     # seed = 178220973
 
     # Run initial setup (placing factories)

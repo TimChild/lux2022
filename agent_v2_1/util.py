@@ -1787,7 +1787,9 @@ def calculate_valid_move_actions(
     Note: Can use this to check for collisions if setting <= 0 in costmap for collisions, but mostly intended for
     actual not possible moves (i.e. enemy factory or off edge of map)
     """
-    pos = start_pos
+
+    # NECESSARY TO AVOID ENV CRASH BECAUSE OF CHANGING POS
+    pos = tuple(start_pos)
     action_queue = copy.copy(action_queue)
     action_queue = list(action_queue)
 

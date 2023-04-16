@@ -45,7 +45,7 @@ class UnitManager(abc.ABC):
         self.pickup = unit.pickup
 
         # Keep track of pos a start of turn because pos will be updated while planning what to do next
-        self.start_of_turn_pos = unit.pos
+        self.start_of_turn_pos = tuple(unit.pos)
         self.start_of_turn_power = unit.power
 
     def power_cost_of_actions(self, rubble: np.ndarray):
@@ -71,6 +71,8 @@ class UnitManager(abc.ABC):
     def update(self, unit: Unit):
         """Beginning of turn update"""
         self.unit = unit
+        # Avoid changing the actual pos of unit.pos (which the env also uses)
+        unit.pos = tuple(unit.pos)
         self.start_of_turn_pos = unit.pos
         self.start_of_turn_power = unit.power
 

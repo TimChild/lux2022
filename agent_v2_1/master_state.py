@@ -1,5 +1,6 @@
 from __future__ import annotations
 import abc
+import copy
 from typing import TYPE_CHECKING, List
 from dataclasses import dataclass, field
 import collections
@@ -313,6 +314,8 @@ class FriendlyUnits(Units):
         # For all units on team
         unit_dicts = {"LIGHT": self.light, "HEAVY": self.heavy}
         for unit_id, unit in units.items():
+            unit = copy.deepcopy(unit)
+            ######################################################################################################
             u_dict = unit_dicts[unit.unit_type]
 
             # Update existing
