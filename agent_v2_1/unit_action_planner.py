@@ -850,7 +850,11 @@ class UnitActionPlanner:
                 # Block all adjacent cells to enemy (and current enemy pos)
                 for delta in util.MOVE_DELTAS:
                     pos = np.array(other_pos_now) + delta
-                    costmap[pos[0], pos[1]] = -1
+                    try:
+                        costmap[pos[0], pos[1]] = -1
+                    except IndexError:
+                        # near edge of map
+                        continue
 
             logger.debug(f"--------------------- Starting path blocking")
 
@@ -925,9 +929,9 @@ class UnitActionPlanner:
 
         if this_unit.unit_type == "LIGHT":
             # If we have 10 more energy, prefer moving toward
-            low_power_diff, high_power_diff = -1, 10
+            low_power_diff, high_power_diff = -1, 0
         else:
-            low_power_diff, high_power_diff = -1, 100
+            low_power_diff, high_power_diff = -1, 0
 
         # TODO: Actually use avoidance or remove it completely
         avoidance, allow_collision = _decide_collision_avoidance(

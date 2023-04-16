@@ -173,24 +173,7 @@ class MiningRoutePlanner:
                 else:  # No path to factory (would still be 1 if on factory)
                     return False
 
-                if self.unit.cargo.ice > 0:
-                    logger.info(
-                        f"dropping off {self.unit.cargo.ice} ice before from_factory"
-                    )
-                    self.unit.action_queue.append(
-                        self.unit.transfer(
-                            CENTER, ICE, self.unit.unit_config.CARGO_SPACE
-                        )
-                    )
-                if self.unit.cargo.ore > 0:
-                    logger.info(
-                        f"dropping off {self.unit.cargo.ore} ore before from_factory"
-                    )
-                    self.unit.action_queue.append(
-                        self.unit.transfer(
-                            CENTER, ORE, self.unit.unit_config.CARGO_SPACE
-                        )
-                    )
+                self._drop_off_cargo_if_necessary()
 
         # Then route from factory (if successful up to this point)
         if success:
@@ -198,6 +181,26 @@ class MiningRoutePlanner:
                 # Then loop from factory
                 success = self._from_factory_actions()
         return success
+
+    def _drop_off_cargo_if_necessary(self):
+        if self.unit.cargo.ice > 0:
+            logger.info(
+                f"dropping off {self.unit.cargo.ice} ice before from_factory"
+            )
+            self.unit.action_queue.append(
+                self.unit.transfer(
+                    CENTER, ICE, self.unit.unit_config.CARGO_SPACE
+                )
+            )
+        if self.unit.cargo.ore > 0:
+            logger.info(
+                f"dropping off {self.unit.cargo.ore} ore before from_factory"
+            )
+            self.unit.action_queue.append(
+                self.unit.transfer(
+                    CENTER, ORE, self.unit.unit_config.CARGO_SPACE
+                )
+            )
 
     def _resource_then_factory(
         self, path_to_resource, power_remaining_after_moves
@@ -256,6 +259,9 @@ class MiningRoutePlanner:
         if not success:
             return False
 
+        # If already has resources, drop off first
+        self._drop_off_cargo_if_necessary()
+
         # Calculate travel costs
         (
             path_to_resource,
@@ -264,7 +270,7 @@ class MiningRoutePlanner:
         ) = self._path_to_and_from_resource()
         travel_cost = cost_to_resource + cost_from_resource_to_factory
 
-        # Aim for as many digs as battery capacity would allow
+        # Aim for as many digs as possible (either max battery, or current available if near max)
         # How much power do we have at start of run
         available_power = self.unit.power - self.unit.power_cost_of_actions(
             rubble=self.rubble
@@ -276,10 +282,16 @@ class MiningRoutePlanner:
             available_power = 0
         logger.info(f"available_power = {available_power}")
 
+        # near enough to max power not to waste a turn picking up power (otherwise aim for max capacity)
+        if available_power > 0.85 * self.unit.unit_config.BATTERY_CAPACITY:
+            target_power_at_start = available_power
+        else:
+            target_power_at_start = self.unit.unit_config.BATTERY_CAPACITY
+
         # How many digs can we do
         target_digs = int(
             np.floor(
-                (self.unit.unit_config.BATTERY_CAPACITY - travel_cost)
+                (target_power_at_start - travel_cost)
                 / self.unit.unit_config.DIG_COST
             )
         )
@@ -306,16 +318,18 @@ class MiningRoutePlanner:
         # Pickup power and update n_digs
         if factory_power + available_power > target_power:
             power_to_pickup = target_power - available_power
-            logger.info(
-                f"picking up {power_to_pickup} power to achieve target of {target_power}"
-            )
             if power_to_pickup > 0:
+                logger.info(
+                    f"picking up {power_to_pickup} power to achieve target of {target_power}"
+                )
                 self.unit.action_queue.append(
                     self.unit.pickup(
                         POWER,
                         min(self.unit.unit_config.BATTERY_CAPACITY, power_to_pickup),
                     )
                 )
+            else:
+                logger.info(f'Enough power already, not picking up')
             n_digs = target_digs
         elif (
             factory_power + available_power - travel_cost
