@@ -438,14 +438,16 @@ def should_unit_consider_acting(
     # If not enough power to do something meaningful
     should_act = ConsiderActInfo(unit=unit)
 
+    move_valid = unit.valid_moving_actions(unit.master.maps.valid_friendly_move, max_len=1)
     if unit.power < (
         unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
     ):
         should_act.should_act = False
         should_act.reason = ActReasons.NOT_ENOUGH_POWER
-    elif unit.valid_moving_actions(unit.master.maps.rubble, max_len=1).was_valid is False:
+    elif move_valid.was_valid is False:
         should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_INVALID_MOVE
+        logger.debug(f'Move from {unit.start_of_turn_pos} was invalid for reason {move_valid.invalid_reasons[0]}, action={unit.action_queue[0]}')
     # If no queue
     elif len(unit.action_queue) == 0:
         should_act.should_act = True

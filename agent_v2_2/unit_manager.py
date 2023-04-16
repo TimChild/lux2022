@@ -50,8 +50,6 @@ class UnitManager(abc.ABC):
         self.start_of_turn_pos = tuple(unit.pos)
         self.start_of_turn_power = unit.power
 
-
-
     def power_cost_of_actions(self, rubble: np.ndarray):
         return util.power_cost_of_actions(
             start_pos=self.start_of_turn_pos, rubble=rubble, unit=self, actions=self.action_queue

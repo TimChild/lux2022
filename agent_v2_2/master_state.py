@@ -109,10 +109,12 @@ class FactoryMaps:
             enemy = by_team["player_0" if player == "player_1" else "player_1"]
             factory_maps = cls(all=factory_map, friendly=friendly, enemy=enemy)
             return factory_maps
-        logger.info(
-            f"No factories to update with (game_state.teams = {game_state.teams})"
-        )
-        return None
+        else:
+            logger.debug(
+                f"No factories to update with (game_state.teams = {game_state.teams})"
+            )
+            empty_map = np.full_like(game_state.board.rubble, -1, dtype=int)
+            return cls(all=empty_map, friendly=empty_map, enemy=empty_map)
 
 
 @dataclass
@@ -484,6 +486,7 @@ class Maps:
         self.lichen: np.ndarray = None
         self.lichen_strains: np.ndarray = None
         self.factory_maps: FactoryMaps = None
+        self.valid_friendly_move: np.ndarray = None
 
         self.first_update_done = False
 
@@ -500,6 +503,9 @@ class Maps:
         self.factory_maps = FactoryMaps.from_game_state(
             game_state=game_state, player=player
         )
+        valid = np.ones_like(self.factory_maps.enemy)
+        valid[self.factory_maps.enemy >= 0] = 0
+        self.valid_friendly_move = valid
 
     def test(self):
         print(f'lichen is {self.lichen.sum()}')
