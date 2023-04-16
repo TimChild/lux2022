@@ -8,7 +8,7 @@ from collections import deque
 import functools
 from tqdm.auto import tqdm
 
-from typing import Tuple, List, Union, Optional, TYPE_CHECKING
+from typing import Tuple, List, Union, Optional, TYPE_CHECKING, Dict
 import copy
 from scipy import ndimage
 from scipy.signal import convolve2d
@@ -139,9 +139,15 @@ class MyEnv:
         self.env_step = 0
         self.real_env_steps = 0
 
-        self.agent = Agent("player_0", self.env.env_cfg)
-        self.other_agent = OtherAgent("player_1", self.env.env_cfg)
-        self.agents = {a.player: a for a in [self.agent, self.other_agent]}
+        self.Agent = Agent
+        self.OtherAgent = OtherAgent
+        self.agent: Agent = None
+        self.other_agent: OtherAgent = None
+        self.agents: Dict[str, Agent] = {}
+        self.init_agents()
+        # self.agent = Agent("player_0", self.env.env_cfg)
+        # self.other_agent = OtherAgent("player_1", self.env.env_cfg)
+        # self.agents = {a.player: a for a in [self.agent, self.other_agent]}
 
         # For being able to undo
         self._previous_step = deque(maxlen=5)
@@ -149,9 +155,15 @@ class MyEnv:
         self._previous_obs = deque(maxlen=5)
         self._previous_env = deque(maxlen=5)
 
+    def init_agents(self):
+        self.agent = self.Agent("player_0", self.env.env_cfg)
+        self.other_agent = self.OtherAgent("player_1", self.env.env_cfg)
+        self.agents = {a.player: a for a in [self.agent, self.other_agent]}
+
     def run_early_setup(self):
         """Run through the placing factories stage"""
         # Reset
+        self.init_agents()
         self.obs = self.env.reset(self.seed)
         self.env_step = 0
         self.real_env_steps = 0
@@ -245,18 +257,26 @@ class MyEnv:
 
 
 class MyReplayEnv(MyEnv):
-    def __init__(self, seed, Agent, replay_json, other_player="player_1"):
-        super().__init__(seed, Agent, Agent)
+    def __init__(self, seed, Agent, replay_json, my_player="player_0"):
         self.replay_json = replay_json
-        self.other_player = other_player
+        self.player = my_player
+        self.other_player = 'player_1' if self.player == 'player_0' else 'player_0'
+        super().__init__(seed, Agent, Agent)
 
-        # Overwrite some things from MyEnv
+        self._all_actions = self._all_replay_actions()
+
+    def init_agents(self):
+        super().init_agents()
         self.other_agent = None
-        self.agents = {self.agent.player: self.agent}
+        if self.player == 'player_0':
+            self.agents = {self.agent.player: self.agent}
+        else:
+            self.agents = {self.other_agent.player: self.other_agent}
 
     def get_early_actions(self):
         actions = super().get_early_actions()
         actions[self.other_player] = self.get_replay_actions()
+        print(actions)
         return actions
 
     def get_actions(self):
@@ -264,14 +284,20 @@ class MyReplayEnv(MyEnv):
         actions[self.other_player] = self.get_replay_actions()
         return actions
 
+    def _all_replay_actions(self):
+        if 'actions' in self.replay_json:
+            return [self.replay_json["actions"][i][self.other_player] for i in range(len(self.replay_json['actions']))]
+        elif 'steps' in self.replay_json:
+            return [self.replay_json['steps'][i+1][int(self.other_player[-1])]['action'] for i in range(len(self.replay_json['steps'])-1)]
+
     def get_replay_actions(self, step=None, player=None):
         if step is None:
             step = self.env_step
         if player is None:
             player = self.other_player
-        all_step_actions = self.replay_json["actions"]
+        all_step_actions = self._all_actions
         if len(all_step_actions) > step:
-            actions = all_step_actions[step][player]
+            actions = all_step_actions[step]
             for k, acts in actions.items():
                 if isinstance(acts, list):
                     actions[k] = np.array(acts, dtype=int)
