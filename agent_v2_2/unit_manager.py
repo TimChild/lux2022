@@ -50,7 +50,7 @@ class UnitManager(abc.ABC):
 
     def power_cost_of_actions(self, rubble: np.ndarray):
         return util.power_cost_of_actions(
-            rubble=rubble, unit=self, actions=self.action_queue
+            start_pos=self.start_of_turn_pos, rubble=rubble, unit=self, actions=self.action_queue
         )
 
     def valid_moving_actions(

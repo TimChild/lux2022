@@ -431,7 +431,7 @@ class MiningRoutePlanner:
         # TODO: could this use future_rubble? Problem is that rubble may not yet be cleared
         if rubble is None:
             rubble = self.rubble
-        return power_cost_of_actions(rubble, self.unit, actions)
+        return power_cost_of_actions(self.unit.start_of_turn_pos, rubble, self.unit, actions)
 
 
 class MiningPlanner(Planner):

@@ -245,6 +245,9 @@ class MyEnv:
     def run_to_step(self, real_env_step: int):
         """Keep running until reaching real_env_step"""
         num_steps = real_env_step - self.real_env_steps
+        if num_steps < 1:
+            print(f'Already at step {self.real_env_steps}')
+            return
         for _ in tqdm(range(num_steps), total=num_steps):
             # while self.real_env_steps < real_env_step:
             success = self.step()
@@ -331,14 +334,14 @@ def num_turns_of_actions(actions: Union[np.ndarray, List[np.ndarray]]) -> int:
 
 
 def power_cost_of_actions(
-    rubble: np.ndarray, unit: UnitManager, actions: List[np.ndarray]
+    start_pos: POS_TYPE, rubble: np.ndarray, unit: UnitManager, actions: List[np.ndarray]
 ):
     """Power requirements of a list of actions
 
     Note: Does not check for invalid moves or actions
     """
     unit_cfg = unit.unit_config
-    pos = unit.pos
+    pos = tuple(start_pos)
 
     cost = 0
     for action in actions:

@@ -277,14 +277,15 @@ class RubbleRoutePlanner:
         # Calculate actions from factory (pickup power and move to good starting location)
         if self._unit_starting_on_factory():
             success = self._from_factory_actions()
+            logger.debug(f'from factory action success = {success}')
             if not success:
                 return False
 
-        kernel = 0.8 ** manhattan_kernel(5)
-
         # Calculate rubble route near good location until queue length reached
+        kernel = 0.8 ** manhattan_kernel(5)
         for i in range(20):  # max no. loops (should break out before this)
             if len(self.unit.action_queue) < self.target_queue_length:
+                logger.debug(f'Adding rubble_clear_action')
                 # How much power left to do rubble clearing
                 path_to_factory = self._path_to_factory()
                 cost_to_factory = power_cost_of_path(
@@ -321,6 +322,7 @@ class RubbleRoutePlanner:
                     * self.unit.unit_config.RUBBLE_MOVEMENT_COST
                     and (value_at_pos > 0 or value_to_move > 0)
                 ):
+                    logger.debug(f'Enough power to add another action. power_remaining = {power_remaining}')
                     # If enough power, get next action
                     success = self._calculate_next_action(
                         power_remaining=power_remaining,
@@ -332,11 +334,14 @@ class RubbleRoutePlanner:
                         logger.warning(f"Next action failed, at pos {self.unit.pos}")
                         return False
                 else:
+                    logger.debug(f'Not enough power remaining = {power_remaining}, adding path to factory')
                     # Otherwise path to factory and break out of loop (done)
                     if len(path_to_factory) > 0:
                         self.pathfinder.append_path_to_actions(
                             self.unit, path_to_factory
                         )
+                    else:
+                        logger.warning(f'{self.unit.log_prefix} No path back to factory')
                     break
         else:
             logger.error(f"Got stuck in loop, breaking out now")
@@ -407,32 +412,39 @@ class RubbleRoutePlanner:
 
     def _from_factory_actions(self) -> bool:
         """Generate starting actions assuming starting on factory"""
-        if self.unit.power < self.unit.unit_config.BATTERY_CAPACITY:
+        logger.debug(f'from_factory_actions')
+
+        # Only top up if need a significant amount of power
+        min_power = self.unit.unit_config.BATTERY_CAPACITY*0.85
+        if self.unit.power < min_power:
             power_to_pickup = self.unit.unit_config.BATTERY_CAPACITY - self.unit.power
+            logger.debug(f'topping up power from {self.unit.power} with {power_to_pickup}')
             if self.factory.power < power_to_pickup:
                 logger.warning(
                     f"{self.unit.unit_id} would like to pickup {power_to_pickup} but factory has {self.factory.power}. Not doing rubble clearing this turn"
                 )
                 return False
             if power_to_pickup > 0:
-                logger.info(f"topping up battery")
                 self.unit.action_queue.append(self.unit.pickup(POWER, power_to_pickup))
 
+        # Find next best boundary
+        logger.debug(f'Finding best boundary location')
         for i in range(5):
             boundary_values = self._get_boundary_values()
             max_value_coord = np.unravel_index(
                 np.argmax(boundary_values), boundary_values.shape
             )
-            logger.info(f"unit moving to {max_value_coord}")
             path = self.pathfinder.fast_path(
                 self.unit.pos,
                 end_pos=max_value_coord,
                 margin=2,
             )
             if len(path) > 0:
+                logger.info(f"unit moving to {max_value_coord}")
                 self.pathfinder.append_path_to_actions(self.unit, path)
                 return True
             else:
+                logger.debug(f'no path to {max_value_coord}, blocking and trying again')
                 self._future_value[max_value_coord[0], max_value_coord[1]] = 0
         else:
             logger.error(
@@ -460,7 +472,7 @@ class RubbleRoutePlanner:
         # TODO: could this use future_rubble? Problem is that rubble may not yet be cleared
         if rubble is None:
             rubble = self.rubble
-        return power_cost_of_actions(rubble, self.unit, actions)
+        return power_cost_of_actions(self.unit.start_of_turn_pos, rubble, self.unit, actions)
 
     def _path_to_factory(self) -> np.ndarray:
         return calc_path_to_factory(
