@@ -201,6 +201,19 @@ class ValidActionCalculator:
                     f"Transfer location {pos} not on factory, cannot transfer"
                 )
                 return False
+            if resource == util.ICE and unit.cargo.ice == 0:
+                logger.warning(f"Attempting to transfer ice with 0 ice in cargo")
+                return False
+            elif resource == util.ORE and unit.cargo.ore == 0:
+                logger.warning(f"Attempting to transfer ore with 0 ore in cargo")
+                return False
+            elif resource == util.METAL and unit.cargo.metal == 0:
+                logger.warning(f"Attempting to transfer metal with 0 metal in cargo")
+                return False
+            elif resource == util.WATER and unit.cargo.water == 0:
+                logger.warning(f"Attempting to transfer water with 0 water in cargo")
+                return False
+
         elif act_type == util.DIG:
             if unit_power < unit.unit_config.DIG_COST:
                 logger.debug(f"Not enough power to dig")

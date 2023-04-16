@@ -442,6 +442,9 @@ def should_unit_consider_acting(
     ):
         should_act.should_act = False
         should_act.reason = ActReasons.NOT_ENOUGH_POWER
+    elif unit.valid_moving_actions(unit.master.maps.rubble, max_len=1).was_valid is False:
+        should_act.should_act = True
+        should_act.reason = ActReasons.NEXT_ACTION_INVALID
     # If no queue
     elif len(unit.action_queue) == 0:
         should_act.should_act = True
@@ -476,7 +479,6 @@ def should_unit_consider_acting(
     else:
         should_act.should_act = False
         should_act.reason = ActReasons.NO_REASON_TO_ACT
-
     if should_act.should_act:
         logger.debug(f"{unit_id} should consider acting -- {should_act.reason}")
     else:
