@@ -192,7 +192,7 @@ class FactoryActionPlanner:
         - How many heavy units attacking
         - etc
         """
-        logger.function_call(f"Updating FactoryActionPlanner")
+        logger.info(f"Updating FactoryActionPlanner")
         # Remove any dead factories
         for k in set(self._factory_desires.keys()) - set(
             self.master.factories.friendly.keys()

@@ -22,7 +22,7 @@ class CombatPlanner:
 
     def attack(self, unit: FriendlyUnitManger, close_units: CloseUnits) -> bool:
         """Note: Unit MUST move, sitting still will result in automatic death on collision"""
-        logger.function_call(f"Attacking enemy")
+        logger.info(f"Attacking enemy")
         # If there is an enemy already detected close, go for that
         if close_units is not None:
             index_of_closest = close_units.other_unit_distances.index(
@@ -50,7 +50,7 @@ class CombatPlanner:
             return False
 
     def run_away(self, unit: FriendlyUnitManger):
-        logger.function_call(f"Running away to factory")
+        logger.info(f"Running away to factory")
         path_to_factory = util.calc_path_to_factory(
             self.master.pathfinder,
             unit.pos,
