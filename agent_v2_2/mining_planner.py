@@ -437,7 +437,6 @@ class MiningRoutePlanner:
 class MiningPlanner(Planner):
     def __init__(self, master_state: MasterState):
         self.master: MasterState = master_state
-        self._mining_routes = None
 
     def __repr__(self):
         return f"MiningPlanner[step={self.master.step}]"

@@ -334,6 +334,7 @@ def decide_action(
         unit_type: str,
         power_threshold: int,
     ) -> [None, str]:
+        # Only if close to other units
         if close_units is not None:
             close_enemies_within_2 = [
                 enemy
@@ -1173,31 +1174,6 @@ class UnitActionPlanner:
         unit.status.last_action_success = success
         return success
 
-    # def _deassign_unit_work(self, factory_infos: Dict[str, FactoryInfo], unit: FriendlyUnitManger):
-    #     """Remove currently assigned work since will be deciding again
-    #
-    #     Actually, this is too risky because it will mean reshuffling all the jobs every time units come near something
-    #
-    #     """
-    #     raise NotImplementedError('not a good idea I think')
-    #     unit.status.previous_action = unit.status.current_action
-    #     unit.status.current_action = actions.NOTHING
-    #     if unit.factory_id and unit.factory_id in factory_infos:
-    #         info = factory_infos[unit.factory_id]
-    #         if unit.unit_type == 'HEAVY':
-    #             if unit.status.previous_action == actions.MINE_ICE:
-    #                 info.heavy_mining_ice -= 1
-    #             elif unit.status.previous_action == actions.MINE_ORE:
-    #                 info.heavy_mining_ore -= 1
-    #             elif unit.status.previous_action == actions.ATTACK:
-    #                 info.heavy_attacking -= 1
-    #         else:
-    #             if unit.status.previous_action == actions.MINE_ORE:
-    #                 info.light_mining_ore -= 1
-    #             elif unit.status.previous_action == actions.CLEAR_RUBBLE:
-    #                 info.light_clearing_rubble -= 1
-    #             elif unit.status.previous_action == actions.ATTACK:
-    #                 info.light_attacking -= 1
 
     def decide_unit_actions(
         self,

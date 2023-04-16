@@ -25,44 +25,6 @@ if TYPE_CHECKING:
     pass
 
 
-class FactoryTurnPlanner:
-    def __init__(self, master: MasterState):
-        self.master = master
-
-    def get_observation_df(self):
-        """
-        - Gather info about factories and put into DF
-        - Sort so that top is highest priority factory (not sure this will make much difference anyway)
-        - Some of this is probably useful for units to decide on actions too
-        """
-        # factory_obs = {}
-        # for factory_id, factory in self.master.factories.friendly.items():
-        #     if factory_should_consider_acting(factory, self.master):
-        #         fobs = calculate_factory_obs(factory, self.master)
-        #         factory_obs[factory_id] = fobs
-
-    def get_actions(self):
-        """
-        - Determine actions based on info in DF
-
-        """
-        # factory_obs = self.get_observation_df()
-        #
-        # for index, row in factory_obs.iterrows():
-        #
-        #
-        # # Factory Actions
-        # factory_actions = {}
-        # for factory_id in factory_obs.keys():
-        #     factory = self.master.factories.friendly[factory_id]
-        #     fobs = factory_obs[factory_id]
-        #     f_action = calculate_factory_action(
-        #         factory=factory, fobs=fobs, master=self.master
-        #     )
-        #     if f_action is not None:
-        #         factory_actions[factory_id] = f_action
-
-
 class Agent:
     def __init__(self, player: str, env_cfg: EnvConfig):
         logger.info(f"Initializing agent for player {player}")
@@ -130,6 +92,7 @@ class Agent:
         self.mining_planner.update()
         self.rubble_clearing_planner.update()
         self.factory_action_planner.update()
+        self.combat_planner.update()
 
         factory_desires = self.factory_action_planner.get_factory_desires()
         factory_infos = self.factory_action_planner.get_factory_infos()
