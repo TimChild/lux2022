@@ -375,12 +375,14 @@ class FactoryActionPlanner:
 
     def _water(self, info: FactoryInfo, desire: FactoryDesires) -> [None, int]:
         min_water = 100
+        if 0 < self.master.step <= 300:
+            min_water = 200
         if 0 < self.master.step <= 500:
-            min_water = 100
+            min_water = 800
         elif 500 < self.master.step <= 850:
-            min_water = 1000
+            min_water = 1500
         elif 850 < self.master.step < 1000:
-            min_water = 50
+            min_water = 150
         if info.water - info.water_cost > min_water:
             return info.factory.water()
         return None
