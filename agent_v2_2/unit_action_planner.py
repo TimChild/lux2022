@@ -415,6 +415,7 @@ class ActReasons(Enum):
     COLLISION_WITH_FRIENDLY = "collision with friendly"
     CLOSE_TO_ENEMY = "close to enemy"
     NEXT_ACTION_INVALID = "next action invalid"
+    NEXT_ACTION_INVALID_MOVE = "next action invalid move"
     NEXT_ACTION_PICKUP = "next action pickup"
     NEXT_ACTION_DIG = "next action dig"
     NEXT_ACTION_TRANSFER = "next action transfer"
@@ -444,7 +445,7 @@ def should_unit_consider_acting(
         should_act.reason = ActReasons.NOT_ENOUGH_POWER
     elif unit.valid_moving_actions(unit.master.maps.rubble, max_len=1).was_valid is False:
         should_act.should_act = True
-        should_act.reason = ActReasons.NEXT_ACTION_INVALID
+        should_act.reason = ActReasons.NEXT_ACTION_INVALID_MOVE
     # If no queue
     elif len(unit.action_queue) == 0:
         should_act.should_act = True
@@ -1204,13 +1205,20 @@ class UnitActionPlanner:
                     f"Re-assigning to {factory_id} because no factory assigned"
                 )
 
+            # Get the specific costmap for this unit (i.e. blocked enemies and friendly paths)
+            travel_costmap = self._get_travel_costmap_for_unit(
+                unit=unit,
+                base_costmap=base_costmap,
+                units_to_act=units_to_act,
+            )
+
             # If only considering because action *might* be invalid, check now
             if unit_info.act_info.reason in [
                 ActReasons.NEXT_ACTION_PICKUP,
                 ActReasons.NEXT_ACTION_TRANSFER,
                 ActReasons.NEXT_ACTION_DIG,
             ]:
-                if action_validator.next_action_valid(unit):
+                if action_validator.next_action_valid(unit) and unit.valid_moving_actions(costmap=travel_costmap, max_len=1).was_valid:
                     logger.debug(f"Next action IS valid, no need to update")
                     # Make sure the next action is taken into account for next validation
                     action_validator.apply_next_action(unit)
@@ -1218,13 +1226,6 @@ class UnitActionPlanner:
                     continue
                 else:
                     logger.debug(f"Next action NOT valid, will recalculate actions")
-
-            # Get the specific costmap for this unit (i.e. blocked enemies and friendly paths)
-            travel_costmap = self._get_travel_costmap_for_unit(
-                unit=unit,
-                base_costmap=base_costmap,
-                units_to_act=units_to_act,
-            )
 
             # Figure out new actions for unit  (i.e. RoutePlanners)
             unit.action_queue = []

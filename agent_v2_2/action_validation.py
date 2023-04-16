@@ -180,7 +180,25 @@ class ValidActionCalculator:
         unit_power = unit.start_of_turn_power
         unit_pos = unit.start_of_turn_pos
 
-        if act_type == util.PICKUP:
+
+        if act_type == util.MOVE:
+            valid = unit.valid_moving_actions(
+                self.allowed_travel_map, max_len=1, ignore_repeat=True
+            )
+            if valid.was_valid is False:
+                logger.warning(f"Move not valid because {valid.invalid_reasons[0]}")
+                return False
+            move_cost = util.power_cost_of_path(
+                [unit_pos, util.add_direction_to_pos(unit_pos, direction)],
+                self.maps.rubble,
+                unit.unit_type,
+            )
+            if unit_power < move_cost:
+                logger.info(
+                    f"Move not valid because not enough power {unit_power} < {move_cost}"
+                )
+                return False
+        elif act_type == util.PICKUP:
             f_num = self.maps.factory_maps.friendly[unit_pos[0], unit_pos[1]]
             if not f_num >= 0:
                 logger.warning(f"Unit not on factory, cannot pickup")
@@ -224,23 +242,6 @@ class ValidActionCalculator:
             lichen = self.maps.lichen[unit_pos[0], unit_pos[1]]
             if not any([ice, ore, rubble, lichen]):
                 logger.warning(f"Nothing to dig under unit")
-                return False
-        elif act_type == util.MOVE:
-            valid = unit.valid_moving_actions(
-                self.allowed_travel_map, max_len=1, ignore_repeat=True
-            )
-            if valid.was_valid is False:
-                logger.warning(f"Move not valid because {valid.invalid_reasons[0]}")
-                return False
-            move_cost = util.power_cost_of_path(
-                [unit_pos, util.add_direction_to_pos(unit_pos, direction)],
-                self.maps.rubble,
-                unit.unit_type,
-            )
-            if unit_power < move_cost:
-                logger.info(
-                    f"Move not valid because not enough power {unit_power} < {move_cost}"
-                )
                 return False
         elif act_type == util.DESTRUCT:
             if unit_power < unit.unit_config.SELF_DESTRUCT_COST:
