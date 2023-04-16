@@ -205,7 +205,7 @@ class FactoryActionPlanner:
         self._update_factory_info()
 
         # Calculate new desires for first X turns and then every 50 after that
-        if self.master.step < 10 or self.master.step % 20 == 0:
+        if self.master.step == 0 or self.master.step % 20 == 0:
             self._update_factory_desires()
 
     def get_factory_desires(self) -> Dict[str, FactoryDesires]:

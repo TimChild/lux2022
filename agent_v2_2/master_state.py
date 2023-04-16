@@ -402,7 +402,7 @@ class Factories:
         # Remove dead
         for k in set(f_dict.keys()) - set(factories.keys()):
             dead_factory = f_dict.pop(k)
-            logger.info(f"Friendly {k} died, being removed")
+            logger.info(f"Enemy {k} died, being removed")
             dead_factory.dead()
 
 
