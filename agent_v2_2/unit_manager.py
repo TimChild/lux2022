@@ -31,7 +31,9 @@ def get_index(lst, index, default=None):
 class Status:
     current_action: str
     previous_action: str
+    last_action_update_step: int
     last_action_success: bool
+
 
 
 class UnitManager(abc.ABC):
@@ -47,6 +49,8 @@ class UnitManager(abc.ABC):
         # Keep track of pos a start of turn because pos will be updated while planning what to do next
         self.start_of_turn_pos = tuple(unit.pos)
         self.start_of_turn_power = unit.power
+
+
 
     def power_cost_of_actions(self, rubble: np.ndarray):
         return util.power_cost_of_actions(
@@ -152,6 +156,7 @@ class FriendlyUnitManger(UnitManager):
         self.status: Status = Status(
             current_action=actions.NOTHING,
             previous_action=actions.NOTHING,
+            last_action_update_step=0,
             last_action_success=True,
         )
         self.start_of_turn_actions = []
@@ -159,6 +164,13 @@ class FriendlyUnitManger(UnitManager):
     def update(self, unit: Unit):
         super().update(unit)
         self.start_of_turn_actions = copy.copy(unit.action_queue)
+
+    def update_status(self, new_action, success: bool):
+        """Update unit status with new action"""
+        self.status.previous_action = self.status.current_action
+        self.status.current_action = new_action
+        self.status.last_action_success = success
+        self.status.last_action_update_step = self.master.step
 
     def on_own_factory(self) -> bool:
         """Is this unit on its own factory"""

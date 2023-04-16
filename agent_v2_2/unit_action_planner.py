@@ -34,7 +34,6 @@ def find_collisions(
     """Find the first collision point between this_unit and each other_unit
     I.e. Only first collision coordinate when comparing the two paths
     """
-    # print(f'Finding collisions for {this_unit.unit_id}, len(other) = {len(other_units)}, max_step={max_step}, other_is_enemy={other_is_enemy}')
     this_path = this_unit.current_path(max_len=max_step)
 
     collisions = {}
@@ -63,76 +62,12 @@ def find_collisions(
     return collisions
 
 
-# def find_collisions1(
-#     all_unit_paths: AllUnitPaths, check_num_steps: int = None
-# ) -> List[Collision]:
-#     """
-#     Find collisions between friendly units and all units (friendly and enemy) in the given paths.
-#
-#     Args:
-#         all_unit_paths: AllUnitPaths object containing friendly and enemy unit paths.
-#
-#     Returns:
-#         A list of Collision objects containing information about each detected collision.
-#     """
-#     collisions = []
-#
-#     friendly_units = {**all_unit_paths.friendly.light, **all_unit_paths.friendly.heavy}
-#     enemy_units = {**all_unit_paths.enemy.light, **all_unit_paths.enemy.heavy}
-#
-#     for unit_id, unit_path in friendly_units.items():
-#         # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-#         #     print('looking at unit_19')
-#         logger.debug(f"Checking collisions for {unit_id}")
-#         for other_unit_id, other_unit_path in {**friendly_units, **enemy_units}.items():
-#             # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-#             #     print('other', other_unit_id)
-#             # Skip self-comparison
-#             if unit_id == other_unit_id:
-#                 continue
-#
-#             # Find the minimum path length to avoid index out of range errors
-#             min_path_length = min(len(unit_path), len(other_unit_path))
-#             # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-#             #     print('min', min_path_length)
-#
-#             # Optionally only check fewer steps
-#             _check = (
-#                 min_path_length
-#                 if check_num_steps is None
-#                 else min(min_path_length, check_num_steps)
-#             )
-#             # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-#             #     print('check', _check)
-#             #     print('other_path', other_unit_path)
-#
-#             # Check if there's a collision at any step up to check_num_steps
-#             for step in range(_check):
-#                 # if unit_id == 'unit_19' and other_unit_id == 'unit_23':
-#                 #     print('other_path at step',step,  other_unit_path[step])
-#                 if np.array_equal(unit_path[step], other_unit_path[step]):
-#                     logger.debug(
-#                         f"Collision found at step {step} pos {unit_path[step]} with {other_unit_id}"
-#                     )
-#                     collision = Collision(
-#                         unit_id=unit_id,
-#                         other_unit_id=other_unit_id,
-#                         other_unit_is_enemy=False
-#                         if other_unit_id in friendly_units
-#                         else True,
-#                         pos=tuple(unit_path[step]),
-#                         step=step,
-#                     )
-#                     collisions.append(collision)
-#
-#     return collisions
-
-
 @dataclass
 class UnitInfo:
     unit: FriendlyUnitManger
     act_info: ActInfo
     unit_id: str
+    last_action_update_step: int
     len_action_queue: int
     distance_to_factory: Optional[float]
     is_heavy: bool
@@ -141,6 +76,36 @@ class UnitInfo:
     power: int
     ice: int
     ore: int
+
+    @classmethod
+    def from_data(cls, unit: FriendlyUnitManger, act_info: ActInfo, distance_map: np.ndarray):
+        unit_factory = unit.factory
+
+        unit_info = cls(
+            unit=unit,
+            act_info=act_info,
+            unit_id=unit.unit_id,
+            last_action_update_step=unit.status.last_action_update_step,
+            len_action_queue=len(unit.action_queue),
+            distance_to_factory=(
+                distance_map[
+                    unit_factory.factory.pos[0], unit_factory.factory.pos[1]
+                ]
+                if unit_factory
+                else np.nan
+            ),
+            is_heavy=unit.unit_type == "HEAVY",
+            unit_type=unit.unit_type,
+            enough_power_to_move=(
+                    unit.power
+                    > unit.unit_config.MOVE_COST
+                    + unit.unit_config.ACTION_QUEUE_POWER_COST
+            ),
+            power=unit.power,
+            ice=unit.cargo.ice,
+            ore=unit.cargo.ore,
+        )
+        return unit_info
 
 
 @dataclass
@@ -151,24 +116,25 @@ class UnitInfos:
         """
         Sorts units by priority by first converting to a dataframe and then doing some ordered sorting
         """
-        logger.function_call(f"sort_units_by_priority called")
+        logger.info(f"sort_units_by_priority called")
         if len(self.infos) == 0:
             logger.debug("No unit_infos data to sort")
             return None
-        df = unit_infos_to_df(self.infos)
+
+        df = self.to_df()
+        # Heavy first, if not enough power to move go next (to fix path for others), older paths get priority
         sorted_df = df.sort_values(
-            by=["is_heavy", "enough_power_to_move", "power", "ice", "ore"],
-            ascending=[False, False, True, False, True],
+            by=["is_heavy", "enough_power_to_move", "last_action_update_step"],
+            ascending=[False, True, True],
         )
         highest = sorted_df.iloc[0]
         lowest = sorted_df.iloc[-1]
 
-        logger.debug(
-            f"Unit with highest priority: {highest.unit_id}  ({highest.unit.pos}), is_heavy={highest.is_heavy}, power={highest.power}, ice={highest.ice}, ore={highest.ore}, len_acts={highest.len_action_queue}"
-        )
-        logger.debug(
-            f"Unit with lowest priority: {lowest.unit_id}  ({lowest.unit.pos}), is_heavy={lowest.is_heavy}, power={lowest.power}, ice={lowest.ice}, ore={lowest.ore}, len_acts={lowest.len_action_queue}"
-        )
+        for series, priority in zip([highest, lowest], ['higheset', 'lowest']):
+            logger.debug(
+                f"Unit with {priority} priority: {series.unit_id}  ({series.unit.pos}), is_heavy={series.is_heavy}, "
+                f"last_acted_step={series.last_action_update_step}, power={series.power}, ice={series.ice}, ore={series.ore}, len_acts={series.len_action_queue}"
+            )
         ordered_infos = OrderedDict()
         for unit_id in sorted_df.index:
             ordered_infos[unit_id] = self.infos[unit_id]
@@ -177,17 +143,16 @@ class UnitInfos:
         return None
 
 
-def unit_infos_to_df(unit_infos: Dict[str, UnitInfo]) -> pd.DataFrame:
-    # Convert the list of UnitInfo instances to a list of dictionaries
-    unit_info_dicts = [unit_info.__dict__ for unit_info in unit_infos.values()]
+    def to_df(self) -> pd.DataFrame:
+        # Convert the list of UnitInfo instances to a list of dictionaries
+        unit_info_dicts = [unit_info.__dict__ for unit_info in self.infos.values()]
 
-    # Create a DataFrame from the list of dictionaries
-    df = pd.DataFrame(unit_info_dicts)
+        # Create a DataFrame from the list of dictionaries
+        df = pd.DataFrame(unit_info_dicts)
 
-    # Set the 'unit_id' column as the DataFrame index
-    df.index = df["unit_id"]
-    # df.set_index("unit_id", inplace=True)
-    return df
+        # Set the 'unit_id' column as the DataFrame index
+        df.index = df["unit_id"]
+        return df
 
 
 @dataclass
@@ -327,7 +292,7 @@ def decide_action(
     Note: Should only switch from current job to attack/run_away or if it back at the factory
 
     """
-    logger.function_call(f"Deciding action for {unit_info.unit_id}")
+    logger.info(f"Deciding action for {unit_info.unit_id}")
 
     def attack_or_run_away(
         close_units: CloseUnits,
@@ -561,8 +526,8 @@ def _decide_collision_avoidance(
 
 
 class UnitActionPlanner:
-    # Look for close units within this distance
-    search_dist = 5
+    # How far should distance map extend (padded with max value after that)
+    max_distance_map_dist = 20
     # What is considered a close unit when considering future paths
     close_threshold = 4
     # If there will be a collision within this many steps consider acting
@@ -589,6 +554,7 @@ class UnitActionPlanner:
         self._costmap: np.ndarray = None
         self._upcoming_collisions: AllCollisionsForUnit = None
         self._close_units: AllCloseUnits = None
+        self._start_distance_maps = {}
 
     def update(
         self,
@@ -603,6 +569,7 @@ class UnitActionPlanner:
         self._costmap = None
         self._upcoming_collisions = None
         self._close_units = None
+        self._start_distance_maps = {}
 
         # Validate and replace enemy actions so that their move path is correct (i.e. cannot path through friendly
         # factories or off edge of map, so replace those moves with move.CENTER)
@@ -642,7 +609,7 @@ class UnitActionPlanner:
         Returns:
             Instance of UnitsToAct
         """
-        logger.function_call(
+        logger.info(
             f"units_should_consider_acting called with len(units): {len(units)}"
         )
 
@@ -682,7 +649,7 @@ class UnitActionPlanner:
                 # For all friendly units, figure out which friendly and enemy they are near
                 for unit_id, unit in self.master.units.friendly.all.items():
                     # print(f'For {unit_id}:')
-                    unit_distance_map = self._unit_distance_map(unit_id)
+                    unit_distance_map = self._unit_start_distance_map(unit_id)
                     close = CloseUnits(unit_id=unit_id, unit_pos=unit.pos)
                     for other_id, other_unit in other_units.items():
                         # print(f'checking {other_id}')
@@ -713,18 +680,19 @@ class UnitActionPlanner:
         close_units = self._calculate_close_units()
         return close_units.close_to_enemy
 
-    # @functools.lru_cache(maxsize=128)
-    def _unit_distance_map(self, unit_id: str) -> np.ndarray:
-        """Calculate the distance map for the given unit, this will be used to determine how close other units are"""
-        unit = self.master.units.get_unit(unit_id)
-        unit_distance_map = util.pad_and_crop(
-            util.manhattan_kernel(self.search_dist),
-            large_arr=self.master.maps.rubble,
-            x1=unit.pos[0],
-            y1=unit.pos[1],
-            fill_value=self.search_dist,
-        )
-        return unit_distance_map
+    def _unit_start_distance_map(self, unit_id: str) -> np.ndarray:
+        """Calculate the distance map for the given unit at the start of turn, this will be used to determine how close other units are"""
+        if unit_id not in self._start_distance_maps:
+            unit = self.master.units.get_unit(unit_id)
+            unit_distance_map = util.pad_and_crop(
+                util.manhattan_kernel(self.max_distance_map_dist),
+                large_arr=self.master.maps.rubble,
+                x1=unit.pos[0],
+                y1=unit.pos[1],
+                fill_value=self.max_distance_map_dist,
+            )
+            self._start_distance_maps[unit_id] = unit_distance_map
+        return self._start_distance_maps[unit_id]
 
     def _collect_unit_data(self, act_infos: Dict[str, ActInfo]) -> UnitInfos:
         """
@@ -739,32 +707,10 @@ class UnitActionPlanner:
         data = {}
         for unit_id, act_info in act_infos.items():
             unit = act_info.unit
-            unit_factory = self.master.factories.friendly.get(unit.factory_id, None)
-            unit_distance_map = self._unit_distance_map(unit_id)
+            unit_distance_map = self._unit_start_distance_map(unit_id)
 
-            unit_info = UnitInfo(
-                unit=unit,
-                act_info=act_info,
-                unit_id=unit.unit_id,
-                len_action_queue=len(unit.action_queue),
-                distance_to_factory=(
-                    unit_distance_map[
-                        unit_factory.factory.pos[0], unit_factory.factory.pos[1]
-                    ]
-                    if unit_factory
-                    else np.nan
-                ),
-                is_heavy=unit.unit_type == "HEAVY",
-                unit_type=unit.unit_type,
-                enough_power_to_move=(
-                    unit.power
-                    > unit.unit_config.MOVE_COST
-                    + unit.unit_config.ACTION_QUEUE_POWER_COST
-                ),
-                power=unit.power,
-                ice=unit.cargo.ice,
-                ore=unit.cargo.ore,
-            )
+            unit_info = UnitInfo.from_data(unit=unit, act_info=act_info, distance_map=unit_distance_map)
+
             data[unit_id] = unit_info
         return UnitInfos(infos=data)
 
@@ -974,7 +920,7 @@ class UnitActionPlanner:
             units_to_act: UnitsToAct instance containing units that need to act and units that should not act.
             unit: Unit to get the costmap for (i.e. distances calculated relative to this unit)
         """
-        logger.function_call(f"Calculating costmap with paths for unit {unit.unit_id}")
+        logger.info(f"Calculating costmap with paths for unit {unit.unit_id}")
         new_cost = base_costmap.copy()
 
         all_close_units = self._calculate_close_units()
@@ -1033,7 +979,7 @@ class UnitActionPlanner:
         combat_planner: CombatPlanner,
     ) -> bool:
         """Calculate new actions for this unit"""
-        logger.function_call(
+        logger.info(
             f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, current_action = {unit.status.current_action}"
         )
         # Update the master pathfinder with newest Pather (full_costmap changes for each unit)
@@ -1108,8 +1054,6 @@ class UnitActionPlanner:
         rubble_planner: RubbleClearingPlanner,
         combat_planner: CombatPlanner,
     ):
-        unit.status.previous_action = unit.status.current_action
-        unit.status.current_action = actions.NOTHING
         success = False
         if desired_action == actions.ATTACK:
             success = combat_planner.attack(unit, possible_close_enemy)
@@ -1169,11 +1113,10 @@ class UnitActionPlanner:
             success = True
         else:
             logger.error(f"{desired_action} not understood as an action")
+            success = False
 
-        unit.status.current_action = desired_action
-        unit.status.last_action_success = success
+        unit.update_status(new_action=desired_action, success=success)
         return success
-
 
     def decide_unit_actions(
         self,
@@ -1189,7 +1132,7 @@ class UnitActionPlanner:
         Returns:
             Actions to update units with
         """
-        logger.function_call(
+        logger.info(
             f"process_units called with mining_planner: {mining_planner}, rubble_clearing_planner: {rubble_clearing_planner}"
         )
 
