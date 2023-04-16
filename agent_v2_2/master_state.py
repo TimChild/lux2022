@@ -314,8 +314,8 @@ class FriendlyUnits(Units):
         # For all units on team
         unit_dicts = {"LIGHT": self.light, "HEAVY": self.heavy}
         for unit_id, unit in units.items():
-            unit = copy.deepcopy(unit)
-            ######################################################################################################
+            # unit = copy.deepcopy(unit)
+            # ######################################################################################################
             u_dict = unit_dicts[unit.unit_type]
 
             # Update existing
@@ -482,22 +482,27 @@ class Maps:
         self.ore: np.ndarray = None
         self.rubble: np.ndarray = None
         self.lichen: np.ndarray = None
+        self.lichen_strains: np.ndarray = None
         self.factory_maps: FactoryMaps = None
 
-        self.first_update = False
+        self.first_update_done = False
 
     def update(self, game_state: GameState, player: str):
         board = game_state.board
-        if not self.first_update:
-            self.ice = board.ice
-            self.ore = board.ore
-            self.first_update = True
-        self.rubble = board.rubble
-        self.lichen = board.lichen
+        if not self.first_update_done:
+            # These don't change
+            self.ice = board.ice.copy()
+            self.ore = board.ore.copy()
+            self.first_update_done = True
+        self.rubble = board.rubble.copy()
+        self.lichen = board.lichen.copy()
+        self.lichen_strains = board.lichen_strains.copy()
         self.factory_maps = FactoryMaps.from_game_state(
             game_state=game_state, player=player
         )
-        # self.unit_map = game_state.units.
+
+    def test(self):
+        print(f'lichen is {self.lichen.sum()}')
 
     def resource_at_tile(self, pos) -> int:
         pos = tuple(pos)

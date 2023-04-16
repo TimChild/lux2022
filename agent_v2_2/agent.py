@@ -51,6 +51,7 @@ class Agent:
         """Use the step and obs to update any turn based info (e.g. map changes)"""
         logger.info(f"Beginning of step update for step {step}")
         game_state = obs_to_game_state(step, self.env_cfg, obs)
+        # print(f'lichen in board = ', game_state.board.lichen.sum())
         # TODO: Use last obs to see what has changed to optimize update? Or master does this?
         self.master.update(game_state)
         self.last_obs = obs

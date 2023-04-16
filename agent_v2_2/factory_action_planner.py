@@ -11,7 +11,6 @@ from lux.factory import Factory
 from factory_manager import FriendlyFactoryManager
 import actions
 
-
 from master_state import MasterState
 import util
 from config import get_logger
@@ -39,23 +38,36 @@ class FactoryInfo:
     num_heavy: int
     num_light: int
     water_cost: int
-    connected_zeros: int
-    lichen_tiles: int
+    connected_growable_space: int
+    num_lichen_tiles: int
     total_lichen: int
+
     # Below should be equivalent to factory desires
     light_mining_ore: int
+    light_mining_ice: int
     light_clearing_rubble: int
     light_attacking: int
     heavy_mining_ice: int
     heavy_mining_ore: int
+    heavy_clearing_rubble: int
     heavy_attacking: int
 
     @classmethod
-    def init(cls, master: MasterState, factory: FriendlyFactoryManager) -> FactoryInfo:
-        lichen_id, lichen_locations, lichen = cls._get_lichen_info(master, factory)
+    def init(cls, master: MasterState, factory: FriendlyFactoryManager,
+             previous: [None, FactoryInfo] = None) -> FactoryInfo:
         current_light_actions = factory.get_light_actions()
         current_heavy_actions = factory.get_heavy_actions()
-        connected_zeros = cls._get_connected_zeros(master.maps.rubble, factory.pos)
+
+        lichen = factory.own_lichen
+        connected_zeros = util.connected_array_values_from_pos(master.maps.rubble, factory.pos, connected_value=0)
+        # ID array of other lichen
+        other_lichen = master.maps.lichen_strains.copy()
+        # Set own lichen to -1 (like no lichen)
+        other_lichen[other_lichen == factory.lichen_id] = -1
+        # Zero rubble, and no other lichen, no ice, no ore, not under factory
+        connected_growable_space = int(
+            np.sum((connected_zeros > 0) & (other_lichen < 0) & (master.maps.ice == 0) & (master.maps.ore == 0) & (master.maps.factory_maps.all < 0)))
+
         factory_info = cls(
             factory=factory.factory,
             factory_id=factory.unit_id,
@@ -68,55 +80,34 @@ class FactoryInfo:
             num_heavy=len(factory.heavy_units),
             num_light=len(factory.light_units),
             water_cost=factory.factory.water_cost(master.game_state),
-            connected_zeros=connected_zeros,
-            lichen_tiles=int(np.sum(lichen_locations)),
+            connected_growable_space=connected_growable_space,
+            num_lichen_tiles=int(np.sum(lichen > 0)),
             total_lichen=int(np.sum(lichen)),
             light_mining_ore=len(current_light_actions.mining_ore),
+            light_mining_ice=len(current_light_actions.mining_ice),
             light_clearing_rubble=len(current_light_actions.clearing_rubble),
             light_attacking=len(current_light_actions.attacking),
             heavy_mining_ice=len(current_heavy_actions.mining_ice),
             heavy_mining_ore=len(current_heavy_actions.mining_ore),
+            heavy_clearing_rubble=len(current_heavy_actions.clearing_rubble),
             heavy_attacking=len(current_heavy_actions.attacking),
         )
-        logger.debug(
-            f"light_ore: {factory_info.light_mining_ore}, light_rubble: {factory_info.light_clearing_rubble}, heavy_ice: {factory_info.heavy_mining_ice}"
-        )
+
+        if previous:
+            cls.update_averages(factory_info, previous)
         return factory_info
 
-    def update(self, master: MasterState, factory: FriendlyFactoryManager):
-        lichen_id, lichen_locations, lichen = self._get_lichen_info(master, factory)
-        current_light_actions = factory.get_light_actions()
-        current_heavy_actions = factory.get_heavy_actions()
-        connected_zeros = self._get_connected_zeros(master.maps.rubble, factory.pos)
-
-        # never changes
-        # self.factory_id
-        # self.pos
-
+    @staticmethod
+    def update_averages(new_info: FactoryInfo, previous_info: FactoryInfo):
         # Average some things
         # Roughly like average of last 10 values
-        self.power = int(self.power * 0.9 + 0.1 * factory.power)
-        self.water = int(self.water * 0.9 + 0.1 * factory.factory.cargo.water)
-        self.ice = int(self.ice * 0.9 + 0.1 * factory.factory.cargo.ice)
-        self.ore = int(self.ore * 0.9 + 0.1 * factory.factory.cargo.ore)
-        self.metal = int(self.metal * 0.9 + 0.1 * factory.factory.cargo.metal)
-        self.water_cost = int(
-            self.water_cost * 0.9 + 0.1 * factory.factory.water_cost(master.game_state)
-        )
-
-        # Replace some things
-        self.factory = factory.factory
-        self.connected_zeros = connected_zeros
-        self.lichen_tiles = int(np.sum(lichen_locations))
-        self.total_lichen = int(np.sum(lichen))
-        self.num_light = len(factory.light_units)
-        self.num_heavy = len(factory.heavy_units)
-        self.light_mining_ore = len(current_light_actions.mining_ore)
-        self.light_clearing_rubble = len(current_light_actions.clearing_rubble)
-        self.light_attacking = len(current_light_actions.attacking)
-        self.heavy_mining_ice = len(current_heavy_actions.mining_ice)
-        self.heavy_mining_ore = len(current_heavy_actions.mining_ore)
-        self.heavy_attacking = len(current_heavy_actions.attacking)
+        # new_info.power = int(previous_info.power * 0.9 + 0.1 * new_info.power)
+        # new_info.water = int(previous_info.water * 0.9 + 0.1 * new_info.water)
+        # new_info.ice = int(previous_info.ice * 0.9 + 0.1 * new_info.ice)
+        # new_info.ore = int(previous_info.ore * 0.9 + 0.1 * new_info.ore)
+        # new_info.metal = int(previous_info.metal * 0.9 + 0.1 * new_info.metal)
+        # new_info.water_cost = int(previous_info.water_cost * 0.9 + 0.1 * new_info.water_cost)
+        pass
 
     def remove_unit_from_current_count(self, unit: FriendlyUnitManger):
         if not unit.factory_id == self.factory_id:
@@ -144,34 +135,99 @@ class FactoryInfo:
 
     @staticmethod
     def _get_connected_zeros(rubble: np.ndarray, factory_pos: util.POS_TYPE):
-        return int(
-            np.sum(
-                util.connected_array_values_from_pos(
-                    rubble, factory_pos, connected_value=0
-                )
-            )
-        )
-
-    @staticmethod
-    def _get_lichen_info(master: MasterState, factory: FriendlyFactoryManager):
-        lichen_id = factory.factory.strain_id
-        lichen_locations = master.game_state.board.lichen_strains == lichen_id
-        lichen = master.game_state.board.lichen
-        lichen[lichen_locations != 1] = 0
-        return lichen_id, lichen_locations, lichen
+        return
 
 
 @dataclass
 class FactoryDesires:
     heavy_mining_ice: int = 1
     heavy_mining_ore: int = 0
+    heavy_clearing_rubble: int = 0
     heavy_attacking: int = 0
-    light_mining_ore: int = 0
+    light_mining_ore: int = 1
+    light_mining_ice: int = 0
     light_clearing_rubble: int = 0
     light_attacking: int = 0
 
+    def total_light(self):
+        return self.light_mining_ice + self.light_mining_ore + self.light_clearing_rubble + self.light_attacking
+
+    def total_heavy(self):
+        return self.heavy_mining_ice + self.heavy_mining_ore + self.heavy_clearing_rubble + self.heavy_attacking
+
     def copy(self) -> FactoryDesires:
         return copy.copy(self)
+
+    def update_desires(self, info: FactoryInfo,
+                       light_energy_consideration=1000,
+                       light_rubble_min_tiles=10,
+                       light_rubble_max_tiles=50,
+                       light_rubble_max_num=2,
+                       light_metal_min=50,
+                       light_metal_max=200,
+                       light_metal_max_num=5,
+                       light_water_min=50,
+                       light_water_max=500,
+                       light_water_max_num=3,
+                       heavy_energy_consideration=1000,
+                       heavy_rubble_min_tiles=30,
+                       heavy_rubble_max_tiles=50,
+                       heavy_rubble_max_num=2,
+                       heavy_metal_min=100,
+                       heavy_metal_max=300,
+                       heavy_metal_max_num=5,
+                       heavy_water_min=200,
+                       heavy_water_max=2500,
+                       heavy_water_max_num=3,
+                       ):
+        # Consider more LIGHT units
+        power_req_met = info.power > light_energy_consideration
+        # Rubble
+        expansion_tiles = info.connected_growable_space - info.num_lichen_tiles
+        if expansion_tiles < light_rubble_min_tiles and power_req_met:
+            self.light_clearing_rubble = min(light_rubble_max_num, info.light_clearing_rubble + 1)
+        elif expansion_tiles > light_rubble_max_tiles:
+            self.light_clearing_rubble = max(0, info.light_clearing_rubble - 1)
+
+        # Ore
+        if info.metal < light_metal_min and power_req_met:
+            self.light_mining_ore = min(light_metal_max_num, info.light_mining_ore + 1)
+        elif info.metal > light_metal_max:
+            self.light_mining_ore = max(0, info.light_mining_ore - 1)
+
+        # Ice
+        if info.water < light_water_min and power_req_met:
+            self.light_mining_ice = min(light_water_max_num, info.light_mining_ice + 1)
+        elif info.water > light_water_max:
+            self.light_mining_ice = max(0, info.light_mining_ice - 1)
+
+        # Attack
+        pass
+
+        power_req_met = info.power > heavy_energy_consideration
+
+        # Consider more HEAVY units
+        # Ice
+        if info.water < heavy_water_min and power_req_met:
+            self.heavy_mining_ice = min(heavy_water_max_num, info.heavy_mining_ice + 1)
+        elif info.water > heavy_water_max:
+            self.heavy_mining_ice = max(0, info.heavy_mining_ice - 1)
+
+        # Ore
+        if info.metal < heavy_metal_min and power_req_met:
+            self.heavy_mining_ore = min(heavy_metal_max_num, info.heavy_mining_ore + 1)
+        elif info.metal > heavy_metal_max:
+            self.heavy_mining_ore = max(0, info.heavy_mining_ore - 1)
+
+        # Rubble
+        expansion_tiles = info.connected_growable_space - info.num_lichen_tiles
+        if expansion_tiles < heavy_rubble_min_tiles and power_req_met:
+            self.heavy_clearing_rubble = min(heavy_rubble_max_num, info.heavy_clearing_rubble + 1)
+        elif expansion_tiles > heavy_rubble_max_tiles:
+            self.heavy_clearing_rubble = max(0, info.heavy_clearing_rubble - 1)
+
+        # Attack
+        pass
 
 
 class FactoryActionPlanner:
@@ -193,9 +249,9 @@ class FactoryActionPlanner:
         - etc
         """
         logger.info(f"Updating FactoryActionPlanner")
-        # Remove any dead factories
+        # Remove any dead factories from lists
         for k in set(self._factory_desires.keys()) - set(
-            self.master.factories.friendly.keys()
+                self.master.factories.friendly.keys()
         ):
             logger.info(f"Removing factory {k}, assumed dead")
             self._factory_desires.pop(k)
@@ -204,8 +260,8 @@ class FactoryActionPlanner:
         # Update their infos
         self._update_factory_info()
 
-        # Calculate new desires for first X turns and then every 50 after that
-        if self.master.step == 0 or self.master.step % 20 == 0:
+        # Calculate new desires for turn and then every X after that
+        if self.master.step == 0 or self.master.step % 10 == 0:
             self._update_factory_desires()
 
     def get_factory_desires(self) -> Dict[str, FactoryDesires]:
@@ -218,14 +274,11 @@ class FactoryActionPlanner:
         """Update info about the factory (uses a sort of rolling average in updating)"""
         for f_id, factory in self.master.factories.friendly.items():
             logger.debug(f"Updating {f_id} info")
-            if not f_id in self._factory_infos:
-                self._factory_infos[f_id] = FactoryInfo.init(self.master, factory)
-            else:
-                self._factory_infos[f_id].update(self.master, factory)
+            self._factory_infos[f_id] = FactoryInfo.init(master=self.master, factory=factory,
+                                                         previous=self._factory_infos.pop(f_id, None))
 
     def _update_factory_desires(self):
         """Update the desires for each factory"""
-        # Remove dead factories
         for f_id, factory in self.master.factories.friendly.items():
             logger.debug(f"Updating {f_id} desires")
             # Pop because updating
@@ -237,12 +290,12 @@ class FactoryActionPlanner:
                 desires = self._update_single_factory_desire(previous_desire, info)
             # Update without knowing previous preferences (first turn for this factory)
             else:
-                desires = self._create_single_factory_desire(info)
+                desires = FactoryDesires()
 
             self._factory_desires[f_id] = desires
 
     def _update_single_factory_desire(
-        self, prev_desire: FactoryDesires, info: FactoryInfo
+            self, prev_desire: FactoryDesires, info: FactoryInfo
     ) -> FactoryDesires:
         """Update the desires of the factory based on it's current state and it's previous desires"""
         step = self.master.step
@@ -251,70 +304,109 @@ class FactoryActionPlanner:
             f"Desires before HeavyIce={desires.heavy_mining_ice}, LightRubble={desires.light_clearing_rubble}, LightOre={desires.light_mining_ore}, LightAttack={desires.light_attacking}, HeavyAttack={desires.heavy_attacking}"
         )
         # Early game
-        if step < 300:
-            # Add more light units
-            if info.power > 1000 and info.metal > 10:
-                if desires.light_mining_ore < 1 and desires.heavy_mining_ore == 0:
-                    desires.light_mining_ore += 1
-                elif desires.light_clearing_rubble < 2:
-                    desires.light_clearing_rubble += 1
-                elif desires.light_attacking < 1:
-                    desires.light_attacking += 1
-                else:
-                    # Add heavy
-                    if info.power > 2000 and info.metal > 100:
-                        if desires.heavy_mining_ice < 2:
-                            desires.heavy_mining_ice += 1
-                        elif desires.heavy_mining_ore < 1:
-                            desires.heavy_mining_ore += 1
+        if step < 200:
+            desires.update_desires(info=info,
+                                   light_energy_consideration=300,
+                                   light_rubble_min_tiles=10,
+                                   light_rubble_max_tiles=50,
+                                   light_rubble_max_num=2,
+                                   light_metal_min=50,
+                                   light_metal_max=200,
+                                   light_metal_max_num=5,
+                                   light_water_min=20,
+                                   light_water_max=100,
+                                   light_water_max_num=3,
+                                   heavy_energy_consideration=1000,
+                                   heavy_rubble_min_tiles=30,
+                                   heavy_rubble_max_tiles=50,
+                                   heavy_rubble_max_num=1,
+                                   heavy_metal_min=100,
+                                   heavy_metal_max=300,
+                                   heavy_metal_max_num=2,
+                                   heavy_water_min=200,
+                                   heavy_water_max=500,
+                                   heavy_water_max_num=2,
+                                   )
         # Early mid game
         elif step < 500:
-            if info.power > 1500 and info.metal > 10:
-                if desires.light_mining_ore < 1 and desires.heavy_mining_ore == 0:
-                    desires.light_mining_ore += 1
-                elif desires.light_clearing_rubble < 4:
-                    desires.light_clearing_rubble += 1
-                elif desires.light_attacking < 1:
-                    desires.light_attacking += 1
-                else:
-                    # Add heavy
-                    if info.power > 2500 and info.metal > 100:
-                        if desires.heavy_mining_ice < 3:
-                            desires.heavy_mining_ice += 1
-                        # elif desires.heavy_mining_ore < 1:
-                        #     desires.heavy_mining_ore += 1
+            desires.update_desires(info=info,
+                                   light_energy_consideration=600,
+                                   light_rubble_min_tiles=10,
+                                   light_rubble_max_tiles=50,
+                                   light_rubble_max_num=6,
+                                   light_metal_min=50,
+                                   light_metal_max=200,
+                                   light_metal_max_num=3,
+                                   light_water_min=100,
+                                   light_water_max=300,
+                                   light_water_max_num=3,
+                                   heavy_energy_consideration=500,
+                                   heavy_rubble_min_tiles=20,
+                                   heavy_rubble_max_tiles=40,
+                                   heavy_rubble_max_num=2,
+                                   heavy_metal_min=100,
+                                   heavy_metal_max=300,
+                                   heavy_metal_max_num=3,
+                                   heavy_water_min=500,
+                                   heavy_water_max=1500,
+                                   heavy_water_max_num=3,
+                                   )
         # mid late game
         elif step < 800:
-            pass
+            desires.update_desires(info=info,
+                                   light_energy_consideration=1000,
+                                   light_rubble_min_tiles=10,
+                                   light_rubble_max_tiles=30,
+                                   light_rubble_max_num=5,
+                                   light_metal_min=100,
+                                   light_metal_max=200,
+                                   light_metal_max_num=0,
+                                   light_water_min=300,
+                                   light_water_max=1000,
+                                   light_water_max_num=3,
+                                   heavy_energy_consideration=800,
+                                   heavy_rubble_min_tiles=5,
+                                   heavy_rubble_max_tiles=30,
+                                   heavy_rubble_max_num=1,
+                                   heavy_metal_min=100,
+                                   heavy_metal_max=300,
+                                   heavy_metal_max_num=1,
+                                   heavy_water_min=1000,
+                                   heavy_water_max=2500,
+                                   heavy_water_max_num=4,
+                                   )
         else:
-            pass
+            desires.update_desires(info=info,
+                                   light_energy_consideration=500,
+                                   light_rubble_min_tiles=10,
+                                   light_rubble_max_tiles=20,
+                                   light_rubble_max_num=10,
+                                   light_metal_min=100,
+                                   light_metal_max=200,
+                                   light_metal_max_num=0,
+                                   light_water_min=500,
+                                   light_water_max=1000,
+                                   light_water_max_num=5,
+                                   heavy_energy_consideration=1500,
+                                   heavy_rubble_min_tiles=5,
+                                   heavy_rubble_max_tiles=15,
+                                   heavy_rubble_max_num=2,
+                                   heavy_metal_min=0,
+                                   heavy_metal_max=300,
+                                   heavy_metal_max_num=0,
+                                   heavy_water_min=500,
+                                   heavy_water_max=2500,
+                                   heavy_water_max_num=5,
+                                   )
         logger.debug(
             f"Desires after HeavyIce={desires.heavy_mining_ice}, LightRubble={desires.light_clearing_rubble}, LightOre={desires.light_mining_ore}, LightAttack={desires.light_attacking}, HeavyAttack={desires.heavy_attacking}"
         )
         return desires
 
-    def _create_single_factory_desire(self, info: FactoryInfo) -> FactoryDesires:
-        """Create the initial desires for factory, assumes this is the beginning of the game. After this the
-        desires should be updated based on previous desires"""
-        # Defaults
-        desires = FactoryDesires(
-            heavy_mining_ice=1,
-            light_mining_ore=1,
-            light_clearing_rubble=0,
-            light_attacking=0,
-            heavy_attacking=0,
-        )
-
-        # Update based on info
-        if info.connected_zeros < 15:
-            desires.light_clearing_rubble = 1
-
-        return desires
-
     def decide_factory_actions(self) -> Dict[str, int]:
         actions = {}
         for f_info, f_desire in zip(
-            self._factory_infos.values(), self._factory_desires.values()
+                self._factory_infos.values(), self._factory_desires.values()
         ):
             logger.debug(f"Deciding factory actions for {f_info.factory_id}")
             f_info: FactoryInfo
@@ -322,17 +414,19 @@ class FactoryActionPlanner:
             center_occupied = (
                 True
                 if self.master.units.friendly.unit_at_position(f_info.factory.pos)
-                is not None
+                   is not None
                 else False
             )
             action = None
 
             # Only consider building if center not occupied
-            if not center_occupied and self.master.step:
+            if not center_occupied:
+                logger.debug(f'Center not occupied, considering building unit')
                 action = self._build_unit_action(f_info, f_desire)
 
             # If not building unit, consider watering
             if action is None:
+                logger.debug(f'Not building unit, considering watering')
                 action = self._water(f_info, f_desire)
 
             if action is not None:
@@ -341,48 +435,36 @@ class FactoryActionPlanner:
         return actions
 
     def _build_unit_action(
-        self, info: FactoryInfo, desire: FactoryDesires
+            self, info: FactoryInfo, desire: FactoryDesires
     ) -> [None, int]:
-        total_light_desired = (
-            desire.light_attacking
-            + desire.light_clearing_rubble
-            + desire.light_mining_ore
-        )
-        total_heavy_desired = desire.heavy_attacking + desire.heavy_mining_ice
-        # Really need at least 1 heavy ice miner
-        if (
-            info.num_heavy == 0
-            and desire.heavy_mining_ice > 0
-            and info.factory.can_build_heavy(self.master.game_state)
-        ):
-            return info.factory.build_heavy()
-        # The more heavys only if excess power
-        elif (
-            info.factory.power > 2000
-            and info.factory.can_build_heavy(self.master.game_state)
-            and info.num_heavy < total_heavy_desired
-        ):
-            return info.factory.build_heavy()
-        # Or lights if less excess power
-        elif (
-            info.factory.power > 1000
-            and info.factory.can_build_light(self.master.game_state)
-            and info.num_light < total_light_desired
-        ):
-            return info.factory.build_light()
-        else:
-            return None
+        total_light_desired = desire.total_light()
+        total_heavy_desired = desire.total_heavy()
+
+        can_build_light = info.factory.can_build_light(self.master.game_state)
+        can_build_heavy = info.factory.can_build_heavy(self.master.game_state)
+
+        logger.debug(f'can build heavy={can_build_heavy}, can_build_light={can_build_light}')
+        logger.debug(f'desired_heavy={total_heavy_desired}, desired_light={total_light_desired}')
+        logger.debug(f'current_heavy={info.num_heavy}, current_light={info.num_light}')
+
+        if can_build_heavy:
+            if total_heavy_desired > info.num_heavy:
+                return info.factory.build_heavy()
+        elif can_build_light:
+            if total_light_desired > info.num_light:
+                return info.factory.build_light()
 
     def _water(self, info: FactoryInfo, desire: FactoryDesires) -> [None, int]:
         min_water = 100
-        if 0 < self.master.step <= 300:
+        if self.master.step <= 300:
             min_water = 200
-        if 0 < self.master.step <= 500:
+        elif self.master.step <= 500:
             min_water = 800
-        elif 500 < self.master.step <= 850:
+        elif self.master.step <= 850:
             min_water = 1500
-        elif 850 < self.master.step < 1000:
+        elif self.master.step <= 1000:
             min_water = 150
+        logger.debug(f'Current water = {info.water}, water cost = {info.water_cost}, min_water = {min_water}')
         if info.water - info.water_cost > min_water:
             return info.factory.water()
         return None
@@ -416,7 +498,7 @@ class FactoryActionPlanner:
         # Value based nearby zero-rubble
         rubble = game_state.board.rubble
         count_arr = util.count_connected_values(rubble, value=0)
-        kernel = util.factory_map_kernel(3, dist_multiplier=0.5)
+        kernel = util.factory_map_kernel(5, dist_multiplier=0.6)
         conv_count_arr = util.convolve_array_kernel(count_arr, kernel)
         df["zero_rubble_value"] = df.apply(
             lambda row: (conv_count_arr[row.x, row.y]), axis=1

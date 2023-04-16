@@ -67,6 +67,19 @@ class FriendlyFactoryManager(FactoryManager):
         self._light_actions = None
         self._heavy_actions = None
 
+    @property
+    def lichen_id(self) -> int:
+        """id num of lichen strain"""
+        return self.factory.strain_id
+
+    @property
+    def own_lichen(self) -> np.ndarray:
+        """map array of amount of own lichen"""
+        lichen_locations = self.master.maps.lichen_strains == self.lichen_id
+        lichen = self.master.maps.lichen.copy()
+        lichen[lichen_locations != 1] = 0
+        return lichen
+
     def update(self, factory: Factory):
         super().update(factory)
         self._light_actions = None

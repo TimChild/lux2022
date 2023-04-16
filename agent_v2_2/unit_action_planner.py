@@ -65,7 +65,7 @@ def find_collisions(
 @dataclass
 class UnitInfo:
     unit: FriendlyUnitManger
-    act_info: ActInfo
+    act_info: ConsiderActInfo
     unit_id: str
     last_action_update_step: int
     len_action_queue: int
@@ -76,9 +76,10 @@ class UnitInfo:
     power: int
     ice: int
     ore: int
+    power_over_20_percent: bool
 
     @classmethod
-    def from_data(cls, unit: FriendlyUnitManger, act_info: ActInfo, distance_map: np.ndarray):
+    def from_data(cls, unit: FriendlyUnitManger, act_info: ConsiderActInfo, distance_map: np.ndarray):
         unit_factory = unit.factory
 
         unit_info = cls(
@@ -104,6 +105,7 @@ class UnitInfo:
             power=unit.power,
             ice=unit.cargo.ice,
             ore=unit.cargo.ore,
+            power_over_20_percent=unit.start_of_turn_power > unit.unit_config.BATTERY_CAPACITY*0.2,
         )
         return unit_info
 
@@ -122,10 +124,20 @@ class UnitInfos:
             return None
 
         df = self.to_df()
-        # Heavy first, if not enough power to move go next (to fix path for others), older paths get priority
+        '''
+        Sort Order:
+            - Heavy before light
+            - Not enough power to move -- so others can units position
+            - Power over 20% -- Higher power has priority
+            - Last action update step -- Older has priority
+            
+        Note: 
+            False == High/True values first
+            True == Low/False values first
+        '''
         sorted_df = df.sort_values(
-            by=["is_heavy", "enough_power_to_move", "last_action_update_step"],
-            ascending=[False, True, True],
+            by=["is_heavy", "enough_power_to_move", "power_over_20_percent", "last_action_update_step"],
+            ascending=[False, True, False, True],
         )
         highest = sorted_df.iloc[0]
         lowest = sorted_df.iloc[-1]
@@ -157,11 +169,11 @@ class UnitInfos:
 
 @dataclass
 class UnitsToAct:
-    needs_to_act: dict[str, ActInfo]
-    should_not_act: dict[str, ActInfo]
-    has_updated_actions: dict[str, ActInfo] = field(default_factory=dict)
+    needs_to_act: dict[str, ConsiderActInfo]
+    should_not_act: dict[str, ConsiderActInfo]
+    has_updated_actions: dict[str, ConsiderActInfo] = field(default_factory=dict)
 
-    def get_act_info(self, unit_id: str) -> ActInfo:
+    def get_act_info(self, unit_id: str) -> ConsiderActInfo:
         for d in [self.needs_to_act, self.should_not_act, self.has_updated_actions]:
             if unit_id in d:
                 return d[unit_id]
@@ -352,6 +364,13 @@ def decide_action(
                     < factory_desires.light_clearing_rubble
                 ):
                     action = actions.CLEAR_RUBBLE
+                elif (
+                        factory_info.light_mining_ice
+                        < factory_desires.light_mining_ice
+                ):
+                    action = actions.MINE_ICE
+                elif factory_info.light_attacking < factory_desires.light_attacking:
+                    action = actions.ATTACK
                 else:
                     action = actions.NOTHING
     else:  # unit_type == "HEAVY"
@@ -379,6 +398,8 @@ def decide_action(
                     action = actions.MINE_ICE
                 elif factory_info.heavy_mining_ore < factory_desires.heavy_mining_ore:
                     action = actions.MINE_ORE
+                elif factory_info.heavy_clearing_rubble < factory_desires.heavy_clearing_rubble:
+                    action = actions.CLEAR_RUBBLE
                 elif factory_info.heavy_attacking < factory_desires.heavy_attacking:
                     action = actions.ATTACK
                 else:
@@ -401,20 +422,20 @@ class ActReasons(Enum):
 
 
 @dataclass
-class ActInfo:
+class ConsiderActInfo:
     unit: FriendlyUnitManger
     should_act: bool = False
     reason: ActReasons = ActReasons.NO_REASON_TO_ACT
 
 
-def should_unit_act(
+def should_unit_consider_acting(
     unit: FriendlyUnitManger,
     upcoming_collisions: Dict[str, AllCollisionsForUnit],
     close_enemies: Dict[str, CloseUnits],
-) -> ActInfo:
+) -> ConsiderActInfo:
     unit_id = unit.unit_id
     # If not enough power to do something meaningful
-    should_act = ActInfo(unit=unit)
+    should_act = ConsiderActInfo(unit=unit)
 
     if unit.power < (
         unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
@@ -618,7 +639,7 @@ class UnitActionPlanner:
         needs_to_act = {}
         should_not_act = {}
         for unit_id, unit in units.items():
-            should_act = should_unit_act(
+            should_act = should_unit_consider_acting(
                 unit,
                 upcoming_collisions=all_unit_collisions,
                 close_enemies=all_unit_close_to_enemy,
@@ -694,7 +715,7 @@ class UnitActionPlanner:
             self._start_distance_maps[unit_id] = unit_distance_map
         return self._start_distance_maps[unit_id]
 
-    def _collect_unit_data(self, act_infos: Dict[str, ActInfo]) -> UnitInfos:
+    def _collect_unit_data(self, act_infos: Dict[str, ConsiderActInfo]) -> UnitInfos:
         """
         Collects data from units and stores it in a pandas dataframe.
 
@@ -810,7 +831,7 @@ class UnitActionPlanner:
             for i, (p, d) in enumerate(
                 zip(other_path[: self.avoid_collision_steps], other_path_distance)
             ):
-                logger.debug(f"--------------------- {i}, {p}, {d}")
+                # logger.debug(f"--------------------- {i}, {p}, {d}")
                 if (
                     # Prevents moving to collision manhattan dist
                     d == i + 1
@@ -1017,7 +1038,10 @@ class UnitActionPlanner:
             factory_info=factory_info,
             close_units=possible_close_enemy,
         )
-        logger.info(f"desired action is {desired_action}")
+        if desired_action == actions.NOTHING:
+            logger.warning(f"{unit.log_prefix} desired action is {desired_action}. Note to self: What should it be doing? Attacking?")
+        else:
+            logger.info(f"desired action is {desired_action}")
         success = self._calculate_unit_actions(
             unit,
             desired_action=desired_action,
@@ -1263,7 +1287,7 @@ class UnitActionPlanner:
                         break
                 if len(actions) == 0:
                     # Move center
-                    actions = [np.array([0, 0, 0, 0, 0, 1])]
+                    actions = [np.array([0, 0, 0, 0, 0, 1], dtype=int)]
                 unit_actions[unit_id] = actions
         return unit_actions
 

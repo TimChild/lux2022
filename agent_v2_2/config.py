@@ -66,15 +66,16 @@ other_handler.setLevel(logging.WARNING)
 other_handler.addFilter(LevelAboveFilter(logging.INFO))
 
 # Create formatters and add them to handlers
+FORMAT = "%(levelname)s:%(name)s:%(lineno)d: %(message)s"
 other_format = logging.Formatter(
-    "%(levelname)s:%(module)s.%(name)s:%(lineno)d: %(message)s"
+    f'{FORMAT}'
 )
 info_format = logging.Formatter(
-    "\t%(levelname)s:%(module)s.%(name)s:%(lineno)d: %(message)s"
+    f'\t{FORMAT}'
 )
 
 debug_format = logging.Formatter(
-    "\t\t%(levelname)s:%(module)s.%(name)s:%(lineno)d: %(message)s"
+    f'\t\t{FORMAT}'
 )
 
 verbose_format = logging.Formatter("\t\t\t%(levelname)s: %(message)s")

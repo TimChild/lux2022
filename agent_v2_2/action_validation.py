@@ -253,6 +253,9 @@ def valid_action_space(actions: Union[np.ndarray, List[np.ndarray]]) -> bool:
     low = np.array([0, 0, 0, 0, 0, 1])
     high = np.array([5, 4, 4, 3000 + 1, 9999, 9999])
 
+    if isinstance(actions, list) and len(actions) == 0:
+        return True
+
     # Convert a list of actions to a 2D numpy array
     if isinstance(actions, list):
         actions = np.array(actions)

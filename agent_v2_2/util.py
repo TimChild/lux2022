@@ -244,7 +244,7 @@ class MyEnv:
 
     def run_to_step(self, real_env_step: int):
         """Keep running until reaching real_env_step"""
-        num_steps = real_env_step - self.real_env_steps
+        num_steps = real_env_step - 1 - self.real_env_steps
         if num_steps < 1:
             print(f'Already at step {self.real_env_steps}')
             return
@@ -1023,6 +1023,7 @@ def _plotly_add_board(fig, state: GameState):
             (0.0, c),
             (1.0, c),
         ]
+        arr = arr.copy()
         arr = arr.astype(np.float32)
         arr[arr == 0] = np.nan
         fig.add_trace(

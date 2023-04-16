@@ -22,11 +22,12 @@ from agent import Agent
 if __name__ == "__main__":
     update_logging_level(logging.ERROR)
     # seed = 42
-    seed = 123425
+    # seed = 123425
+    seed = 45342
     # seed = 178220973
 
     # Run initial setup (placing factories)
     myenv = MyEnv(seed, Agent, Agent)
     myenv.run_early_setup()
-    myenv.run_to_step(100)
+    myenv.run_to_step(1000)
     myenv.show()

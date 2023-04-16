@@ -117,6 +117,7 @@ class MiningRoutePlanner:
         """
         success = True
         if self.unit.on_own_factory() and unit_must_move:
+            logger.debug(f'Acknowledged that unit must move')
             path = util.path_to_factory_edge_nearest_pos(
                 self.pathfinder,
                 self.factory.factory_loc,
