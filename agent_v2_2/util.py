@@ -1762,7 +1762,7 @@ def path_to_factory_edge_nearest_pos(
     #     return None
 
 
-def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type="LIGHT") -> int:
+def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type) -> int:
     """Cost to move along path including rubble
     Note: Assumes first path is current location (i.e. not part of cost)
     """
@@ -1777,7 +1777,7 @@ def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type="LIGHT") -
     cost = 0
     for pos in path[1:]:
         rubble_at_pos = rubble[pos[0], pos[1]]
-        cost += math.ceil(
+        cost += math.floor(
             unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_pos
         )
     return cost

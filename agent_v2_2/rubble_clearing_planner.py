@@ -38,15 +38,15 @@ logger = get_logger(__name__)
 
 class RubbleDigValue:
     def __init__(
-        self,
-        rubble: np.ndarray,
-        maps: Maps,
-        full_factory_map: np.ndarray,
-        factory_pos: Tuple[int, int],
-        factory_dist: int = 10,
-        factory_dist_dropoff: float = 0.8,
-        boundary_kernel_size: int = 3,
-        boundary_kernel_dropoff: float = 0.7,
+            self,
+            rubble: np.ndarray,
+            maps: Maps,
+            full_factory_map: np.ndarray,
+            factory_pos: Tuple[int, int],
+            factory_dist: int = 10,
+            factory_dist_dropoff: float = 0.8,
+            boundary_kernel_size: int = 3,
+            boundary_kernel_dropoff: float = 0.7,
     ):
         """
         Calculate value of rubble digging near a factory
@@ -99,8 +99,8 @@ class RubbleDigValue:
             )
             # Stretch the middle to be 3x3
             factory_weighting = stretch_middle_of_factory_array(factory_weighting)[
-                1:-1, 1:-1
-            ]
+                                1:-1, 1:-1
+                                ]
             self._factory_weighting = factory_weighting
         return self._factory_weighting
 
@@ -111,8 +111,8 @@ class RubbleDigValue:
             rubble_factory_non_zero = rubble_subset.copy()
             # Set zeros under the specific factory are looking at again (middle 9 values)
             rubble_factory_non_zero[
-                self.factory_dist - 1 : self.factory_dist + 2,
-                self.factory_dist - 1 : self.factory_dist + 2,
+            self.factory_dist - 1: self.factory_dist + 2,
+            self.factory_dist - 1: self.factory_dist + 2,
             ] = 0
             factory_zeroes = connected_array_values_from_pos(
                 rubble_subset, new_factory_pos
@@ -174,10 +174,10 @@ class RubbleDigValue:
 
         # Make a final map
         final_value = (
-            conv_boundary_array
-            * low_rubble_value
-            * manhattan_dist_to_zeroes
-            * factory_weighting
+                conv_boundary_array
+                * low_rubble_value
+                * manhattan_dist_to_zeroes
+                * factory_weighting
         )
         final_value[rubble_subset == 0] = 0
 
@@ -188,7 +188,7 @@ class RubbleDigValue:
 
 
 def calc_value_to_move(
-    pos: Tuple[int, int], value_array: np.ndarray, costmap: np.ndarray
+        pos: Tuple[int, int], value_array: np.ndarray, costmap: np.ndarray
 ) -> Tuple[float, util.POS_TYPE]:
     """Return maximum value of moving in any allowed direction"""
     best_direction = calc_best_direction(pos, value_array, costmap)
@@ -199,7 +199,7 @@ def calc_value_to_move(
 
 
 def calc_best_direction(
-    pos: Tuple[int, int], value_array: np.ndarray, costmap: np.ndarray
+        pos: Tuple[int, int], value_array: np.ndarray, costmap: np.ndarray
 ) -> int:
     """Return direction to highest allowed adjacent value"""
     # (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
@@ -227,12 +227,12 @@ class RubbleRoutePlanner:
     target_queue_length = 20
 
     def __init__(
-        self,
-        pathfinder: Pather,
-        rubble: np.ndarray,
-        rubble_value_map: np.ndarray,
-        factory: FriendlyFactoryManager,
-        unit: FriendlyUnitManger,
+            self,
+            pathfinder: Pather,
+            rubble: np.ndarray,
+            rubble_value_map: np.ndarray,
+            factory: FriendlyFactoryManager,
+            unit: FriendlyUnitManger,
     ):
         """
         Args:
@@ -292,7 +292,11 @@ class RubbleRoutePlanner:
                     path=path_to_factory,
                     rubble=self.rubble,
                     unit_type=self.unit.unit_type,
-                ) + 2*self.unit.unit_config.MOVE_COST*self._future_rubble[self.unit.pos_slice]
+                ) + 1 * self.unit.unit_config.MOVE_COST * self._future_rubble[
+                                      self.unit.pos_slice] * self.unit.unit_config.RUBBLE_MOVEMENT_COST
+                if cost_to_factory > 0.5 * self.unit.unit_config.BATTERY_CAPACITY:
+                    logger.warning(
+                        f'{self.unit.log_prefix} cost back to factory high {cost_to_factory}. path = {path_to_factory}')
                 power_remaining = self.unit.power_remaining() - cost_to_factory
 
                 # Get values to clear nearby (allowed movements only)
@@ -311,12 +315,12 @@ class RubbleRoutePlanner:
 
                 # Decide what to do based on values
                 if (
-                    power_remaining
-                    > self.unit.unit_config.DIG_COST*3
-                    + self.unit.unit_config.MOVE_COST
-                    * self.rubble[new_pos[0], new_pos[1]]
-                    * self.unit.unit_config.RUBBLE_MOVEMENT_COST
-                    and (value_at_pos > 0 or value_to_move > 0)
+                        power_remaining
+                        > self.unit.unit_config.DIG_COST * 3
+                        + self.unit.unit_config.MOVE_COST
+                        * self.rubble[new_pos[0], new_pos[1]]
+                        * self.unit.unit_config.RUBBLE_MOVEMENT_COST
+                        and (value_at_pos > 0 or value_to_move > 0)
                 ):
                     logger.debug(f'Enough power to add another action. power_remaining = {power_remaining}')
                     # If enough power, get next action
@@ -330,7 +334,8 @@ class RubbleRoutePlanner:
                         logger.warning(f"Next action failed, at pos {self.unit.pos}")
                         return False
                 else:
-                    logger.debug(f'Not enough power remaining = {power_remaining}, adding path to factory')
+                    logger.debug(
+                        f'Not enough power remaining = {power_remaining}, adding path to factory (cost={cost_to_factory})')
                     # Otherwise path to factory and break out of loop (done)
                     if len(path_to_factory) > 0:
                         self.pathfinder.append_path_to_actions(
@@ -345,18 +350,18 @@ class RubbleRoutePlanner:
 
     def _unit_starting_on_factory(self) -> bool:
         if (
-            self.factory.factory_loc[self.unit_start_pos[0], self.unit_start_pos[1]]
-            == 1
+                self.factory.factory_loc[self.unit_start_pos[0], self.unit_start_pos[1]]
+                == 1
         ):
             return True
         return False
 
     def _calculate_next_action(
-        self,
-        power_remaining: int,
-        value_at_pos: float,
-        value_to_move: float,
-        new_pos: util.POS_TYPE,
+            self,
+            power_remaining: int,
+            value_at_pos: float,
+            value_to_move: float,
+            new_pos: util.POS_TYPE,
     ) -> bool:
         # If better to mine in current location, mine as much as power allows
         logger.info(f"Value at pos={value_at_pos}, value to move={value_to_move}")
@@ -411,7 +416,7 @@ class RubbleRoutePlanner:
         logger.debug(f'from_factory_actions')
 
         # Only top up if need a significant amount of power
-        min_power = self.unit.unit_config.BATTERY_CAPACITY*0.85
+        min_power = self.unit.unit_config.BATTERY_CAPACITY * 0.85
         if self.unit.power_remaining() < min_power:
             power_to_pickup = self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
             logger.debug(f'topping up power from {self.unit.power} with {power_to_pickup}')
@@ -478,6 +483,7 @@ class RubbleRoutePlanner:
             margin=2,
         )
 
+
 class RubbleClearingRecommendation(Recommendation):
     """Recommend Rubble Clearing near factory"""
 
@@ -518,10 +524,10 @@ class RubbleClearingPlanner(Planner):
         return None
 
     def carry_out(
-        self,
-        unit: FriendlyUnitManger,
-        recommendation: RubbleClearingRecommendation,
-        unit_must_move: bool,
+            self,
+            unit: FriendlyUnitManger,
+            recommendation: RubbleClearingRecommendation,
+            unit_must_move: bool,
     ) -> bool:
         if unit.factory_id is not None:
             factory = self.master.factories.friendly[unit.factory_id]
