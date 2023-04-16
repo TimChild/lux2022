@@ -34,13 +34,16 @@ def find_collisions(
     """Find the first collision point between this_unit and each other_unit
     I.e. Only first collision coordinate when comparing the two paths
     """
+    # print(f'Finding collisions for {this_unit.unit_id}, len(other) = {len(other_units)}, max_step={max_step}, other_is_enemy={other_is_enemy}')
     this_path = this_unit.current_path(max_len=max_step)
+
     collisions = {}
     for other in other_units:
         # Don't include collisions with self
         if this_unit.unit_id == other.unit_id:
             continue
         other_path = other.current_path(max_len=max_step)
+
         # Note: zip stops iterating when end of a path is reached
         for i, (this_pos, other_pos) in enumerate(zip(this_path, other_path)):
             if np.array_equal(this_pos, other_pos):
@@ -222,7 +225,7 @@ class AllCollisionsForUnit:
     with_friendly: CollisionsForUnit
     with_enemy: CollisionsForUnit
 
-    def num_collisions(self, friendly=True, enemy=False):
+    def num_collisions(self, friendly=True, enemy=True):
         num = 0
         if enemy:
             num += len(self.with_enemy.light)
@@ -268,6 +271,7 @@ def calculate_collisions(
     """Calculate first collisions in the next <check_steps> for all units"""
     all_unit_collisions = {}
     for unit_id, unit in all_units.friendly.all.items():
+        # print(f'checking {unit_id}')
         collisions_for_unit = AllCollisionsForUnit(
             with_friendly=CollisionsForUnit(
                 light=find_collisions(
@@ -298,7 +302,7 @@ def calculate_collisions(
                 ),
             ),
         )
-        if collisions_for_unit.num_collisions() > 0:
+        if collisions_for_unit.num_collisions(friendly=True, enemy=True) > 0:
             all_unit_collisions[unit_id] = collisions_for_unit
     return all_unit_collisions
 
@@ -354,6 +358,7 @@ def decide_action(
         action = attack_or_run_away(close_units, "LIGHT", 10)
         if action is None:
             logger.debug(f"should not attack or run_away, deciding what next")
+
             # If not on factory, continue doing whatever it was doing before
             if (
                 not unit_info.unit.on_own_factory()
@@ -368,6 +373,7 @@ def decide_action(
                 logger.debug(
                     f"Unit on factory, can decide a new type of action depending on factory needs"
                 )
+
                 # Make sure factory info is updated (i.e. if this unit stopped mining_ice, then num needs decreasing)
                 factory_info.remove_unit_from_current_count(unit_info.unit)
                 if factory_info.light_mining_ore < factory_desires.light_mining_ore:
@@ -423,6 +429,7 @@ class ActReasons(Enum):
     CLOSE_TO_ENEMY = "close to enemy"
     NEXT_ACTION_INVALID = "next action invalid"
     NEXT_ACTION_PICKUP = "next action pickup"
+    NEXT_ACTION_DIG = "next action dig"
     NEXT_ACTION_TRANSFER = "next action transfer"
     NO_REASON_TO_ACT = "no reason to act"
 
@@ -476,6 +483,9 @@ def should_unit_act(
     elif unit.action_queue[0][util.ACT_TYPE] == util.TRANSFER:
         should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_TRANSFER
+    elif unit.action_queue[0][util.ACT_TYPE] == util.DIG:
+        should_act.should_act = True
+        should_act.reason = ActReasons.NEXT_ACTION_DIG
     else:
         should_act.should_act = False
         should_act.reason = ActReasons.NO_REASON_TO_ACT
@@ -551,17 +561,17 @@ def _decide_collision_avoidance(
 
 class UnitActionPlanner:
     # Look for close units within this distance
-    search_dist = 4
+    search_dist = 5
     # What is considered a close unit when considering future paths
-    close_threshold = 3
+    close_threshold = 4
     # If there will be a collision within this many steps consider acting
-    check_collision_steps = 2
+    check_collision_steps = 3
     # Increase cost to travel near units based on kernel with this dist
     kernel_dist = 5
     # If this many actions the same, don't update unit
     actions_same_check = 3
     # Number of steps to block other unit path locations for
-    avoid_collision_steps = 10
+    avoid_collision_steps = 20
 
     def __init__(
         self,
@@ -670,19 +680,26 @@ class UnitActionPlanner:
             ):
                 # For all friendly units, figure out which friendly and enemy they are near
                 for unit_id, unit in self.master.units.friendly.all.items():
+                    # print(f'For {unit_id}:')
                     unit_distance_map = self._unit_distance_map(unit_id)
                     close = CloseUnits(unit_id=unit_id, unit_pos=unit.pos)
                     for other_id, other_unit in other_units.items():
+                        # print(f'checking {other_id}')
                         if other_id == unit_id:  # Don't compare to self
                             continue
+                        # print(f'{other_unit.unit_id} pos = {other_unit.pos}')
                         dist = unit_distance_map[other_unit.pos[0], other_unit.pos[1]]
+                        # print(f'dist {dist}')
+
                         if dist <= self.close_threshold:
+                            # print(f'adding {other_id} as close')
                             close.other_unit_ids.append(other_id)
                             close.other_unit_positions.append(other_unit.pos)
                             close.other_unit_distances.append(dist)
                             close.other_unit_types.append(other_unit.unit_type)
                             close.other_unit_powers.append(other_unit.power)
                     if len(close.other_unit_ids) > 0:
+                        # print(f'Adding to dict for {unit_id}')
                         all_close[unit_id] = close
             all_close_units = AllCloseUnits(
                 close_to_friendly=friendly, close_to_enemy=enemy
@@ -695,7 +712,7 @@ class UnitActionPlanner:
         close_units = self._calculate_close_units()
         return close_units.close_to_enemy
 
-    @functools.lru_cache(maxsize=128)
+    # @functools.lru_cache(maxsize=128)
     def _unit_distance_map(self, unit_id: str) -> np.ndarray:
         """Calculate the distance map for the given unit, this will be used to determine how close other units are"""
         unit = self.master.units.get_unit(unit_id)
@@ -1014,18 +1031,6 @@ class UnitActionPlanner:
         logger.function_call(
             f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, current_action = {unit.status.current_action}"
         )
-        # def calculate_unit_actions(unit: FriendlyUnitManger, unit_must_move: bool, poss_close_enemy: [None, CloseUnits], row: pd.Series):
-        #     _success = False
-        #     if unit.unit_type == 'HEAVY':
-        #         _success = mining_planner.update_actions_of(
-        #             unit, unit_must_move=unit_must_move, resource_type=util.ICE
-        #         )
-        #     elif unit.unit_type == 'LIGHT':
-        #         _success = rubble_clearing_planner.update_actions_of(
-        #             unit, unit_must_move=unit_must_move
-        #         )
-        #     return _success
-
         # Update the master pathfinder with newest Pather (full_costmap changes for each unit)
         self.master.pathfinder = Pather(
             base_costmap=base_costmap,
@@ -1043,7 +1048,6 @@ class UnitActionPlanner:
                 unit.pos[0], unit.pos[1]
             ] = 100  # <= 0 breaks pathing, 100 will make unit avoid this position for future travel
 
-        # unit_before = copy.deepcopy(unit)
         unit.action_queue = []
 
         close_units = self._calculate_close_units()
@@ -1255,6 +1259,7 @@ class UnitActionPlanner:
             if unit_info.act_info.reason in [
                 ActReasons.NEXT_ACTION_PICKUP,
                 ActReasons.NEXT_ACTION_TRANSFER,
+                ActReasons.NEXT_ACTION_DIG,
             ]:
                 if action_validator.next_action_valid(unit):
                     logger.debug(f"Next action IS valid, no need to update")
