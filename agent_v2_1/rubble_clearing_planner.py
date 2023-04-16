@@ -418,22 +418,25 @@ class RubbleRoutePlanner:
                 logger.info(f"topping up battery")
                 self.unit.action_queue.append(self.unit.pickup(POWER, power_to_pickup))
 
-        boundary_values = self._get_boundary_values()
-        max_value_coord = np.unravel_index(
-            np.argmax(boundary_values), boundary_values.shape
-        )
-        logger.info(f"unit moving to {max_value_coord}")
-        path = self.pathfinder.fast_path(
-            self.unit.pos,
-            end_pos=max_value_coord,
-            margin=2,
-        )
-        if len(path) > 0:
-            self.pathfinder.append_path_to_actions(self.unit, path)
-            return True
+        for i in range(5):
+            boundary_values = self._get_boundary_values()
+            max_value_coord = np.unravel_index(
+                np.argmax(boundary_values), boundary_values.shape
+            )
+            logger.info(f"unit moving to {max_value_coord}")
+            path = self.pathfinder.fast_path(
+                self.unit.pos,
+                end_pos=max_value_coord,
+                margin=2,
+            )
+            if len(path) > 0:
+                self.pathfinder.append_path_to_actions(self.unit, path)
+                return True
+            else:
+                self._future_value[max_value_coord[0], max_value_coord[1]] = 0
         else:
-            logger.warning(
-                f"No path to {max_value_coord} from {self.unit.pos}, moving center",
+            logger.error(
+                f"{self.unit.log_prefix} No path to {max_value_coord} from {self.unit.pos}, moving center",
             )
             self.pathfinder.append_direction_to_actions(self.unit, CENTER)
             return False

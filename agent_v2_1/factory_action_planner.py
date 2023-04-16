@@ -251,7 +251,7 @@ class FactoryActionPlanner:
             f"Desires before HeavyIce={desires.heavy_mining_ice}, LightRubble={desires.light_clearing_rubble}, LightOre={desires.light_mining_ore}, LightAttack={desires.light_attacking}, HeavyAttack={desires.heavy_attacking}"
         )
         # Early game
-        if step < 1000:
+        if step < 300:
             # Add more light units
             if info.power > 1000 and info.metal > 10:
                 if desires.light_mining_ore < 1 and desires.heavy_mining_ore == 0:
@@ -266,11 +266,23 @@ class FactoryActionPlanner:
                         if desires.heavy_mining_ice < 2:
                             desires.heavy_mining_ice += 1
                         elif desires.heavy_mining_ore < 1:
-                            desires.heavy_mining_ice += 1
-                            desires.light_mining_ore = 0
+                            desires.heavy_mining_ore += 1
         # Early mid game
         elif step < 500:
-            pass
+            if info.power > 1500 and info.metal > 10:
+                if desires.light_mining_ore < 1 and desires.heavy_mining_ore == 0:
+                    desires.light_mining_ore += 1
+                elif desires.light_clearing_rubble < 4:
+                    desires.light_clearing_rubble += 1
+                elif desires.light_attacking < 1:
+                    desires.light_attacking += 1
+                else:
+                    # Add heavy
+                    if info.power > 2500 and info.metal > 100:
+                        if desires.heavy_mining_ice < 3:
+                            desires.heavy_mining_ice += 1
+                        # elif desires.heavy_mining_ore < 1:
+                        #     desires.heavy_mining_ore += 1
         # mid late game
         elif step < 800:
             pass
@@ -316,7 +328,7 @@ class FactoryActionPlanner:
             action = None
 
             # Only consider building if center not occupied
-            if not center_occupied:
+            if not center_occupied and self.master.step:
                 action = self._build_unit_action(f_info, f_desire)
 
             # If not building unit, consider watering
@@ -362,7 +374,14 @@ class FactoryActionPlanner:
             return None
 
     def _water(self, info: FactoryInfo, desire: FactoryDesires) -> [None, int]:
-        if info.water - info.water_cost > 100:
+        min_water = 100
+        if 0 < self.master.step <= 500:
+            min_water = 100
+        elif 500 < self.master.step <= 850:
+            min_water = 1000
+        elif 850 < self.master.step < 1000:
+            min_water = 50
+        if info.water - info.water_cost > min_water:
             return info.factory.water()
         return None
 
