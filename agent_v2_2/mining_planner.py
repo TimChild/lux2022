@@ -141,8 +141,7 @@ class MiningRoutePlanner:
             ) = self._path_to_and_from_resource()
 
             power_remaining = (
-                self.unit.power
-                - self.unit.power_cost_of_actions(rubble=self.rubble)
+                self.unit.power_remaining()
                 - cost_to_resource
                 - cost_from_resource_to_factory
             )
@@ -272,9 +271,7 @@ class MiningRoutePlanner:
 
         # Aim for as many digs as possible (either max battery, or current available if near max)
         # How much power do we have at start of run
-        available_power = self.unit.power - self.unit.power_cost_of_actions(
-            rubble=self.rubble
-        )
+        available_power = self.unit.power_remaining()
         if available_power < 0:
             logger.warning(
                 f"{self.unit.log_prefix}: available_power ({available_power}) negative, setting zero instead"

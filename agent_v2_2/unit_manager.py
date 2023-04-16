@@ -180,6 +180,11 @@ class FriendlyUnitManger(UnitManager):
             logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
             return None
 
+    def power_remaining(self, rubble: np.ndarray = None) -> int:
+        """Return power remaining at final step in actions so far"""
+        rubble = self.master.maps.rubble if rubble is None else rubble
+        return self.start_of_turn_power - self.power_cost_of_actions(rubble=rubble)
+
     def dead(self):
         """Called when unit is detected as dead"""
         logger.warning(f"{self.log_prefix} Friendly unit dead")

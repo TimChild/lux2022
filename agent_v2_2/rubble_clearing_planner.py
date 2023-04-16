@@ -293,11 +293,7 @@ class RubbleRoutePlanner:
                     rubble=self.rubble,
                     unit_type=self.unit.unit_type,
                 ) + 2*self.unit.unit_config.MOVE_COST*self._future_rubble[self.unit.pos_slice]
-                power_remaining = (
-                    self.unit.power
-                    - self.unit.power_cost_of_actions(self.rubble)
-                    - cost_to_factory
-                )
+                power_remaining = self.unit.power_remaining() - cost_to_factory
 
                 # Get values to clear nearby (allowed movements only)
                 unit_multiplier = pad_and_crop(
@@ -416,8 +412,8 @@ class RubbleRoutePlanner:
 
         # Only top up if need a significant amount of power
         min_power = self.unit.unit_config.BATTERY_CAPACITY*0.85
-        if self.unit.power < min_power:
-            power_to_pickup = self.unit.unit_config.BATTERY_CAPACITY - self.unit.power
+        if self.unit.power_remaining() < min_power:
+            power_to_pickup = self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
             logger.debug(f'topping up power from {self.unit.power} with {power_to_pickup}')
             if self.factory.power < power_to_pickup:
                 logger.warning(
@@ -481,7 +477,6 @@ class RubbleRoutePlanner:
             factory_loc=self.factory.factory_loc,
             margin=2,
         )
-
 
 class RubbleClearingRecommendation(Recommendation):
     """Recommend Rubble Clearing near factory"""
