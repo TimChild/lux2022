@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Tuple, List, TYPE_CHECKING, Union
+from typing import Tuple, List, TYPE_CHECKING, Union, Dict
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
 import numpy as np
@@ -57,6 +57,7 @@ def _get_bounds(start: util.POS_TYPE, end: util.POS_TYPE, margin: int, map_shape
         min(s - 1, v + margin) + 1 for s, v in zip(reversed(map_shape), maxs)
     ]  # +1 for range
     return lowers, uppers
+
 
 
 class Pather:

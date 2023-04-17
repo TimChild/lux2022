@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, TYPE_CHECKING
 import numpy as np
+import re
 import abc
 import copy
 from dataclasses import dataclass
@@ -41,6 +42,7 @@ class UnitManager(abc.ABC):
         self.unit_id = unit.unit_id
         self.unit = unit
         self.unit_config: UnitConfig = unit.unit_cfg
+        self.id_num = int(re.search(r'\d+', unit.unit_id).group())
 
         self.dig = unit.dig
         self.transfer = unit.transfer
@@ -65,6 +67,7 @@ class UnitManager(abc.ABC):
             max_len=max_len,
             ignore_repeat=ignore_repeat,
         )
+
 
     @property
     def log_prefix(self) -> str:

@@ -487,6 +487,7 @@ class Maps:
         self.lichen_strains: np.ndarray = None
         self.factory_maps: FactoryMaps = None
         self.valid_friendly_move: np.ndarray = None
+        self.valid_enemy_move: np.ndarray = None
 
         self.first_update_done = False
 
@@ -503,9 +504,13 @@ class Maps:
         self.factory_maps = FactoryMaps.from_game_state(
             game_state=game_state, player=player
         )
+        # Create valid move maps
         valid = np.ones_like(self.factory_maps.enemy)
         valid[self.factory_maps.enemy >= 0] = 0
         self.valid_friendly_move = valid
+        valid = np.ones_like(self.factory_maps.friendly)
+        valid[self.factory_maps.friendly >= 0] = 0
+        self.valid_enemy_move = valid
 
     def test(self):
         print(f'lichen is {self.lichen.sum()}')
