@@ -567,16 +567,14 @@ class UnitPaths:
 
         do_calcs = True
         if not 0 <= start_step < self.max_step:
-            if start_step >= self.max_step:
-                logger.info(
+            if start_step < 0:
+                logger.error(f"{start_step} must be between 0 and {self.max_step}")
+                start_step = 0
+            elif start_step >= self.max_step:
+                logger.debug(
                     f"Requesting map outside of max_steps {self.max_step} returning empty"
                 )
-                do_calcs =  False
-            logger.error(f"{start_step} must be between 0 and {self.max_step}")
-            if start_step < 0:
-                start_step = 0
-            else:
-                start_step = self.max_step
+                do_calcs = False
 
         if do_calcs:
             # Distance kernel
