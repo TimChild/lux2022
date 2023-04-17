@@ -19,7 +19,7 @@ from mining_planner import MiningPlanner
 from new_path_finder import Pather
 from rubble_clearing_planner import RubbleClearingPlanner
 from combat_planner import CombatPlanner
-from unit_manager import FriendlyUnitManger, UnitManager, EnemyUnitManager
+from unit_manager import FriendlyUnitManager, UnitManager, EnemyUnitManager
 from action_validation import ValidActionCalculator, valid_action_space
 
 logger = get_logger(__name__)
@@ -64,7 +64,7 @@ def find_collisions(
 
 @dataclass
 class UnitInfo:
-    unit: FriendlyUnitManger
+    unit: FriendlyUnitManager
     act_info: ConsiderActInfo
     unit_id: str
     last_action_update_step: int
@@ -81,7 +81,7 @@ class UnitInfo:
     @classmethod
     def from_data(
         cls,
-        unit: FriendlyUnitManger,
+        unit: FriendlyUnitManager,
         act_info: ConsiderActInfo,
         distance_map: np.ndarray,
     ):
@@ -227,6 +227,7 @@ class CloseUnits:
     unit_id: str
     unit_pos: Tuple[int, int]
     other_unit_ids: List[str] = field(default_factory=list)
+    other_units: List[UnitManager] = field(default_factory=list)
     other_unit_positions: List[Tuple[int, int]] = field(default_factory=list)
     other_unit_distances: List[int] = field(default_factory=list)
     other_unit_types: List[str] = field(default_factory=list)
@@ -278,7 +279,7 @@ class UnitPaths:
     @classmethod
     def from_units(
         cls,
-        friendly: Dict[str, FriendlyUnitManger],
+        friendly: Dict[str, FriendlyUnitManager],
         enemy: Dict[str, EnemyUnitManager],
         friendly_valid_move_map,
         enemy_valid_move_map,
@@ -374,7 +375,7 @@ class UnitPaths:
         enemy_light: bool,
         enemy_heavy: bool,
         collision_cost_value=-1,
-        nearby_start_cost: [None, int] = 5,
+        nearby_start_cost: Optional[int] = 5,
         nearby_dropoff_multiplier=0.7,
     ):
         """Create a costmap from a specific position at a specific step"""
@@ -389,19 +390,20 @@ class UnitPaths:
             enemy_heavy=enemy_heavy,
         )
 
-        for i in range(1, 5):
-            close_encounters = self.calculate_likely_unit_collisions(
-                pos=pos,
-                start_step=start_step + i,
-                exclude_id_nums=exclude_id_nums,
-                friendly_light=friendly_light,
-                friendly_heavy=friendly_heavy,
-                enemy_light=enemy_light,
-                enemy_heavy=enemy_heavy,
-            )
-            cm[close_encounters >= 0] = (
-                nearby_start_cost * nearby_dropoff_multiplier**i
-            )
+        if nearby_start_cost is not None:
+            for i in range(1, 5):
+                close_encounters = self.calculate_likely_unit_collisions(
+                    pos=pos,
+                    start_step=start_step + i,
+                    exclude_id_nums=exclude_id_nums,
+                    friendly_light=friendly_light,
+                    friendly_heavy=friendly_heavy,
+                    enemy_light=enemy_light,
+                    enemy_heavy=enemy_heavy,
+                )
+                cm[close_encounters >= 0] = (
+                    nearby_start_cost * nearby_dropoff_multiplier**i
+                )
         cm[collisions >= 0] = collision_cost_value
         return cm
 
@@ -423,6 +425,11 @@ class UnitPaths:
             exclude_id_nums = [exclude_id_nums]
 
         if not 0 <= start_step < self.max_step:
+            if start_step >= self.max_step:
+                logger.info(
+                    f"Requesting map outside of max_steps {self.max_step} returning empty"
+                )
+                return np.full_like(self.friendly_valid_move_map, -1, dtype=int)
             logger.error(f"{start_step} must be between 0 and {self.max_step}")
             if start_step < 0:
                 start_step = 0
@@ -431,8 +438,8 @@ class UnitPaths:
         # Distance kernel
         kernel = util.manhattan_kernel(self.max_step - start_step) + start_step
         kernel[kernel > self.max_step] = self.max_step
+
         # Place that in correct spot
-        # Note: last layer is empty
         index_array = util.pad_and_crop(
             kernel,
             self.friendly_valid_move_map,
@@ -660,6 +667,7 @@ def decide_action(
 class ActReasons(Enum):
     NOT_ENOUGH_POWER = "not enough power"
     NO_ACTION_QUEUE = "no action queue"
+    CURRENT_STATUS_NOTHING = "currently no action"
     COLLISION_WITH_ENEMY = "collision with enemy"
     COLLISION_WITH_FRIENDLY = "collision with friendly"
     CLOSE_TO_ENEMY = "close to enemy"
@@ -673,13 +681,13 @@ class ActReasons(Enum):
 
 @dataclass
 class ConsiderActInfo:
-    unit: FriendlyUnitManger
+    unit: FriendlyUnitManager
     should_act: bool = False
     reason: ActReasons = ActReasons.NO_REASON_TO_ACT
 
 
 def should_unit_consider_acting(
-    unit: FriendlyUnitManger,
+    unit: FriendlyUnitManager,
     upcoming_collisions: Dict[str, AllCollisionsForUnit],
     close_enemies: Dict[str, CloseUnits],
 ) -> ConsiderActInfo:
@@ -732,6 +740,9 @@ def should_unit_consider_acting(
     elif unit.action_queue[0][util.ACT_TYPE] == util.DIG:
         should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_DIG
+    elif unit.status.current_action == actions.NOTHING:
+        should_act.should_act = True
+        should_act.reason = ActReasons.CURRENT_STATUS_NOTHING
     else:
         should_act.should_act = False
         should_act.reason = ActReasons.NO_REASON_TO_ACT
@@ -874,7 +885,7 @@ class UnitActionPlanner:
                 )
                 unit.action_queue = valid_actions.valid_actions
 
-    def _get_units_to_act(self, units: Dict[str, FriendlyUnitManger]) -> UnitsToAct:
+    def _get_units_to_act(self, units: Dict[str, FriendlyUnitManager]) -> UnitsToAct:
         """
         Determines which units should potentially act this turn, and which should continue with current actions
         Does this based on:
@@ -941,6 +952,7 @@ class UnitActionPlanner:
                         if dist <= self.close_threshold:
                             # print(f'adding {other_id} as close')
                             close.other_unit_ids.append(other_id)
+                            close.other_units.append(other_unit)
                             close.other_unit_positions.append(other_unit.pos)
                             close.other_unit_distances.append(dist)
                             close.other_unit_types.append(other_unit.unit_type)
@@ -1149,8 +1161,8 @@ class UnitActionPlanner:
     def _add_other_unit_to_costmap(
         self,
         costmap: np.ndarray,
-        this_unit: FriendlyUnitManger,
-        other_unit: [FriendlyUnitManger, EnemyUnitManager],
+        this_unit: FriendlyUnitManager,
+        other_unit: [FriendlyUnitManager, EnemyUnitManager],
         other_is_enemy: bool,
     ) -> np.ndarray:
         """Add or removes cost from cost map based on distance and path of nearby unit"""
@@ -1191,7 +1203,7 @@ class UnitActionPlanner:
         self,
         base_costmap: np.ndarray,
         units_to_act: UnitsToAct,
-        unit: FriendlyUnitManger,
+        unit: FriendlyUnitManager,
     ) -> np.ndarray:
         """
         Updates the costmap with the paths of the units that have determined paths this turn (not acting, done acting, or enemy)
@@ -1250,9 +1262,10 @@ class UnitActionPlanner:
     def _calculate_actions_for_unit(
         self,
         base_costmap: np.ndarray,
-        travel_costmap: np.ndarray,
+        # travel_costmap: np.ndarray,
+        unit_paths: UnitPaths,
         unit_info: UnitInfo,
-        unit: FriendlyUnitManger,
+        unit: FriendlyUnitManager,
         factory_desires: FactoryDesires,
         factory_info: FactoryInfo,
         mining_planner: MiningPlanner,
@@ -1266,19 +1279,22 @@ class UnitActionPlanner:
         # Update the master pathfinder with newest Pather (full_costmap changes for each unit)
         self.master.pathfinder = Pather(
             base_costmap=base_costmap,
-            full_costmap=travel_costmap,
+            unit_paths=unit_paths,
+            # full_costmap=travel_costmap,
         )
+        start_costmap = self.master.pathfinder.generate_costmap(unit)
 
         unit_must_move = False
         # If current location is blocked, unit MUST move first turn
-        if travel_costmap[unit.pos[0], unit.pos[1]] <= 0:
+        # if travel_costmap[unit.pos[0], unit.pos[1]] <= 0:
+        if start_costmap[unit.pos[0], unit.pos[1]] <= 0:
             logger.warning(
                 f"{unit.unit_id} MUST move first turn to avoid collision at {unit.pos}"
             )
             unit_must_move = True
-            travel_costmap[
-                unit.pos[0], unit.pos[1]
-            ] = 100  # <= 0 breaks pathing, 100 will make unit avoid this position for future travel
+            # travel_costmap[
+            #     unit.pos[0], unit.pos[1]
+            # ] = 100  # <= 0 breaks pathing, 100 will make unit avoid this position for future travel
 
         unit.action_queue = []
 
@@ -1332,7 +1348,7 @@ class UnitActionPlanner:
 
     def _calculate_unit_actions(
         self,
-        unit: FriendlyUnitManger,
+        unit: FriendlyUnitManager,
         desired_action: str,
         unit_must_move: bool,
         possible_close_enemy: [None, CloseUnits],
@@ -1401,7 +1417,10 @@ class UnitActionPlanner:
             logger.error(f"{desired_action} not understood as an action")
             success = False
 
-        unit.update_status(new_action=desired_action, success=success)
+        if success:
+            unit.update_status(new_action=desired_action, success=success)
+        else:
+            unit.update_status(new_action=actions.NOTHING, success=False)
         return success
 
     def decide_unit_actions(
@@ -1474,11 +1493,11 @@ class UnitActionPlanner:
                 )
 
             # Get the specific costmap for this unit (i.e. blocked enemies and friendly paths)
-            travel_costmap = self._get_travel_costmap_for_unit(
-                unit=unit,
-                base_costmap=base_costmap,
-                units_to_act=units_to_act,
-            )
+            # travel_costmap = self._get_travel_costmap_for_unit(
+            #     unit=unit,
+            #     base_costmap=base_costmap,
+            #     units_to_act=units_to_act,
+            # )
 
             # If only considering because action *might* be invalid, check now
             if unit_info.act_info.reason in [
@@ -1488,8 +1507,20 @@ class UnitActionPlanner:
             ]:
                 if (
                     action_validator.next_action_valid(unit)
+                    # and not colliding with friendly next turn
                     and unit.valid_moving_actions(
-                        costmap=travel_costmap, max_len=1
+                        costmap=existing_paths.to_costmap(
+                            unit.start_of_turn_pos,
+                            start_step=0,
+                            exclude_id_nums=[unit.id_num],
+                            friendly_light=True,
+                            friendly_heavy=True,
+                            enemy_heavy=False,
+                            enemy_light=False,
+                            collision_cost_value=-1,
+                            nearby_start_cost=None,
+                        ),
+                        max_len=1,
                     ).was_valid
                 ):
                     logger.debug(f"Next action IS valid, no need to update")
@@ -1504,7 +1535,8 @@ class UnitActionPlanner:
             unit.action_queue = []
             success = self._calculate_actions_for_unit(
                 base_costmap=base_costmap,
-                travel_costmap=travel_costmap,
+                unit_paths=existing_paths,
+                # travel_costmap=travel_costmap,
                 unit_info=unit_info,
                 unit=unit,
                 factory_desires=factory_desires[unit.factory_id],
@@ -1535,6 +1567,8 @@ class UnitActionPlanner:
 
             # Make sure the next action is taken into account for next validation
             action_validator.apply_next_action(unit)
+            # And for next pathing
+            existing_paths.add_unit(unit, is_enemy=False)
 
         # Collect the unit actions for returning to Env
         unit_actions = {}

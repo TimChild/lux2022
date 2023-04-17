@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Tuple, List, TYPE_CHECKING, Union, Dict
+from typing import Tuple, List, TYPE_CHECKING, Union, Dict, Optional
 from pathfinding.core.grid import Grid
 from pathfinding.finder.a_star import AStarFinder
 import numpy as np
@@ -8,7 +8,8 @@ from config import get_logger
 import util
 
 if TYPE_CHECKING:
-    from unit_manager import UnitManager
+    from unit_manager import UnitManager, FriendlyUnitManager
+    from unit_action_planner import UnitPaths
 
 logger = get_logger(__name__)
 
@@ -59,17 +60,51 @@ def _get_bounds(start: util.POS_TYPE, end: util.POS_TYPE, margin: int, map_shape
     return lowers, uppers
 
 
-
 class Pather:
     """Calculates paths and generates actions for paths, updating the current paths when actions are generated"""
 
     def __init__(
         self,
         base_costmap: np.ndarray,
-        full_costmap: np.ndarray = None,
+        # full_costmap: np.ndarray = None,
+        unit_paths: UnitPaths = None,
     ):
         self.base_costmap = base_costmap
-        self.full_costmap = full_costmap if full_costmap is not None else base_costmap
+        # self.full_costmap = full_costmap if full_costmap is not None else base_costmap
+        self.unit_paths = unit_paths
+
+    def generate_costmap(
+        self,
+        unit: FriendlyUnitManager,
+        ignore_id_nums: Optional[List[int]] = None,
+        friendly_light=True,
+        friendly_heavy=True,
+        enemy_light=True,
+        enemy_heavy=True,
+        collision_only=False,
+    ):
+        """Generate the costmap for the current step (i.e. taking into account pos of unit and all other unit paths)"""
+        len_actions = util.num_turns_of_actions(unit.action_queue)
+        ignore_id_nums = ignore_id_nums if ignore_id_nums is not None else []
+        if unit.id_num not in ignore_id_nums:
+            ignore_id_nums.append(unit.id_num)
+        cm = self.unit_paths.to_costmap(
+            pos=unit.pos,
+            start_step=len_actions,
+            exclude_id_nums=ignore_id_nums,
+            friendly_light=friendly_light,
+            friendly_heavy=friendly_heavy,
+            enemy_light=enemy_light,
+            enemy_heavy=enemy_heavy,
+            collision_cost_value=-1,
+            nearby_start_cost=5 if not collision_only else None,
+            nearby_dropoff_multiplier=0.7,
+        )
+        # Note: Be careful not to make -1s or 0s become positive (blocked becomes unblocked)
+        blocked = np.logical_or(cm <= 0, self.base_costmap <= 0)
+        cm *= self.base_costmap
+        cm[blocked == 1] = -1
+        return cm
 
     def fast_path(
         self,
@@ -99,7 +134,9 @@ class Pather:
             # # # e #
             # # # # #
         """
-        costmap = costmap if costmap is not None else self.full_costmap
+        # costmap = costmap if costmap is not None else self.full_costmap
+        costmap = costmap if costmap is not None else self.base_costmap
+
         lowers, uppers = _get_bounds(start_pos, end_pos, margin, costmap.shape)
         sub_costmap = _get_sub_area(costmap, lowers, uppers)
         new_start, new_end = _adjust_coords(start_pos, end_pos, lowers)
@@ -141,7 +178,13 @@ class Pather:
             Note: If start==end path has len 1
             Note: If fails to find path, len 0
         """
-        costmap = costmap if costmap is not None else self.full_costmap
+        # costmap = costmap if costmap is not None else self.full_costmap
+        costmap = costmap if costmap is not None else self.base_costmap
+
+        # Unblock current position (should be valid to path away from there)
+        if costmap[start_pos[0], start_pos[1]] <= 0:
+            costmap = costmap.copy()
+            costmap[start_pos[0], start_pos[1]] = 10
 
         # Run A* pathfinder
         finder = AStarFinder()

@@ -16,7 +16,7 @@ from util import ORE, ICE, manhattan
 
 if TYPE_CHECKING:
     from lux.unit import Unit
-    from unit_manager import UnitManager, FriendlyUnitManger
+    from unit_manager import UnitManager, FriendlyUnitManager
     from factory_manager import (
         FriendlyFactoryManager,
         EnemyFactoryManager,
@@ -45,14 +45,14 @@ class Planner(abc.ABC):
     """
 
     @abc.abstractmethod
-    def recommend(self, unit: FriendlyUnitManger, *args, **kwargs):
+    def recommend(self, unit: FriendlyUnitManager, *args, **kwargs):
         """Recommend an action for the unit (effectively make a high level obs)"""
         pass
 
     @abc.abstractmethod
     def carry_out(
         self,
-        unit: FriendlyUnitManger,
+        unit: FriendlyUnitManager,
         recommendation: Recommendation,
         unit_must_move: bool,
     ) -> List[np.ndarray]:
@@ -311,7 +311,7 @@ class FriendlyUnits(Units):
         Args:
             units: All units for this team (i.e. already decided if friendly or enemy)
         """
-        from unit_manager import FriendlyUnitManger  # Avoiding circular import
+        from unit_manager import FriendlyUnitManager  # Avoiding circular import
 
         # For all units on team
         unit_dicts = {"LIGHT": self.light, "HEAVY": self.heavy}
@@ -343,7 +343,7 @@ class FriendlyUnits(Units):
                     factory_id = None
 
                 # Create and save new UnitManager
-                new_unit = FriendlyUnitManger(
+                new_unit = FriendlyUnitManager(
                     unit, master_state=self.master, factory_id=factory_id
                 )
                 u_dict[unit_id] = new_unit
@@ -513,7 +513,7 @@ class Maps:
         self.valid_enemy_move = valid
 
     def test(self):
-        print(f'lichen is {self.lichen.sum()}')
+        print(f"lichen is {self.lichen.sum()}")
 
     def resource_at_tile(self, pos) -> int:
         pos = tuple(pos)

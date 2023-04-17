@@ -22,7 +22,7 @@ from util import (
 )
 
 if TYPE_CHECKING:
-    from unit_manager import FriendlyUnitManger
+    from unit_manager import FriendlyUnitManager
     from factory_manager import FriendlyFactoryManager
 
 logger = get_logger(__name__)
@@ -70,7 +70,7 @@ class MiningRoutePlanner:
         resource_pos: Tuple[int, int],
         resource_type: int,
         factory: FriendlyFactoryManager,
-        unit: FriendlyUnitManger,
+        unit: FriendlyUnitManager,
     ):
         """
         Args:
@@ -117,18 +117,19 @@ class MiningRoutePlanner:
         """
         success = True
         if self.unit.on_own_factory() and unit_must_move:
-            logger.debug(f'Acknowledged that unit must move')
+            logger.debug(f"Acknowledged that unit must move")
+            cm = self.pathfinder.generate_costmap(self.unit)
             path = util.path_to_factory_edge_nearest_pos(
                 self.pathfinder,
                 self.factory.factory_loc,
                 self.unit.pos,
                 self.resource_pos,
+                costmap=cm,
             )
             if len(path) > 0:
                 self.pathfinder.append_path_to_actions(self.unit, path)
             else:
-                success = False
-            if not success:
+                logger.error(f'{self.unit.log_prefix}: Failed to path to edge of factory')
                 return False
 
         # If not on factory, route until at factory (possibly resource first)
@@ -178,28 +179,21 @@ class MiningRoutePlanner:
         # Then route from factory (if successful up to this point)
         if success:
             if len(self.unit.action_queue) < self.target_queue_length:
+                logger.debug(f'adding from factory actions')
                 # Then loop from factory
                 success = self._from_factory_actions()
         return success
 
     def _drop_off_cargo_if_necessary(self):
         if self.unit.cargo.ice > 0:
-            logger.info(
-                f"dropping off {self.unit.cargo.ice} ice before from_factory"
-            )
+            logger.info(f"dropping off {self.unit.cargo.ice} ice before from_factory")
             self.unit.action_queue.append(
-                self.unit.transfer(
-                    CENTER, ICE, self.unit.unit_config.CARGO_SPACE
-                )
+                self.unit.transfer(CENTER, ICE, self.unit.unit_config.CARGO_SPACE)
             )
         if self.unit.cargo.ore > 0:
-            logger.info(
-                f"dropping off {self.unit.cargo.ore} ore before from_factory"
-            )
+            logger.info(f"dropping off {self.unit.cargo.ore} ore before from_factory")
             self.unit.action_queue.append(
-                self.unit.transfer(
-                    CENTER, ORE, self.unit.unit_config.CARGO_SPACE
-                )
+                self.unit.transfer(CENTER, ORE, self.unit.unit_config.CARGO_SPACE)
             )
 
     def _resource_then_factory(
@@ -257,6 +251,7 @@ class MiningRoutePlanner:
         # Move to outside edge of factory (if necessary)
         success = self._move_to_edge_of_factory()
         if not success:
+            logger.error(f'{self.unit.log_prefix} failed to path to edge of factory')
             return False
 
         # If already has resources, drop off first
@@ -289,8 +284,7 @@ class MiningRoutePlanner:
         # How many digs can we do
         target_digs = int(
             np.floor(
-                (target_power_at_start - travel_cost)
-                / self.unit.unit_config.DIG_COST
+                (target_power_at_start - travel_cost) / self.unit.unit_config.DIG_COST
             )
         )
         # Don't dig more than cargo capacity allows
@@ -327,7 +321,7 @@ class MiningRoutePlanner:
                     )
                 )
             else:
-                logger.info(f'Enough power already, not picking up')
+                logger.info(f"Enough power already, not picking up")
             n_digs = target_digs
         elif (
             factory_power + available_power - travel_cost
@@ -389,11 +383,13 @@ class MiningRoutePlanner:
         return True
 
     def _move_to_edge_of_factory(self) -> bool:
+        cm = self.pathfinder.generate_costmap(self.unit)
         path = path_to_factory_edge_nearest_pos(
             pathfinder=self.pathfinder,
             factory_loc=self.factory.factory_loc,
             pos=self.unit.pos,
             pos_to_be_near=self.resource_pos,
+            costmap=cm,
             margin=2,
         )
         if len(path) == 0:
@@ -406,10 +402,12 @@ class MiningRoutePlanner:
             return True
 
     def _path_to_factory(self, from_pos: Tuple[int, int]) -> np.ndarray:
+        cm = self.pathfinder.generate_costmap(self.unit)
         return calc_path_to_factory(
             self.pathfinder,
-            from_pos,
-            self.factory.factory_loc,
+            costmap=cm,
+            pos=from_pos,
+            factory_loc=self.factory.factory_loc,
             margin=2,
         )
 
@@ -419,9 +417,11 @@ class MiningRoutePlanner:
     ) -> np.ndarray:
         if from_pos is None:
             from_pos = self.unit.pos
+        cm = self.pathfinder.generate_costmap(self.unit)
         return self.pathfinder.fast_path(
             start_pos=from_pos,
             end_pos=self.resource_pos,
+            costmap=cm,
             margin=2,
         )
 
@@ -429,7 +429,9 @@ class MiningRoutePlanner:
         # TODO: could this use future_rubble? Problem is that rubble may not yet be cleared
         if rubble is None:
             rubble = self.rubble
-        return power_cost_of_actions(self.unit.start_of_turn_pos, rubble, self.unit, actions)
+        return power_cost_of_actions(
+            self.unit.start_of_turn_pos, rubble, self.unit, actions
+        )
 
 
 class MiningPlanner(Planner):
@@ -456,7 +458,7 @@ class MiningPlanner(Planner):
         pass
 
     def update_actions_of(
-        self, unit: FriendlyUnitManger, resource_type: int, unit_must_move: bool
+        self, unit: FriendlyUnitManager, resource_type: int, unit_must_move: bool
     ):
         """Figure out what the next actions for unit should be
 
@@ -478,7 +480,7 @@ class MiningPlanner(Planner):
 
     def recommend(
         self,
-        unit: FriendlyUnitManger,
+        unit: FriendlyUnitManager,
         resource_type: int = ICE,
         unit_must_move: bool = False,
     ) -> [None, MiningRecommendation]:
@@ -513,8 +515,11 @@ class MiningPlanner(Planner):
                     f"No nearest resource ({resource_type}) to {unit_factory.unit_id} after {attempt} attempts"
                 )
                 return None
+            cm = self.master.pathfinder.generate_costmap(unit)
             path_to_resource = self.master.pathfinder.fast_path(
-                unit_pos, nearest_resource
+                unit_pos,
+                nearest_resource,
+                costmap=cm,
             )
             if len(path_to_resource) > 0:
                 break
@@ -536,7 +541,7 @@ class MiningPlanner(Planner):
 
     def carry_out(
         self,
-        unit_manager: FriendlyUnitManger,
+        unit_manager: FriendlyUnitManager,
         recommendation: MiningRecommendation,
         unit_must_move: bool,
     ) -> bool:

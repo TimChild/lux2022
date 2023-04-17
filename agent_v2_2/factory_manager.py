@@ -13,7 +13,7 @@ import util
 import actions
 
 if TYPE_CHECKING:
-    from unit_manager import FriendlyUnitManger
+    from unit_manager import FriendlyUnitManager
 
     pass
 
@@ -30,11 +30,11 @@ class BuildHeavyRecommendation(actions.Recommendation):
 
 @dataclass
 class UnitActions:
-    mining_ice: Dict[str, FriendlyUnitManger]
-    mining_ore: Dict[str, FriendlyUnitManger]
-    clearing_rubble: Dict[str, FriendlyUnitManger]
-    attacking: Dict[str, FriendlyUnitManger]
-    nothing: Dict[str, FriendlyUnitManger]
+    mining_ice: Dict[str, FriendlyUnitManager]
+    mining_ore: Dict[str, FriendlyUnitManager]
+    clearing_rubble: Dict[str, FriendlyUnitManager]
+    attacking: Dict[str, FriendlyUnitManager]
+    nothing: Dict[str, FriendlyUnitManager]
 
 
 class FactoryManager:
@@ -60,8 +60,8 @@ class FriendlyFactoryManager(FactoryManager):
         super().__init__(factory)
         self.master = master_state
 
-        self.light_units: Dict[str, FriendlyUnitManger] = {}
-        self.heavy_units: Dict[str, FriendlyUnitManger] = {}
+        self.light_units: Dict[str, FriendlyUnitManager] = {}
+        self.heavy_units: Dict[str, FriendlyUnitManager] = {}
 
         # caching
         self._light_actions = None
@@ -85,7 +85,7 @@ class FriendlyFactoryManager(FactoryManager):
         self._light_actions = None
         self._heavy_actions = None
 
-    def assign_unit(self, unit: FriendlyUnitManger):
+    def assign_unit(self, unit: FriendlyUnitManager):
         logger.debug(f"Assigning {unit.log_prefix} to {self.factory.unit_id}")
         if unit.unit_type == "LIGHT":
             self.light_units[unit.unit_id] = unit
@@ -102,7 +102,7 @@ class FriendlyFactoryManager(FactoryManager):
             self._heavy_actions = self._get_actions(self.heavy_units)
         return self._heavy_actions
 
-    def _get_actions(self, units: Dict[str, FriendlyUnitManger]) -> UnitActions:
+    def _get_actions(self, units: Dict[str, FriendlyUnitManager]) -> UnitActions:
         return UnitActions(
             mining_ice={
                 unit.unit_id: unit

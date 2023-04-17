@@ -35,7 +35,7 @@ from lux.unit import Unit
 from lux.cargo import UnitCargo
 
 if TYPE_CHECKING:
-    from unit_manager import FriendlyUnitManger, UnitManager
+    from unit_manager import FriendlyUnitManager, UnitManager
     from factory_manager import FriendlyFactoryManager
 
 logger = get_logger(__name__)
@@ -246,7 +246,7 @@ class MyEnv:
         """Keep running until reaching real_env_step"""
         num_steps = real_env_step - 1 - self.real_env_steps
         if num_steps < 1:
-            print(f'Already at step {self.real_env_steps}')
+            print(f"Already at step {self.real_env_steps}")
             return
         for _ in tqdm(range(num_steps), total=num_steps):
             # while self.real_env_steps < real_env_step:
@@ -263,7 +263,7 @@ class MyReplayEnv(MyEnv):
     def __init__(self, seed, Agent, replay_json, my_player="player_0"):
         self.replay_json = replay_json
         self.player = my_player
-        self.other_player = 'player_1' if self.player == 'player_0' else 'player_0'
+        self.other_player = "player_1" if self.player == "player_0" else "player_0"
         super().__init__(seed, Agent, Agent)
 
         self._all_actions = self._all_replay_actions()
@@ -271,7 +271,7 @@ class MyReplayEnv(MyEnv):
     def init_agents(self):
         super().init_agents()
         self.other_agent = None
-        if self.player == 'player_0':
+        if self.player == "player_0":
             self.agents = {self.agent.player: self.agent}
         else:
             self.agents = {self.other_agent.player: self.other_agent}
@@ -288,10 +288,16 @@ class MyReplayEnv(MyEnv):
         return actions
 
     def _all_replay_actions(self):
-        if 'actions' in self.replay_json:
-            return [self.replay_json["actions"][i][self.other_player] for i in range(len(self.replay_json['actions']))]
-        elif 'steps' in self.replay_json:
-            return [self.replay_json['steps'][i+1][int(self.other_player[-1])]['action'] for i in range(len(self.replay_json['steps'])-1)]
+        if "actions" in self.replay_json:
+            return [
+                self.replay_json["actions"][i][self.other_player]
+                for i in range(len(self.replay_json["actions"]))
+            ]
+        elif "steps" in self.replay_json:
+            return [
+                self.replay_json["steps"][i + 1][int(self.other_player[-1])]["action"]
+                for i in range(len(self.replay_json["steps"]) - 1)
+            ]
 
     def get_replay_actions(self, step=None, player=None):
         if step is None:
@@ -315,17 +321,17 @@ def nearest_non_zero(
     array: np.ndarray, pos: Union[np.ndarray, Tuple[int, int]]
 ) -> Optional[Tuple[int, int]]:
     """Nearest location from pos in array where value is positive"""
-
     locations = np.argwhere(array > 0)
     if len(locations) == 0:
         return None
+    # TODO: For long lists of locations, I could do a manhattan distance kernel thing to find nearest
     distances = np.array([manhattan(loc, pos) for loc in locations])
     closest = locations[np.argmin(distances)]
     return tuple(closest)
 
 
 def num_turns_of_actions(actions: Union[np.ndarray, List[np.ndarray]]) -> int:
-    """Calculate how many turns the actions will take including their n values"""
+    """Calculate how many turns the actions will take including their n values, does not include repeat (and should not)"""
     if len(actions) == 0:
         return 0
     actions = np.array(actions)
@@ -334,7 +340,10 @@ def num_turns_of_actions(actions: Union[np.ndarray, List[np.ndarray]]) -> int:
 
 
 def power_cost_of_actions(
-    start_pos: POS_TYPE, rubble: np.ndarray, unit: UnitManager, actions: List[np.ndarray]
+    start_pos: POS_TYPE,
+    rubble: np.ndarray,
+    unit: UnitManager,
+    actions: List[np.ndarray],
 ):
     """Power requirements of a list of actions
 
@@ -795,19 +804,20 @@ def actions_to_path(
 
 
 def move_to_new_spot_on_factory(
-    pathfinder: Pather, unit: FriendlyUnitManger, factory: FriendlyFactoryManager
+    pathfinder: Pather, unit: FriendlyUnitManager, factory: FriendlyFactoryManager
 ):
     """Move to a new spot on factory (i.e. if current spot is going to be occupied by another unit next turn)"""
     success = False
     pos = np.array(unit.pos)
     best_direction = None
     best_cost = 999
+    costmap = pathfinder.generate_costmap(unit)
     for direction, delta in zip(MOVE_DIRECTIONS[1:], MOVE_DELTAS[1:]):
         new_x, new_y = pos + delta
         try:
             # If on factory
             if factory.factory_loc[new_x, new_y]:
-                new_cost = pathfinder.full_costmap[new_x, new_y]
+                new_cost = costmap[new_x, new_y]
                 # If this is better based on costmap
                 if 0 < new_cost < best_cost:
                     best_direction = direction
@@ -825,7 +835,8 @@ def move_to_new_spot_on_factory(
     return success
 
 
-def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManger):
+def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManager):
+    cm = pathfinder.generate_costmap(unit)
     success = False
     pos = np.array(unit.pos)
     best_direction = None
@@ -833,7 +844,7 @@ def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManger
     for direction, delta in zip(MOVE_DIRECTIONS[1:], MOVE_DELTAS[1:]):
         new_x, new_y = pos + delta
         try:
-            new_cost = pathfinder.full_costmap[new_x, new_y]
+            new_cost = cm[new_x, new_y]
             if 0 < new_cost < best_cost:
                 best_direction = direction
                 best_cost = new_cost
@@ -1636,6 +1647,7 @@ def figures_to_subplots(
 
 def calc_path_to_factory(
     pathfinder: Pather,
+    costmap: np.ndarray,
     pos: Tuple[int, int],
     factory_loc: np.ndarray,
     margin=2,
@@ -1643,6 +1655,7 @@ def calc_path_to_factory(
     """Calculate path from pos to the nearest point on factory that will be unoccupied on arrival
     Args:
         pathfinder: Usually agents pathfinding instance
+        costmap: np.ndarray
         pos: Position to path from
         factory_loc: array with ones where factory is
         rubble: False = ignore rubble costs, True = beginning of turn rubble costs, Array = use array rubble costs
@@ -1662,6 +1675,7 @@ def calc_path_to_factory(
             path = pathfinder.fast_path(
                 pos,
                 nearest_factory,
+                costmap=costmap,
                 margin=margin,
             )
             if len(path) > 0:
@@ -1700,6 +1714,7 @@ def path_to_factory_edge_nearest_pos(
     factory_loc: np.ndarray,
     pos: Tuple[int, int],
     pos_to_be_near: Tuple[int, int],
+    costmap: np.ndarray,
     margin=1,
 ) -> Union[np.ndarray, None]:
     """Path to the best location on the factory edge without collision
@@ -1728,6 +1743,7 @@ def path_to_factory_edge_nearest_pos(
             path = pathfinder.fast_path(
                 pos,
                 nearest_factory,
+                costmap=costmap,
                 margin=margin,
             )
             if len(path) > 0:

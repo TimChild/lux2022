@@ -36,13 +36,12 @@ class Status:
     last_action_success: bool
 
 
-
 class UnitManager(abc.ABC):
     def __init__(self, unit: Unit):
         self.unit_id = unit.unit_id
         self.unit = unit
         self.unit_config: UnitConfig = unit.unit_cfg
-        self.id_num = int(re.search(r'\d+', unit.unit_id).group())
+        self.id_num = int(re.search(r"\d+", unit.unit_id).group())
 
         self.dig = unit.dig
         self.transfer = unit.transfer
@@ -54,7 +53,10 @@ class UnitManager(abc.ABC):
 
     def power_cost_of_actions(self, rubble: np.ndarray):
         return util.power_cost_of_actions(
-            start_pos=self.start_of_turn_pos, rubble=rubble, unit=self, actions=self.action_queue
+            start_pos=self.start_of_turn_pos,
+            rubble=rubble,
+            unit=self,
+            actions=self.action_queue,
         )
 
     def valid_moving_actions(
@@ -67,7 +69,6 @@ class UnitManager(abc.ABC):
             max_len=max_len,
             ignore_repeat=ignore_repeat,
         )
-
 
     @property
     def log_prefix(self) -> str:
@@ -149,7 +150,7 @@ class EnemyUnitManager(UnitManager):
         logger.info(f"Enemy unit {self.unit_id} dead, nothing more to do")
 
 
-class FriendlyUnitManger(UnitManager):
+class FriendlyUnitManager(UnitManager):
     def __init__(self, unit: Unit, master_state: MasterState, factory_id: str):
         super().__init__(unit)
         self.factory_id = factory_id

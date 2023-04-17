@@ -7,7 +7,7 @@ import numpy as np
 if TYPE_CHECKING:
     from agent import GeneralObs, UnitObs, FactoryObs
     from master_state import MasterState
-    from unit_manager import FriendlyUnitManger
+    from unit_manager import FriendlyUnitManager
     from factory_manager import FactoryManager
 
 

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from master_state import Maps
     from unit_action_planner import UnitsToAct
     from factory_action_planner import FactoryInfo
-    from unit_manager import FriendlyUnitManger
+    from unit_manager import FriendlyUnitManager
 
 logger = get_logger(__name__)
 
@@ -90,7 +90,7 @@ class ValidActionCalculator:
 
         return self.factory_resources
 
-    def apply_next_action(self, unit: FriendlyUnitManger):
+    def apply_next_action(self, unit: FriendlyUnitManager):
         """Apply next action of unit to factories (i.e. update their resources if applicable)"""
         # Are there even actions?
         q = unit.action_queue
@@ -165,7 +165,7 @@ class ValidActionCalculator:
         else:
             raise NotImplementedError(f"resource={resource} not implemented")
 
-    def next_action_valid(self, unit: FriendlyUnitManger):
+    def next_action_valid(self, unit: FriendlyUnitManager):
         logger.debug(f"Next action valid for {unit.unit_id}")
         if len(unit.action_queue) == 0:
             logger.error(f"No action, for {unit.unit_id}")
@@ -179,7 +179,6 @@ class ValidActionCalculator:
 
         unit_power = unit.start_of_turn_power
         unit_pos = unit.start_of_turn_pos
-
 
         if act_type == util.MOVE:
             valid = unit.valid_moving_actions(
