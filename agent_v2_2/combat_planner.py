@@ -37,10 +37,10 @@ class CombatPlanner:
             enemy_light=True if unit.unit_type == "LIGHT" else False,
             enemy_heavy=True if unit.unit_type == "HEAVY" else False,
         )
-        # Only asking for one anyway, so will always be first in dict
+        # Note: Only asking for one anyway, so will always be first in dict
         enemy_location_ids = next(iter(enemy_location_ids.values()))
 
-        # Find nearest that has lower power or lower unit type
+        # Find nearest enemy that has lower power or lower unit type
         cm = self.master.pathfinder.generate_costmap(unit, collision_only=True)
         power_now = unit.power_remaining(self.master.maps.rubble)
         best_enemy_unit = None
@@ -48,6 +48,7 @@ class CombatPlanner:
         best_power_at_enemy = None
         best_power_back_to_factory = None
         for i in range(20):
+            # Convert ids to a 1/0 map
             enemies_map = enemy_location_ids >= 0
             nearest_intercept = util.nearest_non_zero(enemies_map, unit.pos)
             if nearest_intercept is None:
@@ -55,7 +56,7 @@ class CombatPlanner:
                     logger.warning(f"{unit.log_prefix} No intercepts with enemy")
                 break
 
-            # Check lower power or type
+            # Get that enemy unit
             enemy_num = enemy_location_ids[nearest_intercept[0], nearest_intercept[1]]
             enemy_id = f"unit_{enemy_num}"
             enemy_unit = self.master.units.enemy.get_unit(enemy_id)
@@ -66,9 +67,9 @@ class CombatPlanner:
                 break
             enemy_unit: EnemyUnitManager
 
-            # May need to check unit type if I change my mind above!
+            # Note: May need to check unit type if I change my mind above!
 
-            # Will unit have power to attack and return to factory (Note: Actually power will be decreased by attack, but ignoring that for now)
+            # Calculate costs to attack this enemy
             path_to_enemy = self.master.pathfinder.fast_path(
                 unit.pos, nearest_intercept, costmap=cm
             )
@@ -88,7 +89,9 @@ class CombatPlanner:
             power_at_enemy = power_now - cost_to_enemy
             power_back_to_factory = power_at_enemy - cost_to_factory
 
+            # Decide whether this is a good enemy to attack
             if enemy_unit.power-enemy_unit.unit_config.MOVE_COST*len(path_to_enemy) <= power_at_enemy:
+                # If definitely good, then break
                 if power_back_to_factory > 0:
                     logger.info(
                         f"Found good enemy unit to intercept {enemy_unit.unit_id}, doing that"
@@ -98,6 +101,7 @@ class CombatPlanner:
                     best_power_at_enemy = power_at_enemy
                     best_power_back_to_factory = power_back_to_factory
                     break
+                # Otherwise, save this but see if there is a better option
                 else:
                     logger.debug(
                         f"Found possible enemy unit to intercept {enemy_unit.unit_id}, looking for better"
@@ -114,8 +118,9 @@ class CombatPlanner:
                 f"{unit.log_prefix} Checked 20 enemy units, breaking loop now"
             )
 
-        # Decide whether to attack, do nothing, or return to factory
+        # Decide whether to attack, do nothing, or return to factory based on the best choice of enemy unit
         if best_enemy_unit is None:
+            # If no decide based on current power
             if power_now < unit.unit_config.BATTERY_CAPACITY * 0.5:
                 logger.debug(f"low power ({unit.power}) returning to factory")
                 what_do = "factory"
@@ -125,7 +130,7 @@ class CombatPlanner:
                 )
                 what_do = "nothing"
         else:
-            # If really not enough to get there and back
+            # If enemy decide based on power cost to attack
             if best_power_back_to_factory < -unit.unit_config.BATTERY_CAPACITY * 0.2:
                 logger.info(
                     f"Found enemy intercept {best_intercept} from {unit.pos}, but really not enough power "
@@ -146,6 +151,7 @@ class CombatPlanner:
                     f"power at enemy {best_power_at_enemy}, power at factory {best_power_back_to_factory}"
                 )
 
+        # Carry out the decided action
         if what_do == "attack":
             cm = self.master.pathfinder.generate_costmap(
                 unit, ignore_id_nums=[best_enemy_unit.id_num]
