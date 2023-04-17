@@ -326,8 +326,13 @@ class UnitPaths:
                     actions=valid_path.valid_actions,
                     max_len=max_step,
                 )
-                for step, (x, y) in enumerate(path):
-                    array[step, x, y] = unit_num
+
+                x, y = unit.pos
+                for step in range(max_step):
+                    if step < len(path):
+                        x, y = path[step]
+                    if x is not None:
+                        array[step, x, y] = unit_num
 
         return cls(
             friendly_valid_move_map=friendly_valid_move_map,
@@ -362,8 +367,15 @@ class UnitPaths:
             unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=max_step
         )
 
-        for step, (x, y) in enumerate(path):
-            array[step, x, y] = unit_num
+        x, y = unit.pos
+        for step in range(self.max_step):
+            if step < len(path):
+                x, y = path[step]
+            if x is not None:
+                array[step, x, y] = unit_num
+
+        # for step, (x, y) in enumerate(path):
+        #     array[step, x, y] = unit_num
 
     def to_costmap(
         self,
@@ -1458,7 +1470,7 @@ class UnitActionPlanner:
             enemy=self.master.units.enemy.all,
             friendly_valid_move_map=self.master.maps.valid_friendly_move,
             enemy_valid_move_map=self.master.maps.valid_enemy_move,
-            max_step=30,
+            max_step=200,
         )
 
         # Create the action validator for this turn
