@@ -79,7 +79,12 @@ class UnitInfo:
     power_over_20_percent: bool
 
     @classmethod
-    def from_data(cls, unit: FriendlyUnitManger, act_info: ConsiderActInfo, distance_map: np.ndarray):
+    def from_data(
+        cls,
+        unit: FriendlyUnitManger,
+        act_info: ConsiderActInfo,
+        distance_map: np.ndarray,
+    ):
         unit_factory = unit.factory
 
         unit_info = cls(
@@ -89,23 +94,21 @@ class UnitInfo:
             last_action_update_step=unit.status.last_action_update_step,
             len_action_queue=len(unit.action_queue),
             distance_to_factory=(
-                distance_map[
-                    unit_factory.factory.pos[0], unit_factory.factory.pos[1]
-                ]
+                distance_map[unit_factory.factory.pos[0], unit_factory.factory.pos[1]]
                 if unit_factory
                 else np.nan
             ),
             is_heavy=unit.unit_type == "HEAVY",
             unit_type=unit.unit_type,
             enough_power_to_move=(
-                    unit.power
-                    > unit.unit_config.MOVE_COST
-                    + unit.unit_config.ACTION_QUEUE_POWER_COST
+                unit.power
+                > unit.unit_config.MOVE_COST + unit.unit_config.ACTION_QUEUE_POWER_COST
             ),
             power=unit.power,
             ice=unit.cargo.ice,
             ore=unit.cargo.ore,
-            power_over_20_percent=unit.start_of_turn_power > unit.unit_config.BATTERY_CAPACITY*0.2,
+            power_over_20_percent=unit.start_of_turn_power
+            > unit.unit_config.BATTERY_CAPACITY * 0.2,
         )
         return unit_info
 
@@ -124,7 +127,7 @@ class UnitInfos:
             return None
 
         df = self.to_df()
-        '''
+        """
         Sort Order:
             - Heavy before light
             - Not enough power to move -- so others can units position
@@ -134,15 +137,20 @@ class UnitInfos:
         Note: 
             False == High/True values first
             True == Low/False values first
-        '''
+        """
         sorted_df = df.sort_values(
-            by=["is_heavy", "enough_power_to_move", "power_over_20_percent", "last_action_update_step"],
+            by=[
+                "is_heavy",
+                "enough_power_to_move",
+                "power_over_20_percent",
+                "last_action_update_step",
+            ],
             ascending=[False, True, False, True],
         )
         highest = sorted_df.iloc[0]
         lowest = sorted_df.iloc[-1]
 
-        for series, priority in zip([highest, lowest], ['higheset', 'lowest']):
+        for series, priority in zip([highest, lowest], ["higheset", "lowest"]):
             logger.debug(
                 f"Unit with {priority} priority: {series.unit_id}  ({series.unit.pos}), is_heavy={series.is_heavy}, "
                 f"last_acted_step={series.last_action_update_step}, power={series.power}, ice={series.ice}, ore={series.ore}, len_acts={series.len_action_queue}"
@@ -153,7 +161,6 @@ class UnitInfos:
         self.infos = ordered_infos
         logger.debug(f"Done sorting units")
         return None
-
 
     def to_df(self) -> pd.DataFrame:
         # Convert the list of UnitInfo instances to a list of dictionaries
@@ -233,13 +240,234 @@ class AllCloseUnits:
 
 
 @dataclass
-class UnitPaths(abc.ABC):
-    light: Dict[str, np.ndarray] = dict
-    heavy: Dict[str, np.ndarray] = dict
+class UnitPaths:
+    """Unit paths stored in a 3D array (step, x, y) where value is id_num (otherwise -1)"""
+
+    friendly_valid_move_map: np.ndarray
+    enemy_valid_move_map: np.ndarray
+    friendly_light: np.ndarray
+    friendly_heavy: np.ndarray
+    enemy_light: np.ndarray
+    enemy_heavy: np.ndarray
+    max_step: int
+
+    def __post_init__(self):
+        # For use when indexing to create costmaps
+        x, y = np.meshgrid(
+            np.arange(self.friendly_valid_move_map.shape[0]),
+            np.arange(self.friendly_valid_move_map.shape[1]),
+            indexing="ij",
+        )
+        self._x, self._y = x, y
 
     @property
     def all(self):
-        return dict(**self.light, **self.heavy)
+        """
+        There *SHOULD* only be one unit in any place at any time, so this *SHOULD* be ok to do
+        """
+        return np.sum(
+            [
+                self.friendly_light,
+                self.friendly_heavy,
+                self.enemy_light,
+                self.enemy_heavy,
+            ],
+            axis=0,
+        )
+
+    @classmethod
+    def from_units(
+        cls,
+        friendly: Dict[str, FriendlyUnitManger],
+        enemy: Dict[str, EnemyUnitManager],
+        friendly_valid_move_map,
+        enemy_valid_move_map,
+        max_step=30,
+    ):
+        friendly_light = {
+            unit.id_num: unit for unit in friendly.values() if unit.unit_type == "LIGHT"
+        }
+        friendly_heavy = {
+            unit.id_num: unit for unit in friendly.values() if unit.unit_type == "HEAVY"
+        }
+        enemy_light = {
+            unit.id_num: unit for unit in enemy.values() if unit.unit_type == "LIGHT"
+        }
+        enemy_heavy = {
+            unit.id_num: unit for unit in enemy.values() if unit.unit_type == "HEAVY"
+        }
+
+        map_shape = friendly_valid_move_map.shape
+
+        # +1 so that last layer is always left empty of units (for longer pathing)
+        arrays = [
+            np.full(
+                (max_step + 1, map_shape[0], map_shape[1]), fill_value=-1, dtype=int
+            )
+            for _ in range(4)
+        ]
+        for array, dict_, move_map in zip(
+            arrays,
+            [friendly_light, friendly_heavy, enemy_light, enemy_heavy],
+            [
+                friendly_valid_move_map,
+                friendly_valid_move_map,
+                enemy_valid_move_map,
+                enemy_valid_move_map,
+            ],
+        ):
+            for unit_num, unit in dict_.items():
+                valid_path = unit.valid_moving_actions(
+                    costmap=move_map, max_len=max_step
+                )
+                path = util.actions_to_path(
+                    unit.start_of_turn_pos,
+                    actions=valid_path.valid_actions,
+                    max_len=max_step,
+                )
+                for step, (x, y) in enumerate(path):
+                    array[step, x, y] = unit_num
+
+        return cls(
+            friendly_valid_move_map=friendly_valid_move_map,
+            enemy_valid_move_map=enemy_valid_move_map,
+            friendly_light=arrays[0],
+            friendly_heavy=arrays[1],
+            enemy_light=arrays[2],
+            enemy_heavy=arrays[3],
+            max_step=max_step,
+        )
+
+    def add_unit(self, unit: UnitManager, is_enemy=False):
+        """Add a new unit to the path arrays"""
+        if is_enemy:
+            move_map = self.enemy_valid_move_map
+            if unit.unit_type == "LIGHT":
+                array = self.enemy_light
+            else:
+                array = self.enemy_heavy
+        else:
+            move_map = self.friendly_valid_move_map
+            if unit.unit_type == "LIGHT":
+                array = self.friendly_light
+            else:
+                array = self.friendly_heavy
+
+        unit_num = unit.id_num
+        max_step = self.friendly_light.shape[0]
+
+        valid_path = unit.valid_moving_actions(costmap=move_map, max_len=max_step)
+        path = util.actions_to_path(
+            unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=max_step
+        )
+
+        for step, (x, y) in enumerate(path):
+            array[step, x, y] = unit_num
+
+    def to_costmap(
+        self,
+        pos: util.POS_TYPE,
+        start_step: int,
+        friendly_light: bool,
+        friendly_heavy: bool,
+        enemy_light: bool,
+        enemy_heavy: bool,
+        collision_cost_value=-1,
+        nearby_start_cost: [None, int] = 5,
+        nearby_dropoff_multiplier=0.7,
+    ):
+        """Create a costmap from a specific position at a specific step"""
+        cm = np.ones_like(self.friendly_valid_move_map, dtype=float)
+        collisions = self._make_costmap(
+            pos=pos,
+            start_step=start_step,
+            friendly_light=friendly_light,
+            friendly_heavy=friendly_heavy,
+            enemy_light=enemy_light,
+            enemy_heavy=enemy_heavy,
+        )
+
+        for i in range(1, 5):
+            close_encounters = self._make_costmap(
+                pos=pos,
+                start_step=start_step + i,
+                friendly_light=friendly_light,
+                friendly_heavy=friendly_heavy,
+                enemy_light=enemy_light,
+                enemy_heavy=enemy_heavy,
+            )
+            cm[close_encounters >= 0] = (
+                nearby_start_cost * nearby_dropoff_multiplier**i
+            )
+        cm[collisions >= 0] = collision_cost_value
+        return cm
+
+    def _make_costmap(
+        self,
+        pos: util.POS_TYPE,
+        start_step: int,
+        friendly_light: bool,
+        friendly_heavy: bool,
+        enemy_light: bool,
+        enemy_heavy: bool,
+    ):
+        if not 0 <= start_step < self.max_step:
+            logger.error(f"{start_step} must be between 0 and {self.max_step}")
+            if start_step < 0:
+                start_step = 0
+            else:
+                start_step = self.max_step
+        # Distance kernel
+        kernel = util.manhattan_kernel(self.max_step - start_step) + start_step
+        kernel[kernel > self.max_step] = self.max_step
+        # Place that in correct spot
+        # Note: last layer is empty
+        index_array = util.pad_and_crop(
+            kernel,
+            self.friendly_valid_move_map,
+            pos[0],
+            pos[1],
+            fill_value=self.max_step - start_step,
+        )
+
+        # Start with empty
+        costmap = np.zeros_like(self.friendly_valid_move_map, dtype=int)
+        x, y = self._x, self._y
+        if friendly_light:
+            costmap += self.friendly_light[index_array, x, y]
+        if friendly_heavy:
+            costmap += self.friendly_heavy[index_array, x, y]
+        if enemy_light:
+            costmap += self.enemy_light[index_array, x, y]
+        if enemy_heavy:
+            costmap += self.enemy_heavy[index_array, x, y]
+        return costmap
+
+
+def store_all_paths_to_array(
+    paths: Dict[int, np.ndarray], map_shape, max_step=30, fill_value: int = -1
+) -> np.ndarray:
+    """
+    Fill a 3D numpy array with keys corresponding to each path.
+
+    Args:
+        paths (Dict[Any, np.ndarray]): A dictionary of paths, where the key is the unit_id num and the value is an (N, 2) numpy array representing the path.
+        map_shape: Shape of the map the paths are in (e.g. rubble.shape)
+        max_step: How many steps in the paths to include
+        fill_value (int, optional): The value to fill the array initially. Defaults to -1.
+
+    Returns:
+        np.ndarray: A 3D numpy array with shape (max_step, x_size, y_size) containing the path keys.
+    """
+    # Initialize a 3D array filled with fill_value (or any other invalid key) with shape (max_step, x_size, y_size)
+    filled_array = np.full((max_step, map_shape[0], map_shape[1]), fill_value)
+
+    # Fill the 3D array with the keys corresponding to each path
+    for key, path in paths.items():
+        for step, (x, y) in enumerate(path):
+            filled_array[step, x, y] = key
+
+    return filled_array
 
 
 def calculate_collisions(
@@ -364,10 +592,7 @@ def decide_action(
                     < factory_desires.light_clearing_rubble
                 ):
                     action = actions.CLEAR_RUBBLE
-                elif (
-                        factory_info.light_mining_ice
-                        < factory_desires.light_mining_ice
-                ):
+                elif factory_info.light_mining_ice < factory_desires.light_mining_ice:
                     action = actions.MINE_ICE
                 elif factory_info.light_attacking < factory_desires.light_attacking:
                     action = actions.ATTACK
@@ -398,7 +623,10 @@ def decide_action(
                     action = actions.MINE_ICE
                 elif factory_info.heavy_mining_ore < factory_desires.heavy_mining_ore:
                     action = actions.MINE_ORE
-                elif factory_info.heavy_clearing_rubble < factory_desires.heavy_clearing_rubble:
+                elif (
+                    factory_info.heavy_clearing_rubble
+                    < factory_desires.heavy_clearing_rubble
+                ):
                     action = actions.CLEAR_RUBBLE
                 elif factory_info.heavy_attacking < factory_desires.heavy_attacking:
                     action = actions.ATTACK
@@ -438,7 +666,9 @@ def should_unit_consider_acting(
     # If not enough power to do something meaningful
     should_act = ConsiderActInfo(unit=unit)
 
-    move_valid = unit.valid_moving_actions(unit.master.maps.valid_friendly_move, max_len=1)
+    move_valid = unit.valid_moving_actions(
+        unit.master.maps.valid_friendly_move, max_len=1
+    )
     if unit.power < (
         unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
     ):
@@ -447,7 +677,9 @@ def should_unit_consider_acting(
     elif move_valid.was_valid is False:
         should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_INVALID_MOVE
-        logger.debug(f'Move from {unit.start_of_turn_pos} was invalid for reason {move_valid.invalid_reasons[0]}, action={unit.action_queue[0]}')
+        logger.debug(
+            f"Move from {unit.start_of_turn_pos} was invalid for reason {move_valid.invalid_reasons[0]}, action={unit.action_queue[0]}"
+        )
     # If no queue
     elif len(unit.action_queue) == 0:
         should_act.should_act = True
@@ -735,7 +967,9 @@ class UnitActionPlanner:
             unit = act_info.unit
             unit_distance_map = self._unit_start_distance_map(unit_id)
 
-            unit_info = UnitInfo.from_data(unit=unit, act_info=act_info, distance_map=unit_distance_map)
+            unit_info = UnitInfo.from_data(
+                unit=unit, act_info=act_info, distance_map=unit_distance_map
+            )
 
             data[unit_id] = unit_info
         return UnitInfos(infos=data)
@@ -1044,7 +1278,9 @@ class UnitActionPlanner:
             close_units=possible_close_enemy,
         )
         if desired_action == actions.NOTHING:
-            logger.warning(f"{unit.log_prefix} desired action is {desired_action}. Note to self: What should it be doing? Attacking?")
+            logger.warning(
+                f"{unit.log_prefix} desired action is {desired_action}. Note to self: What should it be doing? Attacking?"
+            )
         else:
             logger.info(f"desired action is {desired_action}")
         success = self._calculate_unit_actions(
@@ -1176,6 +1412,9 @@ class UnitActionPlanner:
         # (basically rubble converted to cost and enemy factories impassible)
         base_costmap = self._get_base_costmap()
 
+        # Calculate 3D path arrays
+        # existing_paths = UnitPaths.from_units(friendly=units_to_act.should_not_act, enemy=self.master.units.enemy)
+
         # Create the action validator for this turn
         action_validator = ValidActionCalculator(
             units_to_act=units_to_act,
@@ -1220,7 +1459,12 @@ class UnitActionPlanner:
                 ActReasons.NEXT_ACTION_TRANSFER,
                 ActReasons.NEXT_ACTION_DIG,
             ]:
-                if action_validator.next_action_valid(unit) and unit.valid_moving_actions(costmap=travel_costmap, max_len=1).was_valid:
+                if (
+                    action_validator.next_action_valid(unit)
+                    and unit.valid_moving_actions(
+                        costmap=travel_costmap, max_len=1
+                    ).was_valid
+                ):
                     logger.debug(f"Next action IS valid, no need to update")
                     # Make sure the next action is taken into account for next validation
                     action_validator.apply_next_action(unit)
