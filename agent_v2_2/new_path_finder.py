@@ -82,6 +82,8 @@ class Pather:
         enemy_light=True,
         enemy_heavy=True,
         collision_only=False,
+        collision_value=-1,
+        # nearby_start_cost=1,
     ):
         """Generate the costmap for the current step (i.e. taking into account pos of unit and all other unit paths)"""
         len_actions = util.num_turns_of_actions(unit.action_queue)
@@ -96,9 +98,10 @@ class Pather:
             friendly_heavy=friendly_heavy,
             enemy_light=enemy_light,
             enemy_heavy=enemy_heavy,
-            collision_cost_value=-1,
-            nearby_start_cost=5 if not collision_only else None,
-            nearby_dropoff_multiplier=0.7,
+            collision_cost_value=collision_value,
+            # nearby_start_cost=nearby_start_cost,
+            true_intercept=collision_only,
+            # step_dropoff_multiplier=0.92,
         )
         # Note: Be careful not to make -1s or 0s become positive (blocked becomes unblocked)
         blocked = np.logical_or(cm <= 0, self.base_costmap <= 0)

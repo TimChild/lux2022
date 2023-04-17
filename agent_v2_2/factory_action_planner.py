@@ -194,6 +194,7 @@ class FactoryDesires:
         light_water_min=50,
         light_water_max=500,
         light_water_max_num=3,
+        light_attack_max_num=2,
         heavy_energy_consideration=1000,
         heavy_rubble_min_tiles=30,
         heavy_rubble_max_tiles=50,
@@ -204,6 +205,7 @@ class FactoryDesires:
         heavy_water_min=200,
         heavy_water_max=2500,
         heavy_water_max_num=3,
+        heavy_attack_max_num=2,
     ):
         # Consider more LIGHT units
         power_req_met = info.power > light_energy_consideration
@@ -229,7 +231,11 @@ class FactoryDesires:
             self.light_mining_ice = max(0, info.light_mining_ice - 1)
 
         # Attack
-        pass
+        if info.num_light == self.total_light():
+            self.light_attacking = max(light_attack_max_num, info.light_attacking+1)
+        elif info.num_light < self.total_heavy():
+            self.light_attacking = max(0, info.light_attacking-1)
+
 
         power_req_met = info.power > heavy_energy_consideration
 
@@ -256,7 +262,10 @@ class FactoryDesires:
             self.heavy_clearing_rubble = max(0, info.heavy_clearing_rubble - 1)
 
         # Attack
-        pass
+        if info.num_heavy == self.total_heavy():
+            self.heavy_attacking = max(heavy_attack_max_num, info.heavy_attacking+1)
+        elif info.num_heavy < self.total_heavy():
+            self.heavy_attacking = max(0, info.heavy_attacking-1)
 
 
 class FactoryActionPlanner:
@@ -349,6 +358,7 @@ class FactoryActionPlanner:
                 light_water_min=20,
                 light_water_max=100,
                 light_water_max_num=3,
+                light_attack_max_num=2,
                 heavy_energy_consideration=1000,
                 heavy_rubble_min_tiles=30,
                 heavy_rubble_max_tiles=50,
@@ -359,6 +369,7 @@ class FactoryActionPlanner:
                 heavy_water_min=200,
                 heavy_water_max=500,
                 heavy_water_max_num=2,
+                heavy_attack_max_num=1,
             )
         # Early mid game
         elif step < 500:
@@ -374,6 +385,7 @@ class FactoryActionPlanner:
                 light_water_min=100,
                 light_water_max=300,
                 light_water_max_num=3,
+                light_attack_max_num=5,
                 heavy_energy_consideration=500,
                 heavy_rubble_min_tiles=20,
                 heavy_rubble_max_tiles=40,
@@ -384,6 +396,7 @@ class FactoryActionPlanner:
                 heavy_water_min=500,
                 heavy_water_max=1500,
                 heavy_water_max_num=3,
+                heavy_attack_max_num=2,
             )
         # mid late game
         elif step < 800:
@@ -399,6 +412,7 @@ class FactoryActionPlanner:
                 light_water_min=300,
                 light_water_max=1000,
                 light_water_max_num=3,
+                light_attack_max_num=10,
                 heavy_energy_consideration=800,
                 heavy_rubble_min_tiles=5,
                 heavy_rubble_max_tiles=30,
@@ -409,6 +423,7 @@ class FactoryActionPlanner:
                 heavy_water_min=1000,
                 heavy_water_max=2500,
                 heavy_water_max_num=4,
+                heavy_attack_max_num=3,
             )
         else:
             desires.update_desires(
@@ -423,6 +438,7 @@ class FactoryActionPlanner:
                 light_water_min=500,
                 light_water_max=1000,
                 light_water_max_num=5,
+                light_attack_max_num=15,
                 heavy_energy_consideration=1500,
                 heavy_rubble_min_tiles=5,
                 heavy_rubble_max_tiles=15,
@@ -433,6 +449,7 @@ class FactoryActionPlanner:
                 heavy_water_min=500,
                 heavy_water_max=2500,
                 heavy_water_max_num=5,
+                heavy_attack_max_num=5,
             )
         logger.debug(
             f"Desires after HeavyIce={desires.heavy_mining_ice}, LightRubble={desires.light_clearing_rubble}, LightOre={desires.light_mining_ore}, LightAttack={desires.light_attacking}, HeavyAttack={desires.heavy_attacking}"

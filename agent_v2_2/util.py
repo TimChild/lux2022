@@ -980,6 +980,7 @@ def show_map_array(map_array):
     fig.update_yaxes(
         autorange="reversed",
     )
+    fig.update_layout(height=400, width=500)
     return fig
 
 

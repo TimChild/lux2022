@@ -260,6 +260,10 @@ class UnitPaths:
             indexing="ij",
         )
         self._x, self._y = x, y
+        self._friendly_blur_kernel = self._friendly_blur_kernel()
+        self._enemy_blur_kernel = self._enemy_blur_kernel()
+        self._friendly_collision_kernel = self._friendly_collision_blur()
+        self._enemy_collision_kernel = self._enemy_collision_blur()
 
     @property
     def all(self):
@@ -275,6 +279,34 @@ class UnitPaths:
             ],
             axis=0,
         )
+
+    def _enemy_blur_kernel(self):
+        blur_size = 3
+        blur_kernel = (2 / 0.5) * 0.5 ** util.manhattan_kernel(blur_size)
+        # blur_kernel = (
+        #     util.pad_and_crop(
+        #         adj_kernel, blur_kernel, blur_size, blur_size, fill_value=1
+        #     )
+        #     * blur_kernel
+        # )
+        # blur_kernel[blur_kernel < 0] = -2
+        return blur_kernel
+
+    def _enemy_collision_blur(self):
+        adj_kernel = (util.manhattan_kernel(1) <= 1).astype(int) * -1
+        adj_kernel[adj_kernel >= 0] = 0
+        return adj_kernel
+
+    def _friendly_blur_kernel(self):
+        blur_size = 3
+        blur_kernel = (1 / 0.5) * 0.5 ** util.manhattan_kernel(blur_size)
+        blur_kernel[blur_size, blur_size] = -1
+        return blur_kernel
+
+    def _friendly_collision_blur(self):
+        adj_kernel = (util.manhattan_kernel(0) <= 1).astype(int) * -1
+        adj_kernel[adj_kernel >= 0] = 0
+        return adj_kernel
 
     @classmethod
     def from_units(
@@ -307,7 +339,7 @@ class UnitPaths:
             )
             for _ in range(4)
         ]
-        for array, dict_, move_map in zip(
+        for array, dict_, move_map, is_enemy in zip(
             arrays,
             [friendly_light, friendly_heavy, enemy_light, enemy_heavy],
             [
@@ -316,6 +348,7 @@ class UnitPaths:
                 enemy_valid_move_map,
                 enemy_valid_move_map,
             ],
+            [False, False, True, True],
         ):
             for unit_num, unit in dict_.items():
                 valid_path = unit.valid_moving_actions(
@@ -327,12 +360,13 @@ class UnitPaths:
                     max_len=max_step,
                 )
 
-                x, y = unit.pos
-                for step in range(max_step):
-                    if step < len(path):
-                        x, y = path[step]
-                    if x is not None:
-                        array[step, x, y] = unit_num
+                cls._add_path_to_array(unit, path, array, max_step, is_enemy=is_enemy)
+                # x, y = unit.pos
+                # for step in range(max_step):
+                #     if step < len(path):
+                #         x, y = path[step]
+                #     if x is not None:
+                #         array[step, x, y] = unit_num
 
         return cls(
             friendly_valid_move_map=friendly_valid_move_map,
@@ -343,6 +377,24 @@ class UnitPaths:
             enemy_heavy=arrays[3],
             max_step=max_step,
         )
+
+    @staticmethod
+    def _add_path_to_array(
+        unit: UnitManager, path, arr: np.ndarray, max_step: int, is_enemy: bool
+    ):
+        x, y = unit.start_of_turn_pos
+        extra = 0
+        for step in range(max_step):
+            if step < len(path):
+                x, y = path[step]
+                arr[step, x, y] = unit.id_num
+            # Continue to fill last enemy position as position for a few extra turns
+            elif x is not None and is_enemy and extra < 5:
+                arr[step, x, y] = unit.id_num
+                extra += 1
+            # Don't do that for too long (probably not true) or for friendly (friendly will act again)
+            else:
+                break
 
     def add_unit(self, unit: UnitManager, is_enemy=False):
         """Add a new unit to the path arrays"""
@@ -367,12 +419,13 @@ class UnitPaths:
             unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=max_step
         )
 
-        x, y = unit.pos
-        for step in range(self.max_step):
-            if step < len(path):
-                x, y = path[step]
-            if x is not None:
-                array[step, x, y] = unit_num
+        self._add_path_to_array(unit, path, array, max_step, is_enemy=is_enemy)
+        # x, y = unit.pos
+        # for step in range(self.max_step):
+        #     if step < len(path):
+        #         x, y = path[step]
+        #     if x is not None:
+        #         array[step, x, y] = unit_num
 
         # for step, (x, y) in enumerate(path):
         #     array[step, x, y] = unit_num
@@ -388,36 +441,112 @@ class UnitPaths:
         enemy_heavy: bool,
         collision_cost_value=-1,
         nearby_start_cost: Optional[int] = 5,
-        nearby_dropoff_multiplier=0.7,
+        step_dropoff_multiplier=0.92,
+        true_intercept=False,
     ):
         """Create a costmap from a specific position at a specific step"""
-        cm = np.ones_like(self.friendly_valid_move_map, dtype=float)
-        collisions = self.calculate_likely_unit_collisions(
-            pos=pos,
-            start_step=start_step,
-            exclude_id_nums=exclude_id_nums,
-            friendly_light=friendly_light,
-            friendly_heavy=friendly_heavy,
-            enemy_light=enemy_light,
-            enemy_heavy=enemy_heavy,
-        )
+        if nearby_start_cost is not None and nearby_start_cost < 0:
+            raise ValueError(f"Nearby start cost must be positive or None")
+        close_encounters_dicts = [
+            self.calculate_likely_unit_collisions(
+                pos=pos,
+                start_step=start_step,
+                exclude_id_nums=exclude_id_nums,
+                friendly_light=friendly_light,
+                friendly_heavy=friendly_heavy,
+                enemy_light=enemy_light,
+                enemy_heavy=enemy_heavy,
+            )
+        ]
+        if nearby_start_cost and not true_intercept:
+            close_encounters_dicts.extend(
+                [
+                    self.calculate_likely_unit_collisions(
+                        pos=pos,
+                        start_step=start_step + i,
+                        exclude_id_nums=exclude_id_nums,
+                        friendly_light=friendly_light,
+                        friendly_heavy=friendly_heavy,
+                        enemy_light=enemy_light,
+                        enemy_heavy=enemy_heavy,
+                    )
+                    for i in range(1, 5)
+                ]
+            )
 
-        if nearby_start_cost is not None:
-            for i in range(1, 5):
-                close_encounters = self.calculate_likely_unit_collisions(
-                    pos=pos,
-                    start_step=start_step + i,
-                    exclude_id_nums=exclude_id_nums,
-                    friendly_light=friendly_light,
-                    friendly_heavy=friendly_heavy,
-                    enemy_light=enemy_light,
-                    enemy_heavy=enemy_heavy,
-                )
-                cm[close_encounters >= 0] = (
-                    nearby_start_cost * nearby_dropoff_multiplier**i
-                )
-        cm[collisions >= 0] = collision_cost_value
+        # setup map
+        cm = np.ones_like(self.friendly_valid_move_map, dtype=float)
+
+        # collect blurs and collision kernels
+        enemy_blur = self._enemy_blur_kernel
+        enemy_collision = self._enemy_collision_kernel
+        friendly_blur = self._friendly_blur_kernel
+        friendly_collision = self._friendly_collision_kernel
+        for i, close_dict in enumerate(close_encounters_dicts):
+            for k, arr in close_dict.items():
+
+                # Don't blur or make collision mask as big for friendly
+                if k.startswith("friendly"):
+                    blur = friendly_blur.copy()
+                    collision = friendly_collision
+                # For enemy it depends if we are trying to collide or avoid
+                else:
+                    blur = enemy_blur.copy()
+                    # Trying to avoid
+                    if collision_cost_value <= 0:
+                        # blocks adjacent
+                        collision = enemy_collision
+                    # Trying to collide
+                    else:
+                        # only selects intercepts
+                        collision = friendly_collision
+
+                # Make 1s wherever units present
+                arr = (arr >= 0).astype(float)
+
+                # Do nearby blur if not None or 0
+                if nearby_start_cost is not None and nearby_start_cost and not true_intercept:
+                    blur *= nearby_start_cost * step_dropoff_multiplier ** (start_step + i)
+                    # Blur that with kernel
+                    add_cm = util.convolve_array_kernel(arr, blur, fill=0)
+                    # Add non-blocking costs
+                    cm[cm > 0] += add_cm[cm > 0]
+
+                # Calculate likely collisions
+                col_cm = util.convolve_array_kernel(arr, collision, fill=0)
+
+                # Set blocking (or targeting) costs
+                cm[col_cm < 0] = collision_cost_value
         return cm
+        #######
+
+        # cm = np.ones_like(self.friendly_valid_move_map, dtype=float)
+        # collisions = self.calculate_likely_unit_collisions(
+        #     pos=pos,
+        #     start_step=start_step,
+        #     exclude_id_nums=exclude_id_nums,
+        #     friendly_light=friendly_light,
+        #     friendly_heavy=friendly_heavy,
+        #     enemy_light=enemy_light,
+        #     enemy_heavy=enemy_heavy,
+        # )
+        #
+        # if nearby_start_cost is not None:
+        #     for i in range(1, 5):
+        #         close_encounters = self.calculate_likely_unit_collisions(
+        #             pos=pos,
+        #             start_step=start_step + i,
+        #             exclude_id_nums=exclude_id_nums,
+        #             friendly_light=friendly_light,
+        #             friendly_heavy=friendly_heavy,
+        #             enemy_light=enemy_light,
+        #             enemy_heavy=enemy_heavy,
+        #         )
+        #         cm[close_encounters >= 0] = (
+        #             nearby_start_cost * nearby_dropoff_multiplier**i
+        #         )
+        # cm[collisions >= 0] = collision_cost_value
+        # return cm
 
     def calculate_likely_unit_collisions(
         self,
@@ -428,7 +557,7 @@ class UnitPaths:
         friendly_heavy: bool,
         enemy_light: bool,
         enemy_heavy: bool,
-    ):
+    ) -> Dict[str, np.ndarray]:
         """
         Creates 2D array of unit ID nums where their path is manhattan distance from pos, only keeps first unit_id
         at location (so all valid, but can't see where things cross paths)
@@ -436,52 +565,92 @@ class UnitPaths:
         if isinstance(exclude_id_nums, int):
             exclude_id_nums = [exclude_id_nums]
 
+        do_calcs = True
         if not 0 <= start_step < self.max_step:
             if start_step >= self.max_step:
                 logger.info(
                     f"Requesting map outside of max_steps {self.max_step} returning empty"
                 )
-                return np.full_like(self.friendly_valid_move_map, -1, dtype=int)
+                do_calcs =  False
             logger.error(f"{start_step} must be between 0 and {self.max_step}")
             if start_step < 0:
                 start_step = 0
             else:
                 start_step = self.max_step
-        # Distance kernel
-        kernel = util.manhattan_kernel(self.max_step - start_step) + start_step
-        kernel[kernel > self.max_step] = self.max_step
 
-        # Place that in correct spot
-        index_array = util.pad_and_crop(
-            kernel,
-            self.friendly_valid_move_map,
-            pos[0],
-            pos[1],
-            fill_value=self.max_step - start_step,
-        )
+        if do_calcs:
+            # Distance kernel
+            kernel = util.manhattan_kernel(self.max_step - start_step) + start_step
+            kernel[kernel > self.max_step] = self.max_step
+
+            # Place that in correct spot
+            index_array = util.pad_and_crop(
+                kernel,
+                self.friendly_valid_move_map,
+                pos[0],
+                pos[1],
+                fill_value=self.max_step - start_step,
+            )
 
         # Start with empty
-        unit_id_map = np.full_like(self.friendly_valid_move_map, -1, dtype=int)
         x, y = self._x, self._y
-        # Keep first unit at location only
+        likely_collision_id_maps = OrderedDict()
+        teams, utypes = self._get_teams_and_utypes(
+            friendly_light, friendly_heavy, enemy_light, enemy_heavy
+        )
+        for team, utype in zip(teams, utypes):
+            key = f"{team}_{utype}"
+            arr = getattr(self, key)
+            if do_calcs:
+                cm = arr[index_array, x, y]
+                cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
+            else:
+                cm = arr[-1, x, y]
+            likely_collision_id_maps[key] = cm
+
+        return likely_collision_id_maps
+
+    def _get_teams_and_utypes(
+        self,
+        friendly_light: bool,
+        friendly_heavy: bool,
+        enemy_light: bool,
+        enemy_heavy: bool,
+    ) -> Tuple[List[str], List[str]]:
+        teams = ["friendly"] * (friendly_light + friendly_heavy)
+        teams.extend(["enemy"] * (enemy_light + enemy_heavy))
+        utypes = []
         if friendly_light:
-            cm = self.friendly_light[index_array, x, y]
-            # Replace excluded with -1 (same as ignoring)
-            cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
-            unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
+            utypes.append('light')
         if friendly_heavy:
-            cm = self.friendly_heavy[index_array, x, y]
-            cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
-            unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
+            utypes.append('heavy')
         if enemy_light:
-            cm = self.enemy_light[index_array, x, y]
-            cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
-            unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
+            utypes.append('light')
         if enemy_heavy:
-            cm = self.enemy_heavy[index_array, x, y]
-            cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
-            unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
-        return unit_id_map
+            utypes.append('heavy')
+        return teams, utypes
+        # # Start with empty
+        # unit_id_map = np.full_like(self.friendly_valid_move_map, -1, dtype=int)
+        # x, y = self._x, self._y
+        # # Keep first unit at location only
+        # if friendly_light:
+        #     cm = self.friendly_light[index_array, x, y]
+        #     # Replace excluded with -1 (same as ignoring)
+        #     cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
+        #     unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
+        # if friendly_heavy:
+        #     cm = self.friendly_heavy[index_array, x, y]
+        #     cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
+        #     unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
+        # if enemy_light:
+        #     cm = self.enemy_light[index_array, x, y]
+        #     cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
+        #     unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
+        # if enemy_heavy:
+        #     cm = self.enemy_heavy[index_array, x, y]
+        #     cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
+        #     unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
+        # return unit_id_map
 
 
 def store_all_paths_to_array(
@@ -689,6 +858,7 @@ class ActReasons(Enum):
     NEXT_ACTION_DIG = "next action dig"
     NEXT_ACTION_TRANSFER = "next action transfer"
     NO_REASON_TO_ACT = "no reason to act"
+    ATTACKING = "attacking"
 
 
 @dataclass
@@ -743,6 +913,9 @@ def should_unit_consider_acting(
     elif unit_id in close_enemies:
         should_act.should_act = True
         should_act.reason = ActReasons.CLOSE_TO_ENEMY
+    elif unit.status.current_action == actions.ATTACK:
+        should_act.should_act = True
+        should_act.reason = ActReasons.ATTACKING
     elif unit.action_queue[0][util.ACT_TYPE] == util.PICKUP:
         should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_PICKUP
@@ -762,7 +935,6 @@ def should_unit_consider_acting(
         logger.debug(f"{unit_id} should consider acting -- {should_act.reason}")
     else:
         logger.debug(f"{unit_id} should not consider acting -- {should_act.reason}")
-
     return should_act
 
 
@@ -1304,9 +1476,6 @@ class UnitActionPlanner:
                 f"{unit.unit_id} MUST move first turn to avoid collision at {unit.pos}"
             )
             unit_must_move = True
-            # travel_costmap[
-            #     unit.pos[0], unit.pos[1]
-            # ] = 100  # <= 0 breaks pathing, 100 will make unit avoid this position for future travel
 
         unit.action_queue = []
 
@@ -1314,11 +1483,6 @@ class UnitActionPlanner:
         possible_close_enemy: [None, CloseUnits] = close_units.close_to_enemy.get(
             unit.unit_id, None
         )
-        # action_type = decide_action(df_row, possible_close_enemy)
-
-        # TODO: If close to enemy and should attack - do it
-        # TODO: If close to enemy and run away - do it
-        # TODO: Collect some factory obs to help decide what to do
 
         desired_action = decide_action(
             unit_info=unit_info,
@@ -1332,6 +1496,7 @@ class UnitActionPlanner:
             )
         else:
             logger.info(f"desired action is {desired_action}")
+
         success = self._calculate_unit_actions(
             unit,
             desired_action=desired_action,
@@ -1470,7 +1635,7 @@ class UnitActionPlanner:
             enemy=self.master.units.enemy.all,
             friendly_valid_move_map=self.master.maps.valid_friendly_move,
             enemy_valid_move_map=self.master.maps.valid_enemy_move,
-            max_step=200,
+            max_step=50,
         )
 
         # Create the action validator for this turn
@@ -1538,6 +1703,7 @@ class UnitActionPlanner:
                     logger.debug(f"Next action IS valid, no need to update")
                     # Make sure the next action is taken into account for next validation
                     action_validator.apply_next_action(unit)
+                    existing_paths.add_unit(unit, is_enemy=False)
                     units_to_act.should_not_act[unit_id] = unit_info.act_info
                     continue
                 else:
@@ -1572,9 +1738,13 @@ class UnitActionPlanner:
                 # Note: some other things about unit may be wrong, e.g. pos, power. But probably not important from here on (and slow to copy)
                 units_to_act.should_not_act[unit.unit_id] = unit_info.act_info
             else:
-                logger.debug(
-                    f"Unit has updated actions, first few actions are {unit.action_queue[:3]}"
+                logger.info(
+                    f"{unit.log_prefix} has updated actions "
+                    f"(last updated {self.master.step - unit.status.last_action_update_step} ago),"
+                    f"was {unit.status.previous_action}, now {unit.status.current_action}"
+                    f" first few actions are {unit.action_queue[:3]}"
                 )
+                unit.status.last_action_update_step = self.master.step
                 units_to_act.has_updated_actions[unit.unit_id] = unit_info.act_info
 
             # Make sure the next action is taken into account for next validation

@@ -37,6 +37,8 @@ class CombatPlanner:
             enemy_light=True if unit.unit_type == "LIGHT" else False,
             enemy_heavy=True if unit.unit_type == "HEAVY" else False,
         )
+        # Only asking for one anyway, so will always be first in dict
+        enemy_location_ids = next(iter(enemy_location_ids.values()))
 
         # Find nearest that has lower power or lower unit type
         cm = self.master.pathfinder.generate_costmap(unit, collision_only=True)
@@ -86,7 +88,7 @@ class CombatPlanner:
             power_at_enemy = power_now - cost_to_enemy
             power_back_to_factory = power_at_enemy - cost_to_factory
 
-            if enemy_unit.power < power_at_enemy:
+            if enemy_unit.power-enemy_unit.unit_config.MOVE_COST*len(path_to_enemy) <= power_at_enemy:
                 if power_back_to_factory > 0:
                     logger.info(
                         f"Found good enemy unit to intercept {enemy_unit.unit_id}, doing that"

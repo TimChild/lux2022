@@ -172,7 +172,8 @@ class FriendlyUnitManager(UnitManager):
         self.status.previous_action = self.status.current_action
         self.status.current_action = new_action
         self.status.last_action_success = success
-        self.status.last_action_update_step = self.master.step
+        # Action queue might not actually be getting updated
+        # self.status.last_action_update_step = self.master.step
 
     def on_own_factory(self) -> bool:
         """Is this unit on its own factory"""
