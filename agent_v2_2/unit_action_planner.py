@@ -368,6 +368,7 @@ class UnitPaths:
         self,
         pos: util.POS_TYPE,
         start_step: int,
+        exclude_id_nums: Union[int, List[int]],
         friendly_light: bool,
         friendly_heavy: bool,
         enemy_light: bool,
@@ -378,9 +379,10 @@ class UnitPaths:
     ):
         """Create a costmap from a specific position at a specific step"""
         cm = np.ones_like(self.friendly_valid_move_map, dtype=float)
-        collisions = self._make_costmap(
+        collisions = self.calculate_likely_unit_collisions(
             pos=pos,
             start_step=start_step,
+            exclude_id_nums=exclude_id_nums,
             friendly_light=friendly_light,
             friendly_heavy=friendly_heavy,
             enemy_light=enemy_light,
@@ -388,9 +390,10 @@ class UnitPaths:
         )
 
         for i in range(1, 5):
-            close_encounters = self._make_costmap(
+            close_encounters = self.calculate_likely_unit_collisions(
                 pos=pos,
                 start_step=start_step + i,
+                exclude_id_nums=exclude_id_nums,
                 friendly_light=friendly_light,
                 friendly_heavy=friendly_heavy,
                 enemy_light=enemy_light,
@@ -402,15 +405,23 @@ class UnitPaths:
         cm[collisions >= 0] = collision_cost_value
         return cm
 
-    def _make_costmap(
+    def calculate_likely_unit_collisions(
         self,
         pos: util.POS_TYPE,
         start_step: int,
+        exclude_id_nums: Union[int, List[int]],
         friendly_light: bool,
         friendly_heavy: bool,
         enemy_light: bool,
         enemy_heavy: bool,
     ):
+        """
+        Creates 2D array of unit ID nums where their path is manhattan distance from pos, only keeps first unit_id
+        at location (so all valid, but can't see where things cross paths)
+        """
+        if isinstance(exclude_id_nums, int):
+            exclude_id_nums = [exclude_id_nums]
+
         if not 0 <= start_step < self.max_step:
             logger.error(f"{start_step} must be between 0 and {self.max_step}")
             if start_step < 0:
@@ -431,17 +442,27 @@ class UnitPaths:
         )
 
         # Start with empty
-        costmap = np.zeros_like(self.friendly_valid_move_map, dtype=int)
+        unit_id_map = np.full_like(self.friendly_valid_move_map, -1, dtype=int)
         x, y = self._x, self._y
+        # Keep first unit at location only
         if friendly_light:
-            costmap += self.friendly_light[index_array, x, y]
+            cm = self.friendly_light[index_array, x, y]
+            # Replace excluded with -1 (same as ignoring)
+            cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
+            unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
         if friendly_heavy:
-            costmap += self.friendly_heavy[index_array, x, y]
+            cm = self.friendly_heavy[index_array, x, y]
+            cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
+            unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
         if enemy_light:
-            costmap += self.enemy_light[index_array, x, y]
+            cm = self.enemy_light[index_array, x, y]
+            cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
+            unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
         if enemy_heavy:
-            costmap += self.enemy_heavy[index_array, x, y]
-        return costmap
+            cm = self.enemy_heavy[index_array, x, y]
+            cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
+            unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
+        return unit_id_map
 
 
 def store_all_paths_to_array(
@@ -1412,8 +1433,14 @@ class UnitActionPlanner:
         # (basically rubble converted to cost and enemy factories impassible)
         base_costmap = self._get_base_costmap()
 
-        # Calculate 3D path arrays
-        # existing_paths = UnitPaths.from_units(friendly=units_to_act.should_not_act, enemy=self.master.units.enemy)
+        # Calculate 3D path arrays to use for calculating costmaps later
+        existing_paths = UnitPaths.from_units(
+            friendly={k: act.unit for k, act in units_to_act.should_not_act.items()},
+            enemy=self.master.units.enemy.all,
+            friendly_valid_move_map=self.master.maps.valid_friendly_move,
+            enemy_valid_move_map=self.master.maps.valid_enemy_move,
+            max_step=30,
+        )
 
         # Create the action validator for this turn
         action_validator = ValidActionCalculator(
