@@ -102,6 +102,8 @@ class UnitManager(abc.ABC):
 
     @pos.setter
     def pos(self, value):
+        if value is None or len(value) != 2:
+            raise ValueError(f"got {value} with type {type(value)} for pos")
         self.unit.pos = value
 
     @property
@@ -188,7 +190,12 @@ class FriendlyUnitManager(UnitManager):
 
     def on_own_factory(self) -> bool:
         """Is this unit on its own factory"""
-        return self.factory_loc[self.pos[0], self.pos[1]] == 1
+        return (
+                self.factory_loc[self.pos[0], self.pos[1]] == 1
+        )
+        # return (
+        #     self.factory_loc[self.start_of_turn_pos[0], self.start_of_turn_pos[1]] == 1
+        # )
 
     @property
     def factory_loc(self) -> [None, np.ndarray]:

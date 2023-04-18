@@ -1752,7 +1752,7 @@ def path_to_factory_edge_nearest_pos(
         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
 
     logger.warning(f"No path to edge of factory found without collisions")
-    return np.array([[]])
+    return np.array([])
     # if max_delay_by_move_center > 0:
     #     logger.info(f'Adding delay to finding path to edge of factory')
     #     new_collision_params = CollisionParams(

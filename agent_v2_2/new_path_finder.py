@@ -167,7 +167,7 @@ class Pather:
         # TODO: Modify previous actions n if first new action is same direction (just a slight optimization)
         actions = util.path_to_actions(path)
         unit.action_queue.extend(actions)
-        if len(path) > 0:
+        if len(path) > 0 and len(path[-1] == 2):
             unit.pos = path[-1]
 
     def append_direction_to_actions(self, unit: UnitManager, direction: int):

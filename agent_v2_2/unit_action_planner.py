@@ -1179,7 +1179,7 @@ class SingleUnitActionPlanner:
                 or q[0][util.ACT_DIRECTION] == util.CENTER
             ):
                 logger.error(
-                    f"{unit.unit_id} was required to move first turn, but actions are {q}"
+                    f"{unit.log_prefix} was required to move first turn, but actions are {q}"
                 )
 
         return success

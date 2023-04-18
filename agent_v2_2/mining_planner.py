@@ -456,9 +456,6 @@ class BaseRoute:
         self.unit = unit
         self.heavy_ignore_light_at_resource = heavy_ignore_light_at_resource
 
-        self.unit_start_pos = unit.pos
-        self.unit.action_queue = []
-
     def _path_to_and_from_resource(self):
         path_to_resource = self._path_to_resource()
         cost_to_resource = power_cost_of_path(
@@ -515,11 +512,14 @@ class BaseRoute:
             margin=2,
         )
 
-    def _move_to_edge_of_factory(self) -> bool:
+    def _move_to_edge_of_factory(self, must_move=False) -> bool:
         cm = self.pathfinder.generate_costmap(self.unit, friendly_light=True)
+        factory_loc = self.factory.factory_loc.copy()
+        if must_move:
+            factory_loc[self.unit.pos_slice] = 0
         path = path_to_factory_edge_nearest_pos(
             pathfinder=self.pathfinder,
-            factory_loc=self.factory.factory_loc,
+            factory_loc=factory_loc,
             pos=self.unit.pos,
             pos_to_be_near=self.resource_pos,
             costmap=cm,
@@ -818,7 +818,6 @@ class MiningRoutePlanner(BaseRoute):
 
         # This will be changed during route planning
         self.unit = unit
-        self.unit.action_queue = []
 
     def make_route(self, unit_must_move: bool) -> bool:
         # # If more than a step away, ignore lights (they can get out of the way)
@@ -830,7 +829,7 @@ class MiningRoutePlanner(BaseRoute):
         success = True
         if self.unit.on_own_factory() and unit_must_move:
             logger.info(f"on factory and must move first")
-            success = self._move_to_edge_of_factory()
+            success = self._move_to_edge_of_factory(must_move=True)
             if not success:
                 return False
 

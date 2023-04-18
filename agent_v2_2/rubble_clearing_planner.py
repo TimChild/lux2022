@@ -250,7 +250,7 @@ class RubbleRoutePlanner:
 
         # These will be changed during route planning
         self.unit = unit
-        self.unit.action_queue = []
+        # self.unit.action_queue = []
         self._future_rubble = self.rubble.copy()
         self._future_value = self.rubble_value_map.copy()
 
