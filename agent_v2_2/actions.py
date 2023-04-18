@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+from enum import Enum
 import abc
 
 import numpy as np
@@ -11,12 +12,15 @@ if TYPE_CHECKING:
     from factory_manager import FactoryManager
 
 
-MINE_ICE = "mine_ice"
-MINE_ORE = "mine_ore"
-CLEAR_RUBBLE = "clear_rubble"
-ATTACK = "attack"
-RUN_AWAY = "run_away"
-NOTHING = "do_nothing"
+class Actions(Enum):
+    MINE_ICE = "mine_ice"
+    MINE_ORE = "mine_ore"
+    CLEAR_RUBBLE = "clear_rubble"
+    ATTACK = "attack"
+    RUN_AWAY = "run_away"
+    NOTHING = "do_nothing"
+    CONTINUE_NO_CHANGE = "continue previous action no change"
+    CONTINUE_UPDATE = "continue previous action but update"
 
 
 ######################

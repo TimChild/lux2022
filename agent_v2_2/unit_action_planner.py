@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 import util
-import actions
+from actions import Actions
 from config import get_logger
 from factory_action_planner import FactoryDesires, FactoryInfo
 from master_state import MasterState, AllUnits
@@ -227,6 +227,13 @@ class CloseUnits:
     other_unit_distances: List[int] = field(default_factory=list)
     other_unit_types: List[str] = field(default_factory=list)
     other_unit_powers: List[int] = field(default_factory=list)
+
+    def closest(self) -> Optional[UnitManager]:
+        if len(self.other_unit_distances) == 0:
+            return None
+        return self.other_units[
+            self.other_unit_distances.index(min(self.other_unit_distances))
+        ]
 
 
 @dataclass
@@ -722,15 +729,19 @@ def calculate_collisions(
 class ActionDecider:
     def __init__(
         self,
+        unit: FriendlyUnitManager,
         unit_info: UnitInfo,
+            action_validator: ValidActionCalculator,
         factory_desires: FactoryDesires,
         factory_info: FactoryInfo,
-        close_units: Union[None, CloseUnits],
+        close_enemy_units: Union[None, CloseUnits],
     ):
+        self.unit = unit
         self.unit_info = unit_info
+        self.action_validator = action_validator
         self.factory_desires = factory_desires
         self.factory_info = factory_info
-        self.close_units = close_units
+        self.close_units = close_enemy_units
 
     def decide_action(self) -> str:
         logger.info(f"Deciding action for {self.unit_info.unit_id}")
@@ -742,45 +753,69 @@ class ActionDecider:
         logger.debug(f"action should be {action}")
         return action
 
-    def _attack_or_run_away(self, unit_type: str, power_threshold: int) -> [None, str]:
+    def _possible_switch_to_attack(self) -> [None, str]:
+        """Potentially switch to attacking if an enemy wanders by"""
+        # Only if something nearby
         if self.close_units is not None:
-            close_enemies_within_2 = [
-                enemy
-                for enemy, distance in zip(
-                    self.close_units.other_unit_types,
-                    self.close_units.other_unit_distances,
-                )
-                if distance <= 2 and enemy == unit_type
-            ]
-            if len(close_enemies_within_2) == 1:
-                enemy_power = self.close_units.other_unit_powers[
-                    self.close_units.other_unit_types.index(unit_type)
-                ]
-                if enemy_power < self.unit_info.power - power_threshold:
-                    return actions.ATTACK
-            elif len(close_enemies_within_2) > 1:
-                return actions.RUN_AWAY
+            # And not doing something important
+            if not self.unit.status.current_action in [
+                Actions.MINE_ICE,
+                Actions.MINE_ORE,
+            ]:
+                # And has a reasonable amount of energy
+                if (
+                    self.unit.start_of_turn_power
+                    > self.unit.unit_config.BATTERY_CAPACITY * 0.3
+                ):
+                    # And did not change actions in the last few turns
+                    if (
+                        self.unit.master.step - self.unit.status.last_action_update_step
+                        > 5
+                    ):
+                        # And nearby enemy is equal type with lower power
+                        closest = self.close_units.closest()
+                        if (
+                            closest.unit_type == self.unit.unit_type
+                            and closest.power < self.unit.start_of_turn_power
+                        ):
+                            logger.info(f"{self.unit.log_prefix} switching to attack")
+                            return Actions.ATTACK
         return None
+
+    def _decide_noops(self):
+        """Figure out if this should be a noop turn (i.e. just a validation step)"""
+        act_reason = self.unit_info.act_info.reason
+        if act_reason in [
+            ActReasons.NEXT_ACTION_PICKUP,
+            ActReasons.NEXT_ACTION_TRANSFER,
+            ActReasons.NEXT_ACTION_DIG,
+            ActReasons.COLLISION_WITH_FRIENDLY,
+        ]:
+            if self.action_validator.next_action_valid(self.unit)
 
     def _decide_light_unit_action(self) -> str:
         logger.debug(f"Deciding between light unit actions")
-        action = self._attack_or_run_away("LIGHT", 10)
-        if action is None:
-            action = self._decide_unit_action_based_on_factory_needs(
-                self.factory_desires.light_mining_ore,
-                self.factory_info.light_mining_ore,
-                self.factory_desires.light_clearing_rubble,
-                self.factory_info.light_clearing_rubble,
-                self.factory_desires.light_mining_ice,
-                self.factory_info.light_mining_ice,
-                self.factory_desires.light_attacking,
-                self.factory_info.light_attacking,
-            )
+        action = self._possible_switch_to_attack()
+        if action is not None:
+            return action
+        action = self._decide_noops()
+        if action is not None:
+            return action
+        action = self._decide_unit_action_based_on_factory_needs(
+            self.factory_desires.light_mining_ore,
+            self.factory_info.light_mining_ore,
+            self.factory_desires.light_clearing_rubble,
+            self.factory_info.light_clearing_rubble,
+            self.factory_desires.light_mining_ice,
+            self.factory_info.light_mining_ice,
+            self.factory_desires.light_attacking,
+            self.factory_info.light_attacking,
+        )
         return action
 
     def _decide_heavy_unit_action(self) -> str:
         logger.debug(f"Deciding between heavy unit actions")
-        action = self._attack_or_run_away("HEAVY", 100)
+        action = self._possible_switch_to_attack()
         if action is None:
             action = self._decide_unit_action_based_on_factory_needs(
                 self.factory_desires.heavy_mining_ore,
@@ -807,7 +842,7 @@ class ActionDecider:
     ) -> str:
         if (
             not self.unit_info.unit.on_own_factory()
-            and self.unit_info.unit.status.current_action != actions.NOTHING
+            and self.unit_info.unit.status.current_action != Actions.NOTHING
         ):
             action = self.unit_info.unit.status.current_action
             logger.debug(
@@ -820,15 +855,15 @@ class ActionDecider:
 
             self.factory_info.remove_unit_from_current_count(self.unit_info.unit)
             if current_mining_ore < desired_mining_ore:
-                action = actions.MINE_ORE
+                action = Actions.MINE_ORE
             elif current_clearing_rubble < desired_clearing_rubble:
-                action = actions.CLEAR_RUBBLE
+                action = Actions.CLEAR_RUBBLE
             elif current_mining_ice < desired_mining_ice:
-                action = actions.MINE_ICE
+                action = Actions.MINE_ICE
             elif current_attacking < desired_attacking:
-                action = actions.ATTACK
+                action = Actions.ATTACK
             else:
-                action = actions.NOTHING
+                action = Actions.NOTHING
 
         return action
 
@@ -901,7 +936,7 @@ def should_unit_consider_acting(
     elif unit_id in close_enemies:
         should_act.should_act = True
         should_act.reason = ActReasons.CLOSE_TO_ENEMY
-    elif unit.status.current_action == actions.ATTACK:
+    elif unit.status.current_action == Actions.ATTACK:
         should_act.should_act = True
         should_act.reason = ActReasons.ATTACKING
     elif unit.action_queue[0][util.ACT_TYPE] == util.PICKUP:
@@ -913,7 +948,7 @@ def should_unit_consider_acting(
     elif unit.action_queue[0][util.ACT_TYPE] == util.DIG:
         should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_DIG
-    elif unit.status.current_action == actions.NOTHING:
+    elif unit.status.current_action == Actions.NOTHING:
         should_act.should_act = True
         should_act.reason = ActReasons.CURRENT_STATUS_NOTHING
     else:
@@ -998,6 +1033,7 @@ class SingleUnitActionPlanner:
         close_units: AllCloseUnits,
         factory_desires: FactoryDesires,
         factory_info: FactoryInfo,
+        action_validator: ValidActionCalculator,
         mining_planner: MiningPlanner,
         rubble_clearing_planner: RubbleClearingPlanner,
         combat_planner: CombatPlanner,
@@ -1010,12 +1046,15 @@ class SingleUnitActionPlanner:
         self.close_units = close_units
         self.factory_desires = factory_desires
         self.factory_info = factory_info
+        self.action_validator = action_validator
         self.mining_planner = mining_planner
         self.rubble_clearing_planner = rubble_clearing_planner
         self.combat_planner = combat_planner
 
         self.action_decider = ActionDecider(
+            unit,
             unit_info,
+            action_validator,
             factory_desires,
             factory_info,
             close_units.close_to_enemy.get(unit_info.unit_id, None),
@@ -1024,6 +1063,7 @@ class SingleUnitActionPlanner:
             master=master,
             unit_paths=unit_paths,
             unit_info=unit_info,
+            action_validator=action_validator,
             close_units=close_units,
             factory_desires=factory_desires,
             factory_info=factory_info,
@@ -1034,9 +1074,12 @@ class SingleUnitActionPlanner:
 
     def _unit_must_move(self):
         """Must move if current location will be occupied at step 1 (not zero which is now)"""
-        start_costmap = self.master.pathfinder.generate_costmap(self.unit, override_step=1, collision_only=True)
+        start_costmap = self.master.pathfinder.generate_costmap(
+            self.unit, override_step=1, collision_only=True
+        )
 
         unit_must_move = False
+        # If current location will be occupied
         if (
             start_costmap[
                 self.unit.start_of_turn_pos[0], self.unit.start_of_turn_pos[1]
@@ -1047,6 +1090,17 @@ class SingleUnitActionPlanner:
                 f"{self.unit.unit_id} MUST move first turn to avoid collision at {self.unit.pos}"
             )
             unit_must_move = True
+
+        # If very close to enemy that can kill us
+        elif self.unit.unit_id in self.close_units.close_to_enemy:
+            close = self.close_units.close_to_enemy[self.unit.unit_id]
+            close_dists = close.other_unit_distances
+            # Dist 1 == adjacent
+            if len(close_dists) > 0 and min(close_dists) <= 1:
+                # Only matters if other is Heavy or both lights
+                for utype, dist in zip(close.other_unit_types, close_dists):
+                    if dist <= 1 and (utype == self.unit.unit_type or utype == "HEAVY"):
+                        unit_must_move = True
         return unit_must_move
 
     def calculate_actions_for_unit(self) -> bool:
@@ -1057,12 +1111,14 @@ class SingleUnitActionPlanner:
             f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, current_action = {unit.status.current_action}"
         )
 
-        # Is current location in existing paths for next step
+        # Is current location in existing paths for next step or equal or higher enemy adjacent
         unit_must_move = self._unit_must_move()
 
-        unit.action_queue = []
-
+        # Decide what action needs to be taken next (may be to continue with current plan)
         desired_action = self.action_decider.decide_action()
+
+        # Clear queue to build a new one (old is in unit.start_of_...)
+        unit.action_queue = []
 
         success = self.action_implementer.implement_desired_action(
             unit,
@@ -1093,6 +1149,7 @@ class ActionImplementer:
         master,
         unit_paths: UnitPaths,
         unit_info: UnitInfo,
+        action_validator: ValidActionCalculator,
         close_units: AllCloseUnits,
         factory_desires: FactoryDesires,
         factory_info: FactoryInfo,
@@ -1103,6 +1160,7 @@ class ActionImplementer:
         self.master = master
         self.unit_paths = unit_paths
         self.unit_info = unit_info
+        self.action_validator = action_validator
         self.close_units = close_units
         self.factory_desires = factory_desires
         self.factory_info = factory_info
@@ -1119,17 +1177,17 @@ class ActionImplementer:
     ):
         success = False
 
-        if desired_action == actions.ATTACK:
+        if desired_action == Actions.ATTACK:
             success = self.combat_planner.attack(unit, possible_close_enemy)
-        elif desired_action == actions.RUN_AWAY:
+        elif desired_action == Actions.RUN_AWAY:
             success = self.combat_planner.run_away(unit)
-        elif desired_action == actions.MINE_ORE:
+        elif desired_action == Actions.MINE_ORE:
             success = self._mine_ore(unit, unit_must_move)
-        elif desired_action == actions.MINE_ICE:
+        elif desired_action == Actions.MINE_ICE:
             success = self._mine_ice(unit, unit_must_move)
-        elif desired_action == actions.CLEAR_RUBBLE:
+        elif desired_action == Actions.CLEAR_RUBBLE:
             success = self._clear_rubble(unit, unit_must_move)
-        elif desired_action == actions.NOTHING:
+        elif desired_action == Actions.NOTHING:
             success = self._do_nothing(unit, unit_must_move)
         else:
             logger.error(f"{desired_action} not understood as an action")
@@ -1138,7 +1196,7 @@ class ActionImplementer:
         if success:
             unit.update_status(new_action=desired_action, success=success)
         else:
-            unit.update_status(new_action=actions.NOTHING, success=False)
+            unit.update_status(new_action=Actions.NOTHING, success=False)
         return success
 
     def _mine_ore(self, unit, unit_must_move) -> bool:
@@ -1173,13 +1231,13 @@ class ActionImplementer:
         return success
 
     def _do_nothing(self, unit, unit_must_move) -> bool:
-        logger.debug(f"Setting action queue to empty to do action {actions.NOTHING}")
+        logger.debug(f"Setting action queue to empty to do action {Actions.NOTHING}")
         unit.action_queue = []
         success = True
         if unit_must_move:
             if not unit.factory_id:
                 logger.error(
-                    f"Unit must move, but has action {actions.NOTHING} and no factory assigned"
+                    f"Unit must move, but has action {Actions.NOTHING} and no factory assigned"
                 )
             else:
                 success = self._handle_nothing_with_must_move(unit)
@@ -1566,6 +1624,23 @@ class MultipleUnitActionPlanner:
 
         return unit_actions
 
+    def _assign_new_factory_if_necessary(
+        self, unit: FriendlyUnitManager, factory_infos: Dict[str, FactoryInfo]
+    ):
+        """If doesn't have a factory, assign it to an existing one"""
+        if not unit.factory_id:
+            best_factory = None
+            best_space = -1
+            for f_info in factory_infos.values():
+                if f_info.connected_growable_space > best_space:
+                    best_space = f_info.connected_growable_space
+                    best_factory = f_info.factory
+            unit.factory_id = best_factory.unit_id
+            best_factory.assign_unit(unit)
+            logger.warning(
+                f"Re-assigning to {best_factory.unit_id} because no factory assigned"
+            )
+
     def decide_unit_actions(
         self,
         mining_planner: MiningPlanner,
@@ -1603,10 +1678,12 @@ class MultipleUnitActionPlanner:
             units_to_act=units_to_act,
             factory_infos=factory_infos,
             maps=self.master.maps,
+            unit_paths=existing_paths,
         )
 
         for unit_id, act_info in units_to_act.needs_to_act.items():
             unit = act_info.unit
+            self._assign_new_factory_if_necessary(unit)
             unit_info = unit_infos.infos[unit_id]
             unit_action_planner = SingleUnitActionPlanner(
                 unit=unit,
@@ -1617,6 +1694,7 @@ class MultipleUnitActionPlanner:
                 close_units=self._all_close_units,
                 factory_desires=factory_desires[unit.factory_id],
                 factory_info=factory_infos[unit.factory_id],
+                action_validator=action_validator,
                 mining_planner=mining_planner,
                 rubble_clearing_planner=rubble_clearing_planner,
                 combat_planner=combat_planner,
