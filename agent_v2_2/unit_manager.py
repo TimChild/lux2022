@@ -12,7 +12,7 @@ from lux.unit import Unit
 from lux.config import UnitConfig
 
 import util
-import actions
+from actions import Actions
 
 from config import get_logger
 from master_state import MasterState
@@ -156,8 +156,8 @@ class FriendlyUnitManager(UnitManager):
         self.factory_id = factory_id
         self.master: MasterState = master_state
         self.status: Status = Status(
-            current_action=actions.NOTHING,
-            previous_action=actions.NOTHING,
+            current_action=Actions.NOTHING,
+            previous_action=Actions.NOTHING,
             last_action_update_step=0,
             last_action_success=True,
         )
@@ -174,6 +174,14 @@ class FriendlyUnitManager(UnitManager):
         self.status.last_action_success = success
         # Action queue might not actually be getting updated
         # self.status.last_action_update_step = self.master.step
+
+    def next_action_is_move(self) -> bool:
+        if len(self.start_of_turn_actions) == 0:
+            return False
+        next_action = self.start_of_turn_actions[0]
+        if next_action[util.ACT_TYPE] == util.MOVE and next_action[util.ACT_DIRECTION] != util.CENTER:
+            return True
+        return False
 
     def on_own_factory(self) -> bool:
         """Is this unit on its own factory"""
