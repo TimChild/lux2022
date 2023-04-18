@@ -731,7 +731,7 @@ class ActionDecider:
         self,
         unit: FriendlyUnitManager,
         unit_info: UnitInfo,
-            action_validator: ValidActionCalculator,
+        action_validator: ValidActionCalculator,
         factory_desires: FactoryDesires,
         factory_info: FactoryInfo,
         close_enemy_units: Union[None, CloseUnits],
@@ -743,17 +743,17 @@ class ActionDecider:
         self.factory_info = factory_info
         self.close_units = close_enemy_units
 
-    def decide_action(self) -> str:
+    def decide_action(self, unit_must_move: bool) -> Actions:
         logger.info(f"Deciding action for {self.unit_info.unit_id}")
         if self.unit_info.unit_type == "LIGHT":
-            action = self._decide_light_unit_action()
+            action = self._decide_light_unit_action(unit_must_move)
         else:  # unit_type == "HEAVY"
-            action = self._decide_heavy_unit_action()
+            action = self._decide_heavy_unit_action(unit_must_move)
 
         logger.debug(f"action should be {action}")
         return action
 
-    def _possible_switch_to_attack(self) -> [None, str]:
+    def _possible_switch_to_attack(self) -> Optional[Actions]:
         """Potentially switch to attacking if an enemy wanders by"""
         # Only if something nearby
         if self.close_units is not None:
@@ -782,7 +782,7 @@ class ActionDecider:
                             return Actions.ATTACK
         return None
 
-    def _decide_noops(self):
+    def _decide_noops(self, unit_must_move: bool) -> Optional[Actions]:
         """Figure out if this should be a noop turn (i.e. just a validation step)"""
         act_reason = self.unit_info.act_info.reason
         if act_reason in [
@@ -791,14 +791,27 @@ class ActionDecider:
             ActReasons.NEXT_ACTION_DIG,
             ActReasons.COLLISION_WITH_FRIENDLY,
         ]:
-            if self.action_validator.next_action_valid(self.unit)
+            # If must move, is next action a move anyway (no move not checked in validator, other moves are)
+            if unit_must_move:
+                condition = self.unit.next_action_is_move()
+            else:
+                condition = True
+            if self.action_validator.next_action_valid(self.unit) and condition:
+                logger.debug(
+                    f"Next action passed validation, suggesting no action update"
+                )
+                return Actions.CONTINUE_NO_CHANGE
+            else:
+                logger.debug(f"Next action not valid, suggesting keep role but update")
+                return Actions.CONTINUE_UPDATE
+        return None
 
-    def _decide_light_unit_action(self) -> str:
+    def _decide_light_unit_action(self, unit_must_move: bool) -> Actions:
         logger.debug(f"Deciding between light unit actions")
         action = self._possible_switch_to_attack()
         if action is not None:
             return action
-        action = self._decide_noops()
+        action = self._decide_noops(unit_must_move)
         if action is not None:
             return action
         action = self._decide_unit_action_based_on_factory_needs(
@@ -813,9 +826,14 @@ class ActionDecider:
         )
         return action
 
-    def _decide_heavy_unit_action(self) -> str:
+    def _decide_heavy_unit_action(self, unit_must_move: bool) -> Actions:
         logger.debug(f"Deciding between heavy unit actions")
         action = self._possible_switch_to_attack()
+        if action is not None:
+            return action
+        action = self._decide_noops(unit_must_move)
+        if action is not None:
+            return action
         if action is None:
             action = self._decide_unit_action_based_on_factory_needs(
                 self.factory_desires.heavy_mining_ore,
@@ -839,7 +857,7 @@ class ActionDecider:
         current_mining_ice: int,
         desired_attacking: int,
         current_attacking: int,
-    ) -> str:
+    ) -> Actions:
         if (
             not self.unit_info.unit.on_own_factory()
             and self.unit_info.unit.status.current_action != Actions.NOTHING
@@ -864,7 +882,6 @@ class ActionDecider:
                 action = Actions.ATTACK
             else:
                 action = Actions.NOTHING
-
         return action
 
 
@@ -1115,7 +1132,7 @@ class SingleUnitActionPlanner:
         unit_must_move = self._unit_must_move()
 
         # Decide what action needs to be taken next (may be to continue with current plan)
-        desired_action = self.action_decider.decide_action()
+        desired_action = self.action_decider.decide_action(unit_must_move)
 
         # Clear queue to build a new one (old is in unit.start_of_...)
         unit.action_queue = []
