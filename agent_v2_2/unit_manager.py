@@ -30,8 +30,8 @@ def get_index(lst, index, default=None):
 
 @dataclass
 class Status:
-    current_action: str
-    previous_action: str
+    current_action: Actions
+    previous_action: Actions
     last_action_update_step: int
     last_action_success: bool
 
@@ -179,7 +179,10 @@ class FriendlyUnitManager(UnitManager):
         if len(self.start_of_turn_actions) == 0:
             return False
         next_action = self.start_of_turn_actions[0]
-        if next_action[util.ACT_TYPE] == util.MOVE and next_action[util.ACT_DIRECTION] != util.CENTER:
+        if (
+            next_action[util.ACT_TYPE] == util.MOVE
+            and next_action[util.ACT_DIRECTION] != util.CENTER
+        ):
             return True
         return False
 

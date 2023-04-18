@@ -79,7 +79,7 @@ class Pather:
         ignore_id_nums: Optional[List[int]] = None,
         friendly_light=True,
         friendly_heavy=True,
-        enemy_light=True,
+        enemy_light=None,
         enemy_heavy=True,
         collision_only=False,
         collision_value=-1,
@@ -90,6 +90,10 @@ class Pather:
         Note: Step 0 are current locations of units, correct to use when pathing from current position.
         Note: Step 1 should be used for checking if unit needs to move this turn (i.e. the spot will become occupied)
         """
+        # By default, have friendly heavy ignore enemy light units
+        if enemy_light is None:
+            enemy_light = False if unit.unit_type == "HEAVY" else True
+
         if override_step is None:
             step = util.num_turns_of_actions(unit.action_queue)
         else:
@@ -112,7 +116,7 @@ class Pather:
         )
         # Note: Be careful not to make -1s or 0s become positive (blocked becomes unblocked)
         blocked = np.logical_or(cm <= 0, self.base_costmap <= 0)
-        cm *= self.base_costmap
+        cm += self.base_costmap
         cm[blocked == 1] = -1
         return cm
 

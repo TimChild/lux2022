@@ -785,12 +785,28 @@ class ActionDecider:
     def _decide_noops(self, unit_must_move: bool) -> Optional[Actions]:
         """Figure out if this should be a noop turn (i.e. just a validation step)"""
         act_reason = self.unit_info.act_info.reason
-        if act_reason in [
-            ActReasons.NEXT_ACTION_PICKUP,
-            ActReasons.NEXT_ACTION_TRANSFER,
-            ActReasons.NEXT_ACTION_DIG,
-            ActReasons.COLLISION_WITH_FRIENDLY,
-        ]:
+        possible_noop = False
+        if (
+            act_reason
+            # Validation only
+            in [
+                ActReasons.NEXT_ACTION_PICKUP,
+                ActReasons.NEXT_ACTION_TRANSFER,
+                ActReasons.NEXT_ACTION_DIG,
+                ActReasons.COLLISION_WITH_FRIENDLY,
+            ]
+        ):
+            possible_noop = True
+        # Close enemies don't matter if running away (as long as not colliding)
+        elif (
+            self.unit.status.current_action == Actions.RUN_AWAY
+            and act_reason == ActReasons.CLOSE_TO_ENEMY
+        ):
+            possible_noop = True
+        # Heavy doesn't care about enemy light
+        elif act_reason == ActReasons.CLOSE_TO_ENEMY and self.unit.unit_type == "HEAVY" and all([t == 'LIGHT' for t in self.close_units.other_unit_types]):
+            possible_noop = True
+        if possible_noop:
             # If must move, is next action a move anyway (no move not checked in validator, other moves are)
             if unit_must_move:
                 condition = self.unit.next_action_is_move()
@@ -1134,6 +1150,14 @@ class SingleUnitActionPlanner:
         # Decide what action needs to be taken next (may be to continue with current plan)
         desired_action = self.action_decider.decide_action(unit_must_move)
 
+        # If no update required, return now (queue not updated, so no changes will happen)
+        if desired_action in [Actions.CONTINUE_NO_CHANGE]:
+            logger.info(f"No update of actions necessary")
+            return True
+        elif desired_action == Actions.CONTINUE_UPDATE:
+            desired_action = unit.status.current_action
+            logger.debug(f"Continuing with {desired_action}, but updating route")
+
         # Clear queue to build a new one (old is in unit.start_of_...)
         unit.action_queue = []
 
@@ -1141,9 +1165,6 @@ class SingleUnitActionPlanner:
             unit,
             desired_action,
             unit_must_move=unit_must_move,
-            possible_close_enemy=self.close_units.close_to_enemy.get(
-                unit.unit_id, None
-            ),
         )
 
         if unit_must_move:
@@ -1188,14 +1209,11 @@ class ActionImplementer:
     def implement_desired_action(
         self,
         unit: FriendlyUnitManager,
-        desired_action: str,
+        desired_action: Actions,
         unit_must_move: bool,
-        possible_close_enemy: [None, CloseUnits],
     ):
-        success = False
-
         if desired_action == Actions.ATTACK:
-            success = self.combat_planner.attack(unit, possible_close_enemy)
+            success = self.combat_planner.attack(unit)
         elif desired_action == Actions.RUN_AWAY:
             success = self.combat_planner.run_away(unit)
         elif desired_action == Actions.MINE_ORE:
