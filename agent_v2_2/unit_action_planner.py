@@ -892,12 +892,12 @@ class ActionDecider:
             )
 
             self.factory_info.remove_unit_from_current_count(self.unit_info.unit)
-            if current_mining_ore < desired_mining_ore:
+            if current_mining_ice < desired_mining_ice:
+                action = Actions.MINE_ICE
+            elif current_mining_ore < desired_mining_ore:
                 action = Actions.MINE_ORE
             elif current_clearing_rubble < desired_clearing_rubble:
                 action = Actions.CLEAR_RUBBLE
-            elif current_mining_ice < desired_mining_ice:
-                action = Actions.MINE_ICE
             elif current_attacking < desired_attacking:
                 action = Actions.ATTACK
             else:
