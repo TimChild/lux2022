@@ -9,7 +9,7 @@ from lux.kit import GameState
 from lux.factory import Factory
 
 from factory_manager import FriendlyFactoryManager
-import actions
+from actions import Actions
 
 from master_state import MasterState
 import util
@@ -132,18 +132,18 @@ class FactoryInfo:
             f"Removing {unit.unit_id} assignment of {unit.status.current_action} from factory_info count ({self.factory_id})"
         )
         if unit.unit_type == "HEAVY":
-            if unit.status.current_action == actions.MINE_ICE:
+            if unit.status.current_action == Actions.MINE_ICE:
                 self.heavy_mining_ice -= 1
-            elif unit.status.current_action == actions.MINE_ORE:
+            elif unit.status.current_action == Actions.MINE_ORE:
                 self.heavy_mining_ore -= 1
-            elif unit.status.current_action == actions.ATTACK:
+            elif unit.status.current_action == Actions.ATTACK:
                 self.heavy_attacking -= 1
         else:
-            if unit.status.current_action == actions.MINE_ORE:
+            if unit.status.current_action == Actions.MINE_ORE:
                 self.light_mining_ore -= 1
-            elif unit.status.current_action == actions.CLEAR_RUBBLE:
+            elif unit.status.current_action == Actions.CLEAR_RUBBLE:
                 self.light_clearing_rubble -= 1
-            elif unit.status.current_action == actions.ATTACK:
+            elif unit.status.current_action == Actions.ATTACK:
                 self.light_attacking -= 1
 
     @staticmethod

@@ -10,7 +10,7 @@ from config import get_logger
 from master_state import MasterState
 import util
 
-import actions
+from actions import Actions
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager
@@ -18,14 +18,6 @@ if TYPE_CHECKING:
     pass
 
 logger = get_logger(__name__)
-
-
-class BuildHeavyRecommendation(actions.Recommendation):
-    role = "heavy"
-    value = 0
-
-    def to_action_queue(self, plan: MasterState) -> int:
-        return 1
 
 
 @dataclass
@@ -107,27 +99,27 @@ class FriendlyFactoryManager(FactoryManager):
             mining_ice={
                 unit.unit_id: unit
                 for unit_id, unit in units.items()
-                if unit.status.current_action == actions.MINE_ICE
+                if unit.status.current_action == Actions.MINE_ICE
             },
             mining_ore={
                 unit.unit_id: unit
                 for unit_id, unit in units.items()
-                if unit.status.current_action == actions.MINE_ORE
+                if unit.status.current_action == Actions.MINE_ORE
             },
             clearing_rubble={
                 unit.unit_id: unit
                 for unit_id, unit in units.items()
-                if unit.status.current_action == actions.CLEAR_RUBBLE
+                if unit.status.current_action == Actions.CLEAR_RUBBLE
             },
             attacking={
                 unit.unit_id: unit
                 for unit_id, unit in units.items()
-                if unit.status.current_action == actions.ATTACK
+                if unit.status.current_action == Actions.ATTACK
             },
             nothing={
                 unit.unit_id: unit
                 for unit_id, unit in units.items()
-                if unit.status.current_action == actions.NOTHING
+                if unit.status.current_action == Actions.NOTHING
             },
         )
 

@@ -790,6 +790,7 @@ class MiningRoutePlanner(BaseRoute):
         resource_type: int,
         factory: FriendlyFactoryManager,
         unit: FriendlyUnitManager,
+        heavy_ignore_light_at_resource: bool = True,
     ):
         """
         Args:
@@ -799,8 +800,17 @@ class MiningRoutePlanner(BaseRoute):
             resource_type: i.e. ICE, ORE, etc
             factory: factory being mined for
             unit: unit to make route for
+            heavy_ignore_light_at_resource: If True, heavy units will ignore light units at resources
         """
-        super().__init__(pathfinder, rubble, resource_pos, resource_type, factory, unit)
+        super().__init__(
+            pathfinder,
+            rubble,
+            resource_pos,
+            resource_type,
+            factory,
+            unit,
+            heavy_ignore_light_at_resource,
+        )
 
         # Unit related
         self.unit_start_pos = unit.pos
