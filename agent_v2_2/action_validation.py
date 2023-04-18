@@ -11,7 +11,7 @@ import util
 
 if TYPE_CHECKING:
     from master_state import Maps
-    from unit_action_planner import UnitsToAct
+    from unit_action_planner import UnitsToAct, UnitPaths
     from factory_action_planner import FactoryInfo
     from unit_manager import FriendlyUnitManager
 
@@ -52,26 +52,28 @@ class ValidActionCalculator:
         units_to_act: UnitsToAct,
         factory_infos: Dict[str, FactoryInfo],
         maps: Maps,
+        unit_paths: UnitPaths,
     ):
         self.units_to_act = units_to_act
         self.factory_infos = factory_infos
         self.maps = maps
+        self.unit_paths = unit_paths
 
-        self.allowed_travel_map = self._get_allowed_travel_map()
+        # self.allowed_travel_map = self._get_allowed_travel_map()
         self.factory_resources = {}
         self._init_factory_resources()
 
-    def _get_allowed_travel_map(self) -> np.ndarray:
-        map = np.ones_like(self.maps.rubble, dtype=bool)
-        map[self.maps.factory_maps.enemy >= 0] = False
-        return map
+    # def _get_allowed_travel_map(self) -> np.ndarray:.factory
+    #     map = np.ones_like(self.maps.rubble, dtype=bool)
+    #     map[self.maps.factory_maps.enemy >= 0] = False
+    #     return map
 
     def _init_factory_resources(self) -> Dict[str, FactoryResources]:
         """Get the amount of resources each factory will have based on starting amount and other units transfers"""
         # Get the initial values
         self.factory_resources: Dict[str, FactoryResources] = {}
         for factory_id, info in self.factory_infos.items():
-            factory = info.factory
+            factory = info.factory.factory
             self.factory_resources[factory_id] = FactoryResources(
                 power=factory.power,
                 ice=factory.cargo.ice,
@@ -179,9 +181,20 @@ class ValidActionCalculator:
         unit_power = unit.start_of_turn_power
         unit_pos = unit.start_of_turn_pos
 
+        # Map will allow collision with enemy but not friendly (friendly collision is NOT valid)
+        allowed_move_map = self.unit_paths.to_costmap(
+            pos=unit_pos,
+            start_step=0,
+            exclude_id_nums=[unit.id_num],
+            friendly_heavy=True,
+            friendly_light=True,
+            enemy_heavy=False,
+            enemy_light=False,
+            true_intercept=True,
+        )
         if act_type == util.MOVE:
             valid = unit.valid_moving_actions(
-                self.allowed_travel_map, max_len=1, ignore_repeat=True
+                allowed_move_map, max_len=1, ignore_repeat=True
             )
             if valid.was_valid is False:
                 logger.warning(f"Move not valid because {valid.invalid_reasons[0]}")
