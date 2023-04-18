@@ -4,7 +4,7 @@ import time
 from typing import TYPE_CHECKING
 import numpy as np
 
-from unit_action_planner import UnitActionPlanner
+from unit_action_planner import MultipleUnitActionPlanner
 from lux.kit import obs_to_game_state
 from lux.config import EnvConfig
 from lux.utils import my_turn_to_place_factory
@@ -43,7 +43,7 @@ class Agent:
         self.rubble_clearing_planner = RubbleClearingPlanner(self.master)
         self.combat_planner = CombatPlanner(self.master)
         self.factory_action_planner = FactoryActionPlanner(self.master)
-        self.unit_action_planner = UnitActionPlanner(self.master)
+        self.unit_action_planner = MultipleUnitActionPlanner(self.master)
 
     def _beginning_of_step_update(
         self, step: int, obs: dict, remainingOverageTime: int
