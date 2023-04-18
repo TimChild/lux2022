@@ -366,7 +366,7 @@ class UnitPaths:
         enemy: Dict[str, EnemyUnitManager],
         friendly_valid_move_map,
         enemy_valid_move_map,
-        max_step=30,
+        max_step,
     ):
         friendly_light = {
             unit.id_num: unit for unit in friendly.values() if unit.unit_type == "LIGHT"
@@ -412,12 +412,6 @@ class UnitPaths:
                 )
 
                 cls._add_path_to_array(unit, path, array, max_step, is_enemy=is_enemy)
-                # x, y = unit.pos
-                # for step in range(max_step):
-                #     if step < len(path):
-                #         x, y = path[step]
-                #     if x is not None:
-                #         array[step, x, y] = unit_num
 
         return cls(
             friendly_valid_move_map=friendly_valid_move_map,
@@ -434,13 +428,18 @@ class UnitPaths:
         unit: UnitManager, path, arr: np.ndarray, max_step: int, is_enemy: bool
     ):
         x, y = unit.start_of_turn_pos
+        # # If first coord of path is x, y (which it should be), remove it (next pathing step will be step 1 in paths)
+        # if np.all(path[0] == (x, y)):
+        #     path = path[1:]
+
         extra = 0
         for step in range(max_step):
             if step < len(path):
                 x, y = path[step]
                 arr[step, x, y] = unit.id_num
-            # Continue to fill last enemy position as position for a few extra turns
-            elif x is not None and is_enemy and extra < 5:
+
+            # Use last enemy position as position for a few extra turns (so they can't hide by standing still)
+            elif x is not None and is_enemy and extra < 10:
                 arr[step, x, y] = unit.id_num
                 extra += 1
             # Don't do that for too long (probably not true) or for friendly (friendly will act again)
@@ -465,21 +464,17 @@ class UnitPaths:
         unit_num = unit.id_num
         max_step = self.friendly_light.shape[0]
 
+        # Calculate the valid path (i.e. can't walk of edge of map or through enemy factory, doesn't consider energy)
+        # Especially important for enemy units... Don't want to deal with invalid paths later
         valid_path = unit.valid_moving_actions(costmap=move_map, max_len=max_step)
+
+        # Get the valid path coords (first value is current position)
         path = util.actions_to_path(
             unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=max_step
         )
 
+        # Add that path to the 3D path array
         self._add_path_to_array(unit, path, array, max_step, is_enemy=is_enemy)
-        # x, y = unit.pos
-        # for step in range(self.max_step):
-        #     if step < len(path):
-        #         x, y = path[step]
-        #     if x is not None:
-        #         array[step, x, y] = unit_num
-
-        # for step, (x, y) in enumerate(path):
-        #     array[step, x, y] = unit_num
 
     def to_costmap(
         self,
@@ -574,35 +569,6 @@ class UnitPaths:
                 # Set blocking (or targeting) costs
                 cm[col_cm < 0] = collision_cost_value
         return cm
-        #######
-
-        # cm = np.ones_like(self.friendly_valid_move_map, dtype=float)
-        # collisions = self.calculate_likely_unit_collisions(
-        #     pos=pos,
-        #     start_step=start_step,
-        #     exclude_id_nums=exclude_id_nums,
-        #     friendly_light=friendly_light,
-        #     friendly_heavy=friendly_heavy,
-        #     enemy_light=enemy_light,
-        #     enemy_heavy=enemy_heavy,
-        # )
-        #
-        # if nearby_start_cost is not None:
-        #     for i in range(1, 5):
-        #         close_encounters = self.calculate_likely_unit_collisions(
-        #             pos=pos,
-        #             start_step=start_step + i,
-        #             exclude_id_nums=exclude_id_nums,
-        #             friendly_light=friendly_light,
-        #             friendly_heavy=friendly_heavy,
-        #             enemy_light=enemy_light,
-        #             enemy_heavy=enemy_heavy,
-        #         )
-        #         cm[close_encounters >= 0] = (
-        #             nearby_start_cost * nearby_dropoff_multiplier**i
-        #         )
-        # cm[collisions >= 0] = collision_cost_value
-        # return cm
 
     def calculate_likely_unit_collisions(
         self,
@@ -683,28 +649,6 @@ class UnitPaths:
         if enemy_heavy:
             utypes.append("heavy")
         return teams, utypes
-        # # Start with empty
-        # unit_id_map = np.full_like(self.friendly_valid_move_map, -1, dtype=int)
-        # x, y = self._x, self._y
-        # # Keep first unit at location only
-        # if friendly_light:
-        #     cm = self.friendly_light[index_array, x, y]
-        #     # Replace excluded with -1 (same as ignoring)
-        #     cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
-        #     unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
-        # if friendly_heavy:
-        #     cm = self.friendly_heavy[index_array, x, y]
-        #     cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
-        #     unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
-        # if enemy_light:
-        #     cm = self.enemy_light[index_array, x, y]
-        #     cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
-        #     unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
-        # if enemy_heavy:
-        #     cm = self.enemy_heavy[index_array, x, y]
-        #     cm = np.where(np.isin(cm, exclude_id_nums), -1, cm)
-        #     unit_id_map = np.where(unit_id_map < 0, cm, unit_id_map)
-        # return unit_id_map
 
 
 def store_all_paths_to_array(
@@ -1089,7 +1033,8 @@ class SingleUnitActionPlanner:
         )
 
     def _unit_must_move(self):
-        start_costmap = self.master.pathfinder.generate_costmap(self.unit)
+        """Must move if current location will be occupied at step 1 (not zero which is now)"""
+        start_costmap = self.master.pathfinder.generate_costmap(self.unit, override_step=1, collision_only=True)
 
         unit_must_move = False
         if (

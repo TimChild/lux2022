@@ -84,15 +84,22 @@ class Pather:
         collision_only=False,
         collision_value=-1,
         # nearby_start_cost=1,
+        override_step=None,
     ):
-        """Generate the costmap for the current step (i.e. taking into account pos of unit and all other unit paths)"""
-        len_actions = util.num_turns_of_actions(unit.action_queue)
+        """Generate the costmap for the current step (i.e. taking into account pos of unit and all other unit paths)
+        Note: Step 0 are current locations of units, correct to use when pathing from current position.
+        Note: Step 1 should be used for checking if unit needs to move this turn (i.e. the spot will become occupied)
+        """
+        if override_step is None:
+            step = util.num_turns_of_actions(unit.action_queue)
+        else:
+            step = override_step
         ignore_id_nums = ignore_id_nums if ignore_id_nums is not None else []
         if unit.id_num not in ignore_id_nums:
             ignore_id_nums.append(unit.id_num)
         cm = self.unit_paths.to_costmap(
             pos=unit.pos,
-            start_step=len_actions,
+            start_step=step,
             exclude_id_nums=ignore_id_nums,
             friendly_light=friendly_light,
             friendly_heavy=friendly_heavy,
