@@ -27,7 +27,7 @@ WATER = 2
 
 @dataclass
 class FactoryInfo:
-    factory: Factory
+    factory: FriendlyFactoryManager
     factory_id: str
     power: int
     water: int
@@ -82,7 +82,7 @@ class FactoryInfo:
         )
 
         factory_info = cls(
-            factory=factory.factory,
+            factory=factory,
             factory_id=factory.unit_id,
             power=factory.power,
             water=factory.factory.cargo.water,
@@ -232,10 +232,9 @@ class FactoryDesires:
 
         # Attack
         if info.num_light == self.total_light():
-            self.light_attacking = max(light_attack_max_num, info.light_attacking+1)
+            self.light_attacking = max(light_attack_max_num, info.light_attacking + 1)
         elif info.num_light < self.total_heavy():
-            self.light_attacking = max(0, info.light_attacking-1)
-
+            self.light_attacking = max(0, info.light_attacking - 1)
 
         power_req_met = info.power > heavy_energy_consideration
 
@@ -263,9 +262,9 @@ class FactoryDesires:
 
         # Attack
         if info.num_heavy == self.total_heavy():
-            self.heavy_attacking = max(heavy_attack_max_num, info.heavy_attacking+1)
+            self.heavy_attacking = max(heavy_attack_max_num, info.heavy_attacking + 1)
         elif info.num_heavy < self.total_heavy():
-            self.heavy_attacking = max(0, info.heavy_attacking-1)
+            self.heavy_attacking = max(0, info.heavy_attacking - 1)
 
 
 class FactoryActionPlanner:
@@ -493,8 +492,8 @@ class FactoryActionPlanner:
         total_light_desired = desire.total_light()
         total_heavy_desired = desire.total_heavy()
 
-        can_build_light = info.factory.can_build_light(self.master.game_state)
-        can_build_heavy = info.factory.can_build_heavy(self.master.game_state)
+        can_build_light = info.factory.factory.can_build_light(self.master.game_state)
+        can_build_heavy = info.factory.factory.can_build_heavy(self.master.game_state)
 
         logger.debug(
             f"can build heavy={can_build_heavy}, can_build_light={can_build_light}"
@@ -506,10 +505,10 @@ class FactoryActionPlanner:
 
         if can_build_heavy:
             if total_heavy_desired > info.num_heavy:
-                return info.factory.build_heavy()
+                return info.factory.factory.build_heavy()
         elif can_build_light:
             if total_light_desired > info.num_light:
-                return info.factory.build_light()
+                return info.factory.factory.build_light()
 
     def _water(self, info: FactoryInfo, desire: FactoryDesires) -> [None, int]:
         min_water = 100
@@ -525,7 +524,7 @@ class FactoryActionPlanner:
             f"Current water = {info.water}, water cost = {info.water_cost}, min_water = {min_water}"
         )
         if info.water - info.water_cost > min_water:
-            return info.factory.water()
+            return info.factory.factory.water()
         return None
 
     @staticmethod
