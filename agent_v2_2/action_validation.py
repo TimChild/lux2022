@@ -45,7 +45,6 @@ class ValidActionCalculator:
         - not enough resource to pickup (have to check in order of units doing stuff)
             - Note: Unit_id is used by the game engine, but I'd like to avoid that having an impact
         - no unit or factory to transfer to
-        -
     """
 
     def __init__(

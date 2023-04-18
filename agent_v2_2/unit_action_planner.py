@@ -1046,7 +1046,8 @@ def _decide_collision_avoidance(
 class SingleUnitActionPlanner:
     def __init__(
         self,
-        master,
+        unit: FriendlyUnitManager,
+        master: MasterState,
         base_costmap: np.ndarray,
         unit_paths: UnitPaths,
         unit_info: UnitInfo,
@@ -1057,6 +1058,7 @@ class SingleUnitActionPlanner:
         rubble_clearing_planner: RubbleClearingPlanner,
         combat_planner: CombatPlanner,
     ):
+        self.unit = unit
         self.master = master
         self.base_costmap = base_costmap
         self.unit_paths = unit_paths
@@ -1086,24 +1088,32 @@ class SingleUnitActionPlanner:
             combat_planner=combat_planner,
         )
 
-    def calculate_actions_for_unit(self, unit: FriendlyUnitManager) -> bool:
+    def _unit_must_move(self):
+        start_costmap = self.master.pathfinder.generate_costmap(self.unit)
+
+        unit_must_move = False
+        if (
+            start_costmap[
+                self.unit.start_of_turn_pos[0], self.unit.start_of_turn_pos[1]
+            ]
+            <= 0
+        ):
+            logger.warning(
+                f"{self.unit.unit_id} MUST move first turn to avoid collision at {self.unit.pos}"
+            )
+            unit_must_move = True
+        return unit_must_move
+
+    def calculate_actions_for_unit(self) -> bool:
+        # Will be using this a lot in here
+        unit = self.unit
+
         logger.info(
             f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, current_action = {unit.status.current_action}"
         )
 
-        self.master.pathfinder = Pather(
-            base_costmap=self.base_costmap,
-            unit_paths=self.unit_paths,
-        )
-
-        start_costmap = self.master.pathfinder.generate_costmap(unit)
-
-        unit_must_move = False
-        if start_costmap[unit.pos[0], unit.pos[1]] <= 0:
-            logger.warning(
-                f"{unit.unit_id} MUST move first turn to avoid collision at {unit.pos}"
-            )
-            unit_must_move = True
+        # Is current location in existing paths for next step
+        unit_must_move = self._unit_must_move()
 
         unit.action_queue = []
 
@@ -1582,3 +1592,93 @@ class MultipleUnitActionPlanner:
                 unit_actions[unit_id] = actions
         return unit_actions
 
+    def _collect_changed_actions(self, units_to_act):
+        unit_actions = {}
+        for unit_id, act_info in units_to_act.has_updated_actions.items():
+            if len(act_info.unit.action_queue) > 0:
+                unit_actions[unit_id] = act_info.unit.action_queue[:20]
+            else:
+                logger.error(
+                    f"Updating {unit_id} with empty actions (could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
+                )
+                unit_actions[unit_id] = []
+        return unit_actions
+
+    def _validate_changed_actions_against_action_space(self, unit_actions):
+        for unit_id, actions in unit_actions.items():
+            validated_actions = []
+            for i, action in enumerate(actions):
+                if valid_action_space(action):
+                    validated_actions.append(action)
+                else:
+                    logger.error(f"Invalid action was {action} at position {i}")
+                    break
+
+            if len(validated_actions) == 0:
+                validated_actions = [np.array([0, 0, 0, 0, 0, 1], dtype=int)]
+
+            unit_actions[unit_id] = validated_actions
+
+        return unit_actions
+
+    def decide_unit_actions(
+        self,
+        mining_planner: MiningPlanner,
+        rubble_clearing_planner: RubbleClearingPlanner,
+        combat_planner: CombatPlanner,
+        factory_desires: Dict[str, FactoryDesires],
+        factory_infos: Dict[str, FactoryInfo],
+    ) -> Dict[str, List[np.ndarray]]:
+        logger.info(f"deciding all unit actions")
+
+        units_to_act = self._get_units_to_act(
+            self.master.units.friendly.all, self._all_close_units
+        )
+        unit_infos = self._collect_unit_data(units_to_act.needs_to_act)
+        unit_infos.sort_by_priority()
+
+        # Calculate 3D path arrays to use for calculating costmaps later
+        existing_paths = UnitPaths.from_units(
+            friendly={k: act.unit for k, act in units_to_act.should_not_act.items()},
+            enemy=self.master.units.enemy.all,
+            friendly_valid_move_map=self.master.maps.valid_friendly_move,
+            enemy_valid_move_map=self.master.maps.valid_enemy_move,
+            max_step=50,
+        )
+
+        # Update the pathfinder now that we know which units are acting
+        base_costmap = self._get_base_costmap()
+        self.master.pathfinder = Pather(
+            base_costmap=base_costmap,
+            unit_paths=existing_paths,
+        )
+
+        # Setup validator for next unit actions
+        action_validator = ValidActionCalculator(
+            units_to_act=units_to_act,
+            factory_infos=factory_infos,
+            maps=self.master.maps,
+        )
+
+        for unit_id, act_info in units_to_act.needs_to_act.items():
+            unit = act_info.unit
+            unit_info = unit_infos.infos[unit_id]
+            unit_action_planner = SingleUnitActionPlanner(
+                unit=unit,
+                master=self.master,
+                base_costmap=base_costmap,
+                unit_paths=existing_paths,
+                unit_info=unit_info,
+                close_units=self._all_close_units,
+                factory_desires=factory_desires[unit.factory_id],
+                factory_info=factory_infos[unit.factory_id],
+                mining_planner=mining_planner,
+                rubble_clearing_planner=rubble_clearing_planner,
+                combat_planner=combat_planner,
+            )
+            unit_action_planner.calculate_actions_for_unit()
+
+        unit_actions = self._collect_changed_actions(units_to_act)
+        unit_actions = self._validate_changed_actions_against_action_space(unit_actions)
+
+        return unit_actions
