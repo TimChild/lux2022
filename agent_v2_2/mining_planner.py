@@ -60,7 +60,6 @@ class MiningRecommendation(Recommendation):
 #         self.resource_type = resource_type
 
 
-
 # class MiningRoutePlanner:
 #     move_lookahead = 10
 #     target_queue_length = 20
@@ -494,8 +493,8 @@ class BaseRoute:
         )
 
     def _path_to_resource(
-            self,
-            from_pos: Optional[Tuple[int, int]] = None,
+        self,
+        from_pos: Optional[Tuple[int, int]] = None,
     ) -> np.ndarray:
         if from_pos is None:
             from_pos = self.unit.pos
@@ -581,17 +580,21 @@ class ResourceFirstRoute(BaseRoute):
         )
         return True
 
+
 class FactoryFirstRoute(BaseRoute):
     def create_route(self) -> bool:
         if not self._move_to_edge_of_factory():
-            logger.error(f'{self.unit.log_prefix} failed to path to edge of factory')
+            logger.error(f"{self.unit.log_prefix} failed to path to edge of factory")
             return False
 
         self._drop_off_cargo_if_necessary()
 
         travel_cost = self._calculate_travel_costs()
 
-        available_power, target_power_at_start = self._determine_available_and_target_power()
+        (
+            available_power,
+            target_power_at_start,
+        ) = self._determine_available_and_target_power()
 
         target_digs = self._calculate_target_digs(target_power_at_start, travel_cost)
 
@@ -599,7 +602,9 @@ class FactoryFirstRoute(BaseRoute):
 
         factory_power = self._calculate_factory_power()
 
-        n_digs = self._pickup_power_and_determine_digs(available_power, target_power, factory_power, travel_cost, target_digs)
+        n_digs = self._pickup_power_and_determine_digs(
+            available_power, target_power, factory_power, travel_cost, target_digs
+        )
 
         if n_digs is False:
             return False
@@ -668,7 +673,9 @@ class FactoryFirstRoute(BaseRoute):
         logger.info(f"factory_power = {factory_power}")
         return factory_power
 
-    def _pickup_power_and_determine_digs(self, available_power, target_power, factory_power, travel_cost, target_digs):
+    def _pickup_power_and_determine_digs(
+        self, available_power, target_power, factory_power, travel_cost, target_digs
+    ):
         if factory_power + available_power > target_power:
             power_to_pickup = target_power - available_power
             if power_to_pickup > 0:
@@ -685,8 +692,8 @@ class FactoryFirstRoute(BaseRoute):
                 logger.info(f"Enough power already, not picking up")
             n_digs = target_digs
         elif (
-                factory_power + available_power - travel_cost
-                > self.unit.unit_config.DIG_COST * 3
+            factory_power + available_power - travel_cost
+            > self.unit.unit_config.DIG_COST * 3
         ):
             logger.info(f"picking up available power {factory_power}")
             self.unit.action_queue.append(self.unit.pickup(POWER, factory_power))
@@ -750,13 +757,13 @@ class MiningRoutePlanner(BaseRoute):
     target_queue_length = 20
 
     def __init__(
-            self,
-            pathfinder: Pather,
-            rubble: np.ndarray,
-            resource_pos: Tuple[int, int],
-            resource_type: int,
-            factory: FriendlyFactoryManager,
-            unit: FriendlyUnitManager,
+        self,
+        pathfinder: Pather,
+        rubble: np.ndarray,
+        resource_pos: Tuple[int, int],
+        resource_type: int,
+        factory: FriendlyFactoryManager,
+        unit: FriendlyUnitManager,
     ):
         """
         Args:
@@ -836,14 +843,16 @@ class MiningRoutePlanner(BaseRoute):
             )
             direct_path_to_factory = self._path_to_factory(from_pos=self.unit.pos)
             if len(direct_path_to_factory) > 0:
-                self.pathfinder.append_path_to_actions(self.unit, direct_path_to_factory)
+                self.pathfinder.append_path_to_actions(
+                    self.unit, direct_path_to_factory
+                )
                 self._drop_off_cargo_if_necessary()
                 return True
             else:
                 return False
 
     def _add_factory_first_route(self):
-        logger.debug(f'adding from factory actions')
+        logger.debug(f"adding from factory actions")
         factory_first_route = FactoryFirstRoute(
             self.pathfinder,
             self.rubble,
@@ -856,8 +865,8 @@ class MiningRoutePlanner(BaseRoute):
 
     def _unit_starting_on_factory(self) -> bool:
         if (
-                self.factory.factory_loc[self.unit_start_pos[0], self.unit_start_pos[1]]
-                == 1
+            self.factory.factory_loc[self.unit_start_pos[0], self.unit_start_pos[1]]
+            == 1
         ):
             return True
         return False
@@ -938,7 +947,6 @@ class MiningRecommender:
         )
 
 
-
 class MiningPlanner(Planner):
     def __init__(self, master_state: MasterState):
         self.master: MasterState = master_state
@@ -962,98 +970,16 @@ class MiningPlanner(Planner):
     def update(self):
         pass
 
-    @deprecated(deprecated_in='2.2.3')
-    def update_actions_of(
-        self, unit: FriendlyUnitManager, resource_type: int, unit_must_move: bool
-    ):
-        """Figure out what the next actions for unit should be
-
-        If must move:
-            - If already mining, recommendation will change (current position will now be blocked)
-            - If moving to or from recommendation, no problem, already moving
-            - If at factory, unit needs to move before picking up power
-        """
-        rec = self.recommend(
-            unit, resource_type=resource_type, unit_must_move=unit_must_move
-        )
-        success = False
-        if rec is not None:
-            self.carry_out(unit, rec, unit_must_move=unit_must_move)
-            success = True
-        else:
-            logger.error(f"Mining planner returned None for {unit.unit_id}")
-        return success
-
     def recommend(
-            self,
-            unit: FriendlyUnitManager,
-            resource_type: int = ICE,
-            unit_must_move: bool = False,
+        self,
+        unit: FriendlyUnitManager,
+        resource_type: int = ICE,
+        unit_must_move: bool = False,
     ) -> [None, MiningRecommendation]:
         recommender = MiningRecommender(self.master, self.ice, self.ore)
-        return recommender.recommend(unit, resource_type=resource_type, unit_must_move=unit_must_move)
-
-
-    # def recommend(
-    #     self,
-    #     unit: FriendlyUnitManager,
-    #     resource_type: int = ICE,
-    #     unit_must_move: bool = False,
-    # ) -> [None, MiningRecommendation]:
-    #     # Which resource are we looking for?
-    #     if resource_type == ICE:
-    #         resource_map = self.ice.copy()
-    #     elif resource_type == ORE:
-    #         resource_map = self.ore.copy()
-    #     else:
-    #         raise NotImplementedError(
-    #             f"{resource_type} not recognized, should be {ICE} or {ORE}"
-    #         )
-    #
-    #     # If unit must move, make sure not to recommend resource under unit
-    #     if unit_must_move:
-    #         resource_map[unit.pos_slice] = 0
-    #
-    #     # Where is the unit and where is the factory
-    #     unit_pos = unit.pos
-    #     unit_factory = self.master.factories.friendly.get(unit.factory_id, None)
-    #     if unit_factory is None:
-    #         logger.warning(
-    #             f"Factory doesn't exist for {unit.unit_id} with factory_id {unit.factory_id}"
-    #         )
-    #         return None
-    #
-    #     # Find resource nearest factory that doesn't have an impassible cost
-    #     for attempt in range(5):
-    #         nearest_resource = nearest_non_zero(resource_map, unit_factory.pos)
-    #         if nearest_resource is None:
-    #             logger.warning(
-    #                 f"No nearest resource ({resource_type}) to {unit_factory.unit_id} after {attempt} attempts"
-    #             )
-    #             return None
-    #         cm = self.master.pathfinder.generate_costmap(unit)
-    #         path_to_resource = self.master.pathfinder.fast_path(
-    #             unit_pos,
-    #             nearest_resource,
-    #             costmap=cm,
-    #         )
-    #         if len(path_to_resource) > 0:
-    #             break
-    #
-    #         # Blank out that resource and try again
-    #         resource_map[nearest_resource[0], nearest_resource[1]] = 0
-    #     else:
-    #         logger.warning(
-    #             f"No free resources ({resource_type}) for {unit_factory.unit_id} after a few attempts"
-    #         )
-    #         return None
-    #
-    #     return MiningRecommendation(
-    #         distance_from_factory=util.manhattan(unit_factory.pos, nearest_resource),
-    #         resource_pos=nearest_resource,
-    #         factory_id=unit_factory.unit_id,
-    #         resource_type=resource_type,
-    #     )
+        return recommender.recommend(
+            unit, resource_type=resource_type, unit_must_move=unit_must_move
+        )
 
     def carry_out(
         self,
@@ -1072,393 +998,3 @@ class MiningPlanner(Planner):
         )
         success = route_planner.make_route(unit_must_move=unit_must_move)
         return success
-
-
-
-# # ==================================================================
-# class Route:
-#     def __init__(
-#             self,
-#             pathfinder: Pather,
-#             rubble: np.ndarray,
-#             unit: FriendlyUnitManager,
-#     ):
-#         self.pathfinder = pathfinder
-#         self.rubble = rubble
-#         self.unit = unit
-#
-#     def _path_to_destination(
-#             self,
-#             destination_pos: Tuple[int, int],
-#             from_pos: Optional[Tuple[int, int]] = None,
-#     ) -> np.ndarray:
-#         if from_pos is None:
-#             from_pos = self.unit.pos
-#         cm = self.pathfinder.generate_costmap(self.unit)
-#         return self.pathfinder.fast_path(
-#             start_pos=from_pos,
-#             end_pos=destination_pos,
-#             costmap=cm,
-#             margin=2,
-#         )
-#
-# class ResourceRoute(Route):
-#     def __init__(
-#             self,
-#             pathfinder: Pather,
-#             rubble: np.ndarray,
-#             resource_pos: Tuple[int, int],
-#             resource_type: int,
-#             unit: FriendlyUnitManager,
-#     ):
-#         super().__init__(pathfinder, rubble, unit)
-#         self.resource_pos = resource_pos
-#         self.resource_type = resource_type
-#
-#     def _path_to_resource(self, from_pos: Optional[Tuple[int, int]] = None) -> np.ndarray:
-#         return self._path_to_destination(self.resource_pos, from_pos)
-#
-# class FactoryRoute(Route):
-#     def __init__(
-#             self,
-#             pathfinder: Pather,
-#             rubble: np.ndarray,
-#             factory: FriendlyFactoryManager,
-#             unit: FriendlyUnitManager,
-#     ):
-#         super().__init__(pathfinder, rubble, unit)
-#         self.factory = factory
-#
-#     def _path_to_factory(self, from_pos: Tuple[int, int]) -> np.ndarray:
-#         cm = self.pathfinder.generate_costmap(self.unit)
-#         return calc_path_to_factory(
-#             self.pathfinder,
-#             costmap=cm,
-#             pos=from_pos,
-#             factory_loc=self.factory.factory_loc,
-#             margin=2,
-#         )
-#
-# class MiningRoutePlanner(ResourceRoute, FactoryRoute):
-#     move_lookahead = 10
-#     target_queue_length = 20
-#
-#     def __init__(
-#             self,
-#             pathfinder: Pather,
-#             rubble: np.ndarray,
-#             resource_pos: Tuple[int, int],
-#             resource_type: int,
-#             factory: FriendlyFactoryManager,
-#             unit: FriendlyUnitManager,
-#     ):
-#         ResourceRoute.__init__(self, pathfinder, rubble, resource_pos, resource_type, unit)
-#         FactoryRoute.__init__(self, pathfinder, rubble, factory, unit)
-#         self.unit_start_pos = unit.pos
-#         self.unit.action_queue = []
-#
-#
-#     def _path_to_and_from_resource(self):
-#         path_to_resource = self._path_to_resource()
-#         cost_to_resource = power_cost_of_path(
-#             path_to_resource, self.rubble, self.unit.unit_type
-#         )
-#
-#         path_from_resource_to_factory = self._path_to_factory(
-#             from_pos=self.resource_pos
-#         )
-#         cost_from_resource_to_factory = power_cost_of_path(
-#             path_from_resource_to_factory, self.rubble, self.unit.unit_type
-#         )
-#         return path_to_resource, cost_to_resource, cost_from_resource_to_factory
-#
-#     def _drop_off_cargo_if_necessary(self):
-#         if self.unit.cargo.ice > 0:
-#             logger.info(f"dropping off {self.unit.cargo.ice} ice before from_factory")
-#             self.unit.action_queue.append(
-#                 self.unit.transfer(CENTER, ICE, self.unit.unit_config.CARGO_SPACE)
-#             )
-#         if self.unit.cargo.ore > 0:
-#             logger.info(f"dropping off {self.unit.cargo.ore} ore before from_factory")
-#             self.unit.action_queue.append(
-#                 self.unit.transfer(CENTER, ORE, self.unit.unit_config.CARGO_SPACE)
-#             )
-#     def _unit_starting_on_factory(self) -> bool:
-#         if (
-#                 self.factory.factory_loc[self.unit_start_pos[0], self.unit_start_pos[1]]
-#                 == 1
-#         ):
-#             return True
-#         return False
-#
-#     def make_route(self, unit_must_move: bool) -> bool:
-#         """
-#         - If on factory and needs to move, move first
-#         - Then check how to get to factory if necessary (resource first or factory first)
-#         - Then mining route path from factory back to factory
-#         """
-#         success = True
-#         if self.unit.on_own_factory() and unit_must_move:
-#             logger.debug(f"Acknowledged that unit must move")
-#             cm = self.pathfinder.generate_costmap(self.unit)
-#             path = util.path_to_factory_edge_nearest_pos(
-#                 self.pathfinder,
-#                 self.factory.factory_loc,
-#                 self.unit.pos,
-#                 self.resource_pos,
-#                 costmap=cm,
-#             )
-#             if len(path) > 0:
-#                 self.pathfinder.append_path_to_actions(self.unit, path)
-#             else:
-#                 logger.error(f'{self.unit.log_prefix}: Failed to path to edge of factory')
-#                 return False
-#
-#         # If not on factory, route until at factory (possibly resource first)
-#         if not self.unit.on_own_factory():
-#             # collect info to decide if we should move towards resource or factory first
-#             logger.debug(f"not on factory, deciding resource or factory first")
-#             (
-#                 path_to_resource,
-#                 cost_to_resource,
-#                 cost_from_resource_to_factory,
-#             ) = self._path_to_and_from_resource()
-#
-#             power_remaining = (
-#                     self.unit.power_remaining()
-#                     - cost_to_resource
-#                     - cost_from_resource_to_factory
-#             )
-#
-#             if len(path_to_resource) == 0:
-#                 # No path to resource
-#                 return False
-#
-#             # Decide which to do
-#             if power_remaining > max(
-#                     2 * self.unit.unit_config.DIG_COST,
-#                     len(path_to_resource) // 2 * self.unit.unit_config.DIG_COST,
-#             ):
-#                 # Go to resource first
-#                 success = self.resource_then_factory(path_to_resource, power_remaining)
-#             else:
-#                 # Go to factory first
-#                 logger.info(
-#                     f"pathing to {self.factory.factory.unit_id} at {self.factory.pos} first"
-#                 )
-#                 direct_path_to_factory = self._path_to_factory(
-#                     from_pos=self.unit.pos,
-#                 )
-#                 if len(direct_path_to_factory) > 0:
-#                     self.pathfinder.append_path_to_actions(
-#                         self.unit, direct_path_to_factory
-#                     )
-#                 else:  # No path to factory (would still be 1 if on factory)
-#                     return False
-#
-#                 self._drop_off_cargo_if_necessary()
-#
-#         # Then route from factory (if successful up to this point)
-#         if success:
-#             if len(self.unit.action_queue) < self.target_queue_length:
-#                 logger.debug(f'adding from factory actions')
-#                 # Then loop from factory
-#                 success = self.from_factory_actions()
-#         return success
-#
-#     def resource_then_factory(
-#             self, path_to_resource, power_remaining_after_moves
-#     ) -> bool:
-#         success = True
-#         logger.info("pathing to resource first")
-#         # Move to resource
-#         self.pathfinder.append_path_to_actions(self.unit, path_to_resource)
-#
-#         # Dig as many times as possible
-#         n_digs = int(
-#             np.floor(power_remaining_after_moves / self.unit.unit_config.DIG_COST)
-#         )
-#         if n_digs >= 1:
-#             self.unit.action_queue.append(self.unit.dig(n=n_digs))
-#         else:
-#             logger.error(f"n_digs = {n_digs}, should always be greater than 1")
-#             success = False
-#
-#         # Move to factory
-#         path_from_resource_to_factory = self._path_to_factory(
-#             from_pos=self.resource_pos,
-#         )
-#         if len(path_from_resource_to_factory) > 0:
-#             self.pathfinder.append_path_to_actions(
-#                 self.unit, path_from_resource_to_factory
-#             )
-#         else:  # No path to factory
-#             success = False
-#
-#         # Transfer resources to factory (only if successful up to now)
-#         if success:
-#             self.unit.action_queue.append(
-#                 self.unit.transfer(
-#                     CENTER, self.resource_type, self.unit.unit_config.CARGO_SPACE
-#                 )
-#             )
-#         return success
-#
-#     def from_factory_actions(
-#             self,
-#     ) -> bool:
-#         """Generate actions for mining route assuming starting on factory
-#         Note: No use of repeat any more for ease of updating at any time
-#         """
-#         # Move to outside edge of factory (if necessary)
-#         success = self._move_to_edge_of_factory()
-#         if not success:
-#             logger.error(f'{self.unit.log_prefix} failed to path to edge of factory')
-#             return False
-#
-#         # If already has resources, drop off first
-#         self._drop_off_cargo_if_necessary()
-#
-#         # Calculate travel costs
-#         (
-#             path_to_resource,
-#             cost_to_resource,
-#             cost_from_resource_to_factory,
-#         ) = self._path_to_and_from_resource()
-#         travel_cost = cost_to_resource + cost_from_resource_to_factory
-#
-#         # Aim for as many digs as possible (either max battery, or current available if near max)
-#         # How much power do we have at start of run
-#         available_power = self.unit.power_remaining()
-#         if available_power < 0:
-#             logger.warning(
-#                 f"{self.unit.log_prefix}: available_power ({available_power}) negative, setting zero instead"
-#             )
-#             available_power = 0
-#         logger.info(f"available_power = {available_power}")
-#
-#         # near enough to max power not to waste a turn picking up power (otherwise aim for max capacity)
-#         if available_power > 0.85 * self.unit.unit_config.BATTERY_CAPACITY:
-#             target_power_at_start = available_power
-#         else:
-#             target_power_at_start = self.unit.unit_config.BATTERY_CAPACITY
-#
-#         # How many digs can we do
-#         target_digs = int(
-#             np.floor(
-#                 (target_power_at_start - travel_cost) / self.unit.unit_config.DIG_COST
-#             )
-#         )
-#         # Don't dig more than cargo capacity allows
-#         target_digs = int(
-#             min(
-#                 self.unit.unit_config.CARGO_SPACE
-#                 / self.unit.unit_config.DIG_RESOURCE_GAIN,
-#                 target_digs,
-#                 )
-#         )
-#
-#         # Total cost of planned route
-#         target_power = travel_cost + target_digs * self.unit.unit_config.DIG_COST
-#         logger.info(f"target_power = {target_power}")
-#
-#         # Assume nothing else picking up power from factory
-#         # TODO: Make a factory.power_at_turn() method to keep track of upcoming power requests from factory
-#         factory_power = self.factory.power + util.num_turns_of_actions(
-#             self.unit.action_queue
-#         )
-#         logger.info(f"factory_power = {target_power}")
-#
-#         # Pickup power and update n_digs
-#         if factory_power + available_power > target_power:
-#             power_to_pickup = target_power - available_power
-#             if power_to_pickup > 0:
-#                 logger.info(
-#                     f"picking up {power_to_pickup} power to achieve target of {target_power}"
-#                 )
-#                 self.unit.action_queue.append(
-#                     self.unit.pickup(
-#                         POWER,
-#                         min(self.unit.unit_config.BATTERY_CAPACITY, power_to_pickup),
-#                     )
-#                 )
-#             else:
-#                 logger.info(f"Enough power already, not picking up")
-#             n_digs = target_digs
-#         elif (
-#                 factory_power + available_power - travel_cost
-#                 > self.unit.unit_config.DIG_COST * 3
-#         ):
-#             logger.info(f"picking up available power {factory_power}")
-#             self.unit.action_queue.append(self.unit.pickup(POWER, factory_power))
-#             n_digs = int(
-#                 np.floor(
-#                     (factory_power + available_power - travel_cost)
-#                     / self.unit.unit_config.DIG_COST
-#                 )
-#             )
-#         else:
-#             # Not enough energy to do a mining run, return now leave unit on factory
-#             logger.warning(
-#                 f"{self.factory.unit_id} doesn't have enough energy for {self.unit.unit_id} to do a "
-#                 f"mining run to {self.resource_pos} from {self.unit.pos}"
-#             )
-#             return False
-#
-#         # Add journey out
-#         if len(path_to_resource) > 0:
-#             self.pathfinder.append_path_to_actions(self.unit, path_to_resource)
-#         else:
-#             logger.warning(
-#                 f"{self.unit.unit_id} has no path to {self.resource_pos} from {self.unit.pos}"
-#             )
-#             return False
-#
-#         # Add digs
-#         if n_digs >= 1:
-#             self.unit.action_queue.append(self.unit.dig(n=n_digs))
-#         else:
-#             logger.error(
-#                 f"{self.unit.unit_id} n_digs = {n_digs}, unit heading off to not mine anything. should always be greater than 1"
-#             )
-#             return False
-#
-#         # Add return journey
-#         return_path = self._path_to_factory(
-#             self.unit.pos,
-#         )
-#         if len(return_path) > 0:
-#             self.pathfinder.append_path_to_actions(self.unit, return_path)
-#         else:
-#             logger.warning(
-#                 f"{self.unit.unit_id} has no path to {self.factory.unit_id} at {self.factory.factory.pos} "
-#                 f"from {self.unit.pos}"
-#             )
-#             return False
-#
-#         # Add transfer
-#         self.unit.action_queue.append(
-#             self.unit.transfer(
-#                 CENTER, self.resource_type, self.unit.unit_config.CARGO_SPACE
-#             )
-#         )
-#         return True
-#
-#     def _move_to_edge_of_factory(self) -> bool:
-#         cm = self.pathfinder.generate_costmap(self.unit)
-#         path = path_to_factory_edge_nearest_pos(
-#             pathfinder=self.pathfinder,
-#             factory_loc=self.factory.factory_loc,
-#             pos=self.unit.pos,
-#             pos_to_be_near=self.resource_pos,
-#             costmap=cm,
-#             margin=2,
-#         )
-#         if len(path) == 0:
-#             logger.error(
-#                 f"Apparently no way to get to the edge of the factory without colliding from {self.unit.pos}",
-#             )
-#             return False
-#         elif len(path) > 0:
-#             self.pathfinder.append_path_to_actions(self.unit, path)
-#             return True
