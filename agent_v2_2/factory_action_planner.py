@@ -30,6 +30,7 @@ class FactoryInfo:
     factory: FriendlyFactoryManager
     factory_id: str
     power: int
+    short_term_power: int
     water: int
     ice: int
     ore: int
@@ -85,6 +86,7 @@ class FactoryInfo:
             factory=factory,
             factory_id=factory.unit_id,
             power=factory.power,
+            short_term_power=factory.short_term_power,
             water=factory.factory.cargo.water,
             ice=factory.factory.cargo.ice,
             ore=factory.factory.cargo.ore,
@@ -208,7 +210,7 @@ class FactoryDesires:
         heavy_attack_max_num=2,
     ):
         # Consider more LIGHT units
-        power_req_met = info.power > light_energy_consideration
+        power_req_met = info.short_term_power > light_energy_consideration
         # Rubble
         expansion_tiles = info.connected_growable_space - info.num_lichen_tiles
         if expansion_tiles < light_rubble_min_tiles and power_req_met:
@@ -236,7 +238,7 @@ class FactoryDesires:
         elif info.num_light < self.total_heavy():
             self.light_attacking = max(0, info.light_attacking - 1)
 
-        power_req_met = info.power > heavy_energy_consideration
+        power_req_met = info.short_term_power > heavy_energy_consideration
 
         # Consider more HEAVY units
         # Ice

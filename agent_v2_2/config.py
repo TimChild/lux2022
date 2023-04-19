@@ -5,7 +5,7 @@ FILEPATH = "logfile.log"
 
 ALL_LOGGERS = {}
 
-DEFAULT_LEVEL = logging.DEBUG
+DEFAULT_LEVEL = logging.ERROR
 
 
 VERBOSE = 5
