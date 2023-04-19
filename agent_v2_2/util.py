@@ -336,14 +336,14 @@ class MyReplayEnv(MyEnv):
         initial_num_lines = self._get_num_lines()
         with tqdm(total=num_lines, desc="Watching log file") as pbar:
             while True:
-                self.step()
+                success = self.step()
                 current_num_lines = self._get_num_lines()
                 lines_increased = current_num_lines - initial_num_lines
 
                 pbar.n = lines_increased
                 pbar.refresh()
 
-                if lines_increased >= num_lines or (max_step is not None and self.real_env_steps >= max_step):
+                if success is False or lines_increased >= num_lines or (max_step is not None and self.real_env_steps >= max_step):
                     break
                 time.sleep(0.01)  # Adjust the sleep time if needed
         print(f"Logfile increased by {lines_increased}")
@@ -921,9 +921,9 @@ def move_to_new_spot_on_factory(
     return success
 
 
-def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManager) -> bool:
+def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManager, collision_only=False) -> bool:
     """Move to cheapest location wherever unit currently is"""
-    cm = pathfinder.generate_costmap(unit)
+    cm = pathfinder.generate_costmap(unit, collision_only=collision_only)
     pos = np.array(unit.pos)
     best_direction = None
     best_cost = 999

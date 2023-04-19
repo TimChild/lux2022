@@ -1453,12 +1453,16 @@ class SingleUnitActionPlanner:
                 or q[0][util.ACT_TYPE] != util.MOVE
                 or q[0][util.ACT_DIRECTION] == util.CENTER
             ):
-                logger.error(
+                logger.warning(
                     f"{self.unit.log_prefix} was required to move first turn, but actions are {q}, trying to move unit"
                 )
                 self.unit.pos = self.unit.start_of_turn_pos
                 self.unit.action_queue = []
-                move_success = util.move_to_cheapest_adjacent_space(self.master.pathfinder, self.unit)
+                move_success = util.move_to_cheapest_adjacent_space(self.master.pathfinder, self.unit, collision_only=True)
+                if move_success:
+                    logger.warning(f'successfully forced move out of the way')
+                else:
+                    logger.error(f'{self.unit.log_prefix} was required to move first turn, but did not, and failed to force a move to empty adjacent cell')
                 success = False
         return success
 

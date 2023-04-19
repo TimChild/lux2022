@@ -44,7 +44,7 @@ class ActionDecider:
             return self.decide_action_with_enemy()
 
     def decide_action_no_enemy(self) -> str:
-        power_now = self.unit.power_remaining(self.master.maps.rubble)
+        power_now = self.unit.power_remaining()
         if power_now < self.unit.unit_config.BATTERY_CAPACITY * 0.5:
             logger.debug(f"low power ({self.unit.power}) returning to factory")
             return "factory"
@@ -468,9 +468,12 @@ class Attack:
                 self.best_intercept = nearest_intercept
                 return self.execute_action("attack")
         elif len(self.unit.status.planned_actions) > 0:
+            logger.info(f"didn't find new intercept for enemy, continuing with previous path")
             # Carry on, enemy will probably pop up again
             self.unit.action_queue = self.unit.status.planned_actions.copy()
+            return True
         else:
+            logger.info(f"no intercept with enemy, and no planned actions, lost enemy, returning false")
             # We've lost the enemy
             return False
 
