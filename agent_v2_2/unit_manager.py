@@ -12,7 +12,7 @@ from lux.unit import Unit
 from lux.config import UnitConfig
 
 import util
-from actions import Actions
+from actions_util import Actions
 
 from config import get_logger
 from master_state import MasterState
@@ -47,12 +47,18 @@ class Status:
             return new_actions
         elif new_actions[0][util.ACT_N] == 1:
             if new_actions[0][util.ACT_REPEAT] > 0:
-                logger.warning(f"Not implemented adding repeat actions to back of planned actions (might not make sense)")
+                logger.warning(
+                    f"Not implemented adding repeat actions to back of planned actions (might not make sense)"
+                )
             new_actions.pop(0)
             return new_actions
         else:
-            logger.error(f"failed to update planned actions. First planned action = {new_actions[0]}")
-            raise NotImplementedError(f"failed to update planned actions. planned actions = {new_actions}")
+            logger.error(
+                f"failed to update planned actions. First planned action = {new_actions[0]}"
+            )
+            raise NotImplementedError(
+                f"failed to update planned actions. planned actions = {new_actions}"
+            )
 
     def step_update_planned_actions(self, unit: FriendlyUnitManager):
         """Update the planned actions
@@ -65,24 +71,28 @@ class Status:
         step = unit.master.step
         # Check if this is the same step as last update (i.e. running in my debugging env)
         if step == self._last_beginning_of_step_update:
-            logger.warning(f'{unit.log_prefix}: Trying to update for same step again, not updating')
+            logger.warning(
+                f"{unit.log_prefix}: Trying to update for same step again, not updating"
+            )
             return True
 
         valid = False
         new_planned = self._step_planned_actions()
         if len(unit.start_of_turn_actions) == 0:
             if len(new_planned) == 0:
-                logger.debug(f'no unit or planned actions, valid')
+                logger.debug(f"no unit or planned actions, valid")
                 valid = True
             else:
-                logger.warning(f'{unit.log_prefix} a')
+                logger.warning(f"{unit.log_prefix} a")
                 new_planned = []
                 valid = False
         elif np.all(unit.start_of_turn_actions[0] == new_planned[0]):
-            logger.debug(f'planned_actions still valid')
+            logger.debug(f"planned_actions still valid")
             valid = True
         else:
-            logger.warning(f'planned actions no longer match q1 = {unit.start_of_turn_actions[0]}, p1 = {new_planned[0]}. updating planned actions')
+            logger.warning(
+                f"planned actions no longer match q1 = {unit.start_of_turn_actions[0]}, p1 = {new_planned[0]}. updating planned actions"
+            )
             new_planned = unit.start_of_turn_actions.copy()
             valid = False
         self._last_beginning_of_step_update = step
@@ -126,7 +136,12 @@ class UnitManager(abc.ABC):
         )
 
     def _valid_moving_actions(
-        self, costmap: np.ndarray, start_of_turn_pos, action_queue,  max_len=20, ignore_repeat=False,
+        self,
+        costmap: np.ndarray,
+        start_of_turn_pos,
+        action_queue,
+        max_len=20,
+        ignore_repeat=False,
     ) -> util.ValidActionsMoving:
         return util.calculate_valid_move_actions(
             start_of_turn_pos,
@@ -136,8 +151,12 @@ class UnitManager(abc.ABC):
             ignore_repeat=ignore_repeat,
         )
 
-    def valid_moving_actions(self, costmap, max_len=20, ignore_repeat=False) -> util.ValidActionsMoving:
-        return self._valid_moving_actions(costmap, self.start_of_turn_pos, self.action_queue, max_len, ignore_repeat)
+    def valid_moving_actions(
+        self, costmap, max_len=20, ignore_repeat=False
+    ) -> util.ValidActionsMoving:
+        return self._valid_moving_actions(
+            costmap, self.start_of_turn_pos, self.action_queue, max_len, ignore_repeat
+        )
 
     @property
     def log_prefix(self) -> str:
@@ -155,9 +174,7 @@ class UnitManager(abc.ABC):
         """Return current path from start of turn based on current action queue"""
         if actions is None:
             actions = self.action_queue
-        return util.actions_to_path(
-            self.start_of_turn_pos, actions, max_len=max_len
-        )
+        return util.actions_to_path(self.start_of_turn_pos, actions, max_len=max_len)
 
     @property
     def action_queue(self) -> List[np.ndarray]:
@@ -244,7 +261,7 @@ class FriendlyUnitManager(UnitManager):
     @property
     def log_prefix(self) -> str:
         log_prefix = super().log_prefix
-        log_prefix += f'({self.status.current_action}):'
+        log_prefix += f"({self.status.current_action}):"
         return log_prefix
 
     def update(self, unit: Unit):
@@ -253,10 +270,14 @@ class FriendlyUnitManager(UnitManager):
         self.start_of_turn_actions = copy.copy(unit.action_queue)
         self.status.step_update_planned_actions(self)
 
-    def current_path(self, max_len: int = 10, actions=None, planned_actions=True) -> np.ndarray:
+    def current_path(
+        self, max_len: int = 10, actions=None, planned_actions=True
+    ) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
         if actions is None:
-            actions = self.status.planned_actions if planned_actions else self.action_queue
+            actions = (
+                self.status.planned_actions if planned_actions else self.action_queue
+            )
         return super().current_path(max_len=max_len, actions=actions)
 
     def update_status(self, new_action, success: bool):
@@ -267,13 +288,17 @@ class FriendlyUnitManager(UnitManager):
         """Update the planned actions with the current action queue (i.e. after building new action queue)"""
         self.status.update_planned_actions(self.action_queue)
 
-    def valid_moving_actions(self, costmap, max_len=20, ignore_repeat=False, planned_actions=True) -> util.ValidActionsMoving:
+    def valid_moving_actions(
+        self, costmap, max_len=20, ignore_repeat=False, planned_actions=True
+    ) -> util.ValidActionsMoving:
         """Calculate the moving actions based on the planned actions queue"""
         if planned_actions:
             actions = self.status.planned_actions
         else:
             actions = self.action_queue
-        return self._valid_moving_actions(costmap, self.start_of_turn_pos, actions, max_len, ignore_repeat)
+        return self._valid_moving_actions(
+            costmap, self.start_of_turn_pos, actions, max_len, ignore_repeat
+        )
 
     def next_action_is_move(self) -> bool:
         """Bool if next action is a move action"""
@@ -289,9 +314,7 @@ class FriendlyUnitManager(UnitManager):
 
     def on_own_factory(self) -> bool:
         """Is this unit on its own factory"""
-        return (
-                self.factory_loc[self.pos[0], self.pos[1]] == 1
-        )
+        return self.factory_loc[self.pos[0], self.pos[1]] == 1
         # return (
         #     self.factory_loc[self.start_of_turn_pos[0], self.start_of_turn_pos[1]] == 1
         # )

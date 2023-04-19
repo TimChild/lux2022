@@ -130,14 +130,20 @@ def find_first_equal_pair_index(
 def find_dest_step_from_step(full_path, step, direction="forward") -> int:
     """Find the index in the path corresponding to the last time a unit was at a fixed position (backward) or the first time it is at a new fixed position (forward)
     If no fixed positions backward, returns 0
-    If no fixed positions forward, returns len(full_path)
+    If no fixed positions forward, returns last index len(full_path) - 1
     """
     assert direction in ["forward", "backward"]
-    if not 0 < step < len(full_path) - 1:
-        raise ValueError(f" 0 < {step}(step) < {len(full_path)-1}(len path-1) not true")
+    if step < 0:
+        raise ValueError(f" {step}(step) < 0 doesn't make sense")
+    # if not 0 < step < len(full_path) - 1:
+    #     raise ValueError(f" 0 < {step}(step) < {len(full_path)-1}(len path-1) not true")
     if direction == "forward":
+        if step > len(full_path) - 1:
+            return len(full_path) - 1
         path = full_path[step:]
     else:
+        if step < 1:
+            return 0
         path = full_path[: step + 1]
 
     equal_index = find_first_equal_pair_index(path, direction=direction)
@@ -148,7 +154,7 @@ def find_dest_step_from_step(full_path, step, direction="forward") -> int:
         return equal_index
     else:
         if direction == "forward":
-            return len(full_path)
+            return len(full_path) - 1
         else:
             return 0
 

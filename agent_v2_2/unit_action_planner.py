@@ -981,7 +981,7 @@ class ActionDecider:
                             return Actions.ATTACK
         return None
 
-    def _decide_noops(self,  unit_must_move: bool):
+    def _decide_noops(self, unit_must_move: bool):
         act_reason = self.unit_info.act_info.reason
 
         # Validation only
@@ -994,7 +994,9 @@ class ActionDecider:
                 logger.debug("Next pickup, transfer, dig is valid, do not update")
                 return Actions.CONTINUE_NO_CHANGE
             else:
-                logger.debug("Next pickup, transfer, dig not valid, continue but update plan")
+                logger.debug(
+                    "Next pickup, transfer, dig not valid, continue but update plan"
+                )
                 return Actions.CONTINUE_UPDATE
 
         # Avoid collision with friendly
@@ -1006,36 +1008,45 @@ class ActionDecider:
 
         # Close enemies don't matter if running away (as long as not colliding)
         if (
-                self.unit.status.current_action == Actions.RUN_AWAY
-                and act_reason == ActReasons.CLOSE_TO_ENEMY
+            self.unit.status.current_action == Actions.RUN_AWAY
+            and act_reason == ActReasons.CLOSE_TO_ENEMY
         ):
             logger.debug("Already running away, no change necessary")
             return Actions.CONTINUE_NO_CHANGE
 
         # Heavy doesn't care about enemy light
         if (
-                act_reason == ActReasons.CLOSE_TO_ENEMY
-                and self.unit.unit_type == "HEAVY"
-                and all([t == "LIGHT" for t in self.close_units.other_unit_types])
+            act_reason == ActReasons.CLOSE_TO_ENEMY
+            and self.unit.unit_type == "HEAVY"
+            and all([t == "LIGHT" for t in self.close_units.other_unit_types])
         ):
             logger.debug("Heavy doesn't care about light enemies, continuing path")
             return Actions.CONTINUE_NO_CHANGE
 
         # Previous action invalid can probably just update plan with current action
         if act_reason == ActReasons.PREVIOUS_ACTION_INVALID:
-            logger.debug("Previous action was invalid, may need to update plan of current role")
+            logger.debug(
+                "Previous action was invalid, may need to update plan of current role"
+            )
             return Actions.CONTINUE_UPDATE
 
         # If already attacking, just update in case new path to enemy
-        if act_reason in [ActReasons.CLOSE_TO_ENEMY,
-                            ActReasons.COLLISION_WITH_ENEMY] and self.unit.status.current_action == Actions.ATTACK:
+        if (
+            act_reason in [ActReasons.CLOSE_TO_ENEMY, ActReasons.COLLISION_WITH_ENEMY]
+            and self.unit.status.current_action == Actions.ATTACK
+        ):
             return Actions.CONTINUE_UPDATE
 
-        if act_reason in [ActReasons.NEXT_ACTION_INVALID_MOVE, ActReasons.NEXT_ACTION_INVALID]:
+        if act_reason in [
+            ActReasons.NEXT_ACTION_INVALID_MOVE,
+            ActReasons.NEXT_ACTION_INVALID,
+        ]:
             # If must move, is next action a move anyway (no move not checked in validator, other moves are)
             condition = self.unit.next_action_is_move() if unit_must_move else True
             if self.action_validator.next_action_valid(self.unit) and condition:
-                logger.debug("Next action passed validation, suggesting no action update")
+                logger.debug(
+                    "Next action passed validation, suggesting no action update"
+                )
                 return Actions.CONTINUE_NO_CHANGE
             else:
                 logger.debug("Next action not valid, suggesting keep role but update")
@@ -1600,11 +1611,9 @@ class MultipleUnitActionPlanner:
         self.factory_infos: Dict[str, FactoryInfo] = None
 
         # Caching
-        self.base_costmap: np.ndarray = self._calculate_base_costmap()
-        self.all_upcoming_collisions: Dict[
-            str, AllCollisionsForUnit
-        ] = self._calculate_collisions()
-        self.all_close_units: AllCloseUnits = self._calculate_close_units()
+        self.base_costmap: np.ndarray = None
+        self.all_upcoming_collisions: Dict[str, AllCollisionsForUnit] = None
+        self.all_close_units: AllCloseUnits = None
 
     def update(
         self,
