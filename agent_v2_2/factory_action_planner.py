@@ -350,8 +350,8 @@ class FactoryActionPlanner:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=300,
-                light_rubble_min_tiles=10,
-                light_rubble_max_tiles=50,
+                light_rubble_min_tiles=20,
+                light_rubble_max_tiles=40,
                 light_rubble_max_num=4,
                 light_metal_min=50,
                 light_metal_max=200,
@@ -377,8 +377,8 @@ class FactoryActionPlanner:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=600,
-                light_rubble_min_tiles=10,
-                light_rubble_max_tiles=50,
+                light_rubble_min_tiles=50,
+                light_rubble_max_tiles=200,
                 light_rubble_max_num=6,
                 light_metal_min=50,
                 light_metal_max=200,
@@ -404,8 +404,8 @@ class FactoryActionPlanner:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=1000,
-                light_rubble_min_tiles=10,
-                light_rubble_max_tiles=30,
+                light_rubble_min_tiles=30,
+                light_rubble_max_tiles=60,
                 light_rubble_max_num=5,
                 light_metal_min=100,
                 light_metal_max=200,
@@ -430,8 +430,8 @@ class FactoryActionPlanner:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=500,
-                light_rubble_min_tiles=10,
-                light_rubble_max_tiles=20,
+                light_rubble_min_tiles=20,
+                light_rubble_max_tiles=50,
                 light_rubble_max_num=10,
                 light_metal_min=100,
                 light_metal_max=200,
