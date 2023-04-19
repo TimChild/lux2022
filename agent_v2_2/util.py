@@ -201,7 +201,7 @@ class MyEnv:
         self._previous_obs.append(self.obs)
         self._previous_env.append(copy.deepcopy(self.env))
 
-    def step(self):
+    def step(self) -> bool:
         """Progress a single step"""
         logger.info(
             f"Carrying out real step {self.real_env_steps}, env step {self.env_step}"
@@ -286,6 +286,12 @@ class MyReplayEnv(MyEnv):
         actions[self.other_player] = self.get_replay_actions()
         return actions
 
+    def step(self) -> bool:
+        success = super().step()
+        if success and self.collector is not None:
+            self.collector.collect(self)
+        return success
+
     def _all_replay_actions(self):
         if "actions" in self.replay_json:
             return [
@@ -331,8 +337,6 @@ class MyReplayEnv(MyEnv):
         with tqdm(total=num_lines, desc="Watching log file") as pbar:
             while True:
                 self.step()
-                if self.collector is not None:
-                    self.collector.collect(self)
                 current_num_lines = self._get_num_lines()
                 lines_increased = current_num_lines - initial_num_lines
 

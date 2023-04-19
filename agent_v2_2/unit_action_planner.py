@@ -1275,9 +1275,9 @@ def should_unit_consider_acting(
         should_act.reason = ActReasons.NO_REASON_TO_ACT
 
     if should_act.should_act:
-        logger.debug(f"{unit_id} should consider acting -- {should_act.reason}")
+        logger.info(f"{unit_id} should consider acting -- {should_act.reason}")
     else:
-        logger.debug(f"{unit_id} should not consider acting -- {should_act.reason}")
+        logger.info(f"{unit_id} should not consider acting -- {should_act.reason}")
     return should_act
 
 
@@ -1633,8 +1633,8 @@ class MultipleUnitActionPlanner:
     check_friendly_collision_steps = 30
     # Increase cost to travel near units based on kernel with this dist
     kernel_dist = 5
-    # If this many actions the same, don't update unit
-    actions_same_check = 1
+    # If this many actions the same, don't update unit (2 so that next action in queue matches planned actions)
+    actions_same_check = 2
     # Number of steps to block other unit path locations for
     max_enemy_path_length = 50
     # Max pathing steps when calculating paths of all units (and for collision resolution)
@@ -1853,7 +1853,7 @@ class MultipleUnitActionPlanner:
             == np.array(planned_actions[: self.actions_same_check])
         ):
             first_act = unit.start_of_turn_actions[0] if len(unit.start_of_turn_actions) > 0 else []
-            logger.debug(
+            logger.info(
                 f"First {self.actions_same_check} real actions same ({first_act}), not updating unit action queue"
             )
             # Set the action_queue to what it will be (don't think this will actually get used again)
@@ -1868,7 +1868,7 @@ class MultipleUnitActionPlanner:
                 f" first few new actions are {planned_actions[:3]}, first few old actions were {unit.start_of_turn_actions[:3]}"
             )
             if last_updated < 3 or last_updated > 30 and unit.status.previous_action != Actions.NOTHING:
-                logger.warning(
+                logger.info(
                     f"{unit.log_prefix} updated {last_updated} ago <<< This is just a note to see how things are going"
                 )
 
@@ -1951,5 +1951,5 @@ class MultipleUnitActionPlanner:
 
         unit_actions = self._collect_changed_actions(units_to_act)
         unit_actions = self._validate_changed_actions_against_action_space(unit_actions)
-
+        logger.info(f'Updating actions of {list(unit_actions.keys())}')
         return unit_actions
