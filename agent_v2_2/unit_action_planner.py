@@ -93,26 +93,40 @@ class CollisionResolver:
         """Is the collision part way through travelling a-b
         Basically is the step after somewhere else and not final dest?
         """
-        was_moving = actions_util.was_unit_moving_at_step(self.unit_actions, collision.step)
-        will_be_moving = actions_util.will_unit_move_at_step(self.unit_actions, collision.step)
+        was_moving = actions_util.was_unit_moving_at_step(
+            self.unit_actions, collision.step
+        )
+        will_be_moving = actions_util.will_unit_move_at_step(
+            self.unit_actions, collision.step
+        )
         travelling = was_moving and will_be_moving
         if travelling:
-            logger.debug(f'{self.unit.unit_id} is travelling at collision step {collision.step}, at {collision.pos}')
+            logger.debug(
+                f"{self.unit.unit_id} is travelling at collision step {collision.step}, at {collision.pos}"
+            )
         return travelling
 
     def _collision_on_factory(self, collision: Collision) -> bool:
         """Is the collision on a friendly factory tile?"""
-        at_factory = self.maps.factory_maps.friendly[collision.pos[0], collision.pos[1]] >= 0
+        at_factory = (
+            self.maps.factory_maps.friendly[collision.pos[0], collision.pos[1]] >= 0
+        )
         if at_factory:
-            logger.debug(f'{self.unit.unit_id} is at factory at collision step {collision.step}, at {collision.pos}')
+            logger.debug(
+                f"{self.unit.unit_id} is at factory at collision step {collision.step}, at {collision.pos}"
+            )
         return False
 
     def _collision_at_destination(self, collision: Collision) -> bool:
         """Is the collision at the destination of unit (i.e. doesn't move next step)"""
-        will_be_moving = actions_util.will_unit_move_at_step(self.unit_actions, collision.step)
+        will_be_moving = actions_util.will_unit_move_at_step(
+            self.unit_actions, collision.step
+        )
         at_destination = not will_be_moving
         if at_destination:
-            logger.debug(f'{self.unit.unit_id} is at destination at collision step {collision.step}, at {collision.pos}')
+            logger.debug(
+                f"{self.unit.unit_id} is at destination at collision step {collision.step}, at {collision.pos}"
+            )
         return at_destination
 
     def _next_dest_or_last_step(self, step: int) -> Tuple[int, util.POS_TYPE]:
@@ -692,14 +706,25 @@ class UnitPaths:
         friendly_heavy: bool,
         enemy_light: bool,
         enemy_heavy: bool,
-        collision_cost_value=-1,
-        nearby_start_cost: Optional[int] = 5,
+        enemy_collision_cost_value=-1,
+        friendly_collision_cost_value=-1,
+        enemy_nearby_start_cost: Optional[float] = 2,
+        friendly_nearby_start_cost: Optional[float] = 1,
         step_dropoff_multiplier=0.92,
         true_intercept=False,
     ):
-        """Create a costmap from a specific position at a specific step"""
-        if nearby_start_cost is not None and nearby_start_cost < 0:
-            raise ValueError(f"Nearby start cost must be positive or None")
+        """Create a costmap from a specific position at a specific step
+        Args:
+            true_intercept: True disables multi-step and only adds cost where collisions would occur if travelling shortest manhattan dist
+            nearby_start_cost: None disables mutistep checking, 0 enables mutistep, but no extra cost from being near
+
+        """
+        if (
+            friendly_nearby_start_cost is not None and friendly_nearby_start_cost < 0
+        ) or (
+            friendly_nearby_start_cost is not None and friendly_nearby_start_cost < 0
+        ):
+            raise ValueError(f"Nearby start cost must be positive, zero, or None")
         close_encounters_dicts = [
             self.calculate_likely_unit_collisions(
                 pos=pos,
@@ -711,7 +736,9 @@ class UnitPaths:
                 enemy_heavy=enemy_heavy,
             )
         ]
-        if nearby_start_cost and not true_intercept:
+        if (
+            enemy_nearby_start_cost or friendly_nearby_start_cost
+        ) and not true_intercept:
             close_encounters_dicts.extend(
                 [
                     self.calculate_likely_unit_collisions(
@@ -739,27 +766,31 @@ class UnitPaths:
             for k, arr in close_dict.items():
                 # Don't blur or make collision mask as big for friendly
                 if k.startswith("friendly"):
+                    collision_cost = friendly_collision_cost_value
+                    nearby_start_cost = friendly_nearby_start_cost
                     blur = friendly_blur.copy()
-                    collision = friendly_collision
+                    collision_kernel = friendly_collision
                 # For enemy it depends if we are trying to collide or avoid
                 else:
+                    collision_cost = enemy_collision_cost_value
+                    nearby_start_cost = enemy_nearby_start_cost
                     blur = enemy_blur.copy()
                     # Trying to avoid
-                    if collision_cost_value <= 0:
+                    if enemy_collision_cost_value <= 0:
                         # blocks adjacent
-                        collision = enemy_collision
+                        collision_kernel = enemy_collision
                     # Trying to collide
                     else:
                         # only selects intercepts
-                        collision = friendly_collision
+                        collision_kernel = friendly_collision
 
                 # Make 1s wherever units present
                 arr = (arr >= 0).astype(float)
 
                 # Do nearby blur if not None or 0
                 if (
-                    nearby_start_cost is not None
-                    and nearby_start_cost
+                    enemy_nearby_start_cost is not None
+                    and enemy_nearby_start_cost
                     and not true_intercept
                 ):
                     blur *= nearby_start_cost * step_dropoff_multiplier ** (
@@ -771,10 +802,13 @@ class UnitPaths:
                     cm[cm > 0] += add_cm[cm > 0]
 
                 # Calculate likely collisions
-                col_cm = util.convolve_array_kernel(arr, collision, fill=0)
+                col_cm = util.convolve_array_kernel(arr, collision_kernel, fill=0)
 
+                if i > 2 and collision_cost < 0:
+                    # already expect to be off by a few steps, just make collision spaces expensive, not blocked
+                    collision_cost = 5
                 # Set blocking (or targeting) costs
-                cm[col_cm < 0] = collision_cost_value
+                cm[col_cm < 0] = collision_cost
         return cm
 
     def calculate_likely_unit_collisions(

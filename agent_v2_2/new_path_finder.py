@@ -82,8 +82,10 @@ class Pather:
         enemy_light=None,
         enemy_heavy=True,
         collision_only=False,
-        collision_value=-1,
-        # nearby_start_cost=1,
+        enemy_collision_value=-1,
+        friendly_collision_value=-1,
+        enemy_nearby_start_cost=2,
+        friendly_nearby_start_cost=0.5,
         override_step=None,
     ):
         """Generate the costmap for the current step (i.e. taking into account pos of unit and all other unit paths)
@@ -109,8 +111,10 @@ class Pather:
             friendly_heavy=friendly_heavy,
             enemy_light=enemy_light,
             enemy_heavy=enemy_heavy,
-            collision_cost_value=collision_value,
-            # nearby_start_cost=nearby_start_cost,
+            enemy_collision_cost_value=enemy_collision_value,
+            friendly_collision_cost_value=friendly_collision_value,
+            enemy_nearby_start_cost=enemy_nearby_start_cost,
+            friendly_nearby_start_cost=friendly_nearby_start_cost,
             true_intercept=collision_only,
             # step_dropoff_multiplier=0.92,
         )

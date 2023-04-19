@@ -72,9 +72,7 @@ class ActionDecider:
             logger.debug(f"low power ({self.unit.power}) returning to factory")
             return "factory"
         else:
-            logger.debug(
-                f"Enough power to stay out ({power_now}) will do nothing"
-            )
+            logger.debug(f"Enough power to stay out ({power_now}) will do nothing")
             return "nothing"
 
     def decide_action_attack(self) -> str:
@@ -85,7 +83,14 @@ class ActionDecider:
 
 
 class ActionExecutor:
-    def __init__(self, unit: FriendlyUnitManager, master: MasterState, what_do:  str, best_enemy_unit: EnemyUnitManager, best_intercept: util.POS_TYPE):
+    def __init__(
+        self,
+        unit: FriendlyUnitManager,
+        master: MasterState,
+        what_do: str,
+        best_enemy_unit: EnemyUnitManager,
+        best_intercept: util.POS_TYPE,
+    ):
         self.unit = unit
         self.master = master
         self.what_do = what_do
@@ -106,16 +111,31 @@ class ActionExecutor:
 
     def execute_attack(self) -> bool:
         if self.best_enemy_unit is None:
-            raise ValueError(f'Must have enemy unit to attack')
+            raise ValueError(f"Must have enemy unit to attack")
 
         # Probably we have more power if near max capacity, then can ignore enemies in pathing
-        avoid_other_light = False if self.unit.unit_type == 'HEAVY' or self.unit.power > 0.8*self.unit.unit_config.BATTERY_CAPACITY else True
-        avoid_other_heavy = False if self.unit.unit_type == 'HEAVY' and self.unit.power > 0.8*self.unit.unit_config.BATTERY_CAPACITY else True
-        cm = self.master.pathfinder.generate_costmap(
-            self.unit, ignore_id_nums=[self.best_enemy_unit.id_num], enemy_light=avoid_other_light, enemy_heavy=avoid_other_heavy
+        avoid_other_light = (
+            False
+            if self.unit.unit_type == "HEAVY"
+            or self.unit.power > 0.8 * self.unit.unit_config.BATTERY_CAPACITY
+            else True
         )
-        # if self.unit.unit_id == 'unit_34':
-        #     util.show_map_array(cm).show()
+        avoid_other_heavy = (
+            False
+            if self.unit.unit_type == "HEAVY"
+            and self.unit.power > 0.8 * self.unit.unit_config.BATTERY_CAPACITY
+            else True
+        )
+        cm = self.master.pathfinder.generate_costmap(
+            self.unit,
+            ignore_id_nums=[self.best_enemy_unit.id_num],
+            enemy_light=avoid_other_light,
+            enemy_heavy=avoid_other_heavy,
+            # collision_only=True,  # don't collide with other units, but don't avoid enemies either
+            enemy_nearby_start_cost=0,
+        )
+        if self.unit.unit_id == "unit_41":
+            util.show_map_array(cm).show()
         #  Path to enemy  (with larger margin to allow for navigating around things better)
         path_to_enemy = self.master.pathfinder.fast_path(
             self.unit.pos, self.best_intercept, costmap=cm, margin=5
@@ -152,15 +172,17 @@ class ActionExecutor:
 
         if len(path_to_factory) > 0:
             self.master.pathfinder.append_path_to_actions(self.unit, path_to_factory)
-            power_required = self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
-            logger.debug(f'Adding power pickup back at factory. Aiming to pickup {power_required}')
+            power_required = (
+                self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
+            )
+            logger.debug(
+                f"Adding power pickup back at factory. Aiming to pickup {power_required}"
+            )
             self.unit.action_queue.append(self.unit.pickup(util.POWER, power_required))
             return True
         else:
             logger.error(f"{self.unit.log_prefix} error in pathing back to factory")
             return False
-
-
 
     def execute_nothing(self) -> bool:
         cm = self.master.pathfinder.generate_costmap(self.unit)
@@ -199,9 +221,16 @@ class BestEnemyUnit:
         return power_at_enemy, power_back_to_factory
 
     def likely_enemy_power(self, enemy_unit: EnemyUnitManager, path_to_enemy) -> int:
-        actions_to_step = actions_util.split_actions_at_step(enemy_unit.action_queue, len(path_to_enemy))[0]
+        actions_to_step = actions_util.split_actions_at_step(
+            enemy_unit.action_queue, len(path_to_enemy)
+        )[0]
         turns_of_actions = util.num_turns_of_actions(actions_to_step)
-        action_cost = util.power_cost_of_actions(enemy_unit.start_of_turn_pos, self.master.maps.rubble,  enemy_unit, actions_to_step)
+        action_cost = util.power_cost_of_actions(
+            enemy_unit.start_of_turn_pos,
+            self.master.maps.rubble,
+            enemy_unit,
+            actions_to_step,
+        )
         if turns_of_actions < 0.7 * len(path_to_enemy):
             extra_turns = turns_of_actions - len(path_to_enemy)
             action_cost += extra_turns * enemy_unit.unit_config.MOVE_COST
@@ -219,10 +248,18 @@ class BestEnemyUnit:
         self.enemy_location_ids[self.enemy_location_ids == enemy_num] = -1
 
     def find_best_enemy_unit(self):
-        logger.debug(f'Finding best enemy unit to attack')
-        cm = self.master.pathfinder.generate_costmap(self.unit, collision_only=True, enemy_light=False, enemy_heavy=True if self.unit.unit_type == 'LIGHT' else False)
-        # if self.unit.unit_id == 'unit_30':
-        #     util.show_map_array(cm).show()
+        logger.debug(f"Finding best enemy unit to attack")
+        cm = self.master.pathfinder.generate_costmap(
+            self.unit,
+            # using collision only can result in pathing to enemy failing (well if I do collision only for both is that ok?)
+            # collision_only=True,
+            enemy_nearby_start_cost=0,
+            enemy_light=False,
+            enemy_heavy=True if self.unit.unit_type == "LIGHT" else False,
+        )
+        if self.unit.unit_id == "unit_41":
+            print("here")
+            util.show_map_array(cm).show()
         for i in range(20):
             enemies_map = self.enemy_location_ids >= 0
             nearest_intercept = util.nearest_non_zero(enemies_map, self.unit.pos)
@@ -248,7 +285,7 @@ class BestEnemyUnit:
                 self.unit.pos, nearest_intercept, costmap=cm
             )
             if len(path_to_enemy) == 0:
-                logger.debug(f'No path to {enemy_id}')
+                logger.debug(f"No path to {enemy_id}")
                 self.remove_current_enemy(enemy_num)
                 continue
 
@@ -302,7 +339,9 @@ class BestEnemyUnit:
                 f"{self.unit.log_prefix} Checked 20 enemy units, breaking loop now"
             )
         if self.best_enemy_unit is None:
-            logger.info(f'failed to find a good unit to attack for {self.unit.unit_id} from {self.unit.pos}')
+            logger.info(
+                f"failed to find a good unit to attack for {self.unit.unit_id} from {self.unit.pos}"
+            )
 
 
 class Attack:
@@ -365,13 +404,13 @@ class Attack:
         return action_executor.execute_action()
 
     def perform_attack(self) -> bool:
-        logger.debug(f'Starting attack planning')
+        logger.debug(f"Starting attack planning")
         self.find_interceptable_enemy_locations()
-        logger.debug(f'finding best enemy')
+        logger.debug(f"finding best enemy")
         self.find_best_enemy_unit()
-        logger.debug(f'Decding what to do next')
+        logger.debug(f"Decding what to do next")
         what_do = self.decide_action()
-        logger.debug(f'Executing attack behavior {what_do}')
+        logger.debug(f"Executing attack behavior {what_do}")
         return self.execute_action(what_do)
 
 
