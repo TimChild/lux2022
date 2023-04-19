@@ -1963,7 +1963,9 @@ class MultipleUnitActionPlanner:
                 unit_actions[unit_id] = act_info.unit.action_queue[:20]
             else:
                 logger.warning(
-                    f"Updating {unit_id} with empty actions (previous action len = {len(act_info.unit.start_of_turn_actions)}) (could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
+                    f"Updating {unit_id} with empty actions (previous action len = "
+                    f"{len(act_info.unit.start_of_turn_actions)}) previous_status = {act_info.unit.status.previous_action}"
+                    f"(could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
                 )
                 if len(act_info.unit.start_of_turn_actions) == 0:
                     # no need to actually send empty as a command if already empty

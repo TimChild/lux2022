@@ -364,6 +364,7 @@ class Attack:
         self.unit = unit
         self.master = master
         self.targeted_enemies = targeted_enemies
+        self.targeted_enemies_reversed = {unit.unit_id: enemy_id for enemy_id, unit in targeted_enemies.items()}
 
         self.enemy_location_ids = None
         self.best_enemy_unit = None
@@ -373,7 +374,7 @@ class Attack:
 
         self.action_executed: str = None
 
-    def find_interceptable_enemy_locations(self):
+    def find_interceptable_enemy_locations(self, specific_id_num: int = None):
         self.enemy_location_ids = self.master.pathfinder.unit_paths.calculate_likely_unit_collisions(
             self.unit.pos,
             util.num_turns_of_actions(self.unit.action_queue),
@@ -388,6 +389,8 @@ class Attack:
         self.enemy_location_ids = next(iter(self.enemy_location_ids.values()))
         # if self.unit.unit_id == 'unit_30':
         #     util.show_map_array(self.enemy_location_ids).show()
+        if specific_id_num is not None:
+            self.enemy_location_ids[self.enemy_location_ids != specific_id_num] = -1
 
     def find_best_enemy_unit(self):
         # Instantiate BestEnemyUnit class and call find_best_enemy_unit method
@@ -421,16 +424,51 @@ class Attack:
         )
         return action_executor.execute_action()
 
+    def continue_attack(self) -> bool:
+        enemy_id = self.targeted_enemies_reversed[self.unit.unit_id]
+        enemy = self.master.units.enemy.get_unit(enemy_id, None)
+        if enemy is None:
+            logger.warning(f'{self.unit.log_prefix} enemy {enemy_id} no longer exists')
+            self.targeted_enemies.pop(enemy_id)
+            return False
+        enemy: EnemyUnitManager
+        self.best_enemy_unit = enemy
+        self.find_interceptable_enemy_locations(specific_id_num=enemy.id_num)
+        enemy_map = (self.enemy_location_ids >= 0).astype(int)
+        nearest_intercept = util.nearest_non_zero(enemy_map, self.unit.start_of_turn_pos)
+
+        # If new intercept, maybe can get there better
+        if nearest_intercept is not None:
+            intercept_valid = self.master.maps.valid_friendly_move[nearest_intercept[0], nearest_intercept[1]] > 0
+            if not intercept_valid:
+                # probably on own factory
+                return False
+            else:
+                self.best_intercept = nearest_intercept
+                return self.execute_action('attack')
+        elif len(self.unit.status.planned_actions) > 0:
+            # Carry on, enemy will probably pop up again
+            self.unit.action_queue = self.unit.status.planned_actions.copy()
+        else:
+            # We've lost the enemy
+            return False
+
     def perform_attack(self) -> bool:
         logger.debug(f"Starting attack planning")
-        self.find_interceptable_enemy_locations()
-        logger.debug(f"finding best enemy")
-        self.find_best_enemy_unit()
-        logger.debug(f"Decding what to do next")
-        what_do = self.decide_action()
-        self.action_executed = what_do
-        logger.debug(f"Executing attack behavior {what_do}")
-        success = self.execute_action(what_do)
+        success = False
+        # Continue previous attack
+        if self.unit.unit_id in self.targeted_enemies_reversed:
+            success = self.continue_attack()
+
+        if not success:
+            self.find_interceptable_enemy_locations()
+            logger.debug(f"finding best enemy")
+            self.find_best_enemy_unit()
+            logger.debug(f"Decding what to do next")
+            what_do = self.decide_action()
+            self.action_executed = what_do
+            logger.debug(f"Executing attack behavior {what_do}")
+            success = self.execute_action(what_do)
         return success
 
 

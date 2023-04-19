@@ -39,7 +39,7 @@ class Status:
     _last_beginning_of_step_update: int = 0
 
     def _step_planned_actions(self) -> List[np.ndarray]:
-        new_actions = self.planned_actions.copy()
+        new_actions = list(self.planned_actions.copy())
         if len(new_actions) == 0:
             return []
         elif new_actions[0][util.ACT_N] > 1:
