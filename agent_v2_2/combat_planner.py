@@ -288,6 +288,7 @@ class BestEnemyUnit:
                 logger.debug(
                     f"{self.unit.unit_id} not targetting {enemy_id} because its already targeted by {self.targeted_enemies[enemy_id].unit_id}"
                 )
+                self.remove_current_enemy(enemy_num)
                 continue
             enemy_unit: EnemyUnitManager
 
