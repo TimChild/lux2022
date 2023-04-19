@@ -107,11 +107,18 @@ class ActionExecutor:
     def execute_attack(self) -> bool:
         if self.best_enemy_unit is None:
             raise ValueError(f'Must have enemy unit to attack')
+
+        # Probably we have more power if near max capacity, then can ignore enemies in pathing
+        avoid_other_light = False if self.unit.unit_type == 'HEAVY' or self.unit.power > 0.8*self.unit.unit_config.BATTERY_CAPACITY else True
+        avoid_other_heavy = False if self.unit.unit_type == 'HEAVY' and self.unit.power > 0.8*self.unit.unit_config.BATTERY_CAPACITY else True
         cm = self.master.pathfinder.generate_costmap(
-            self.unit, ignore_id_nums=[self.best_enemy_unit.id_num]
+            self.unit, ignore_id_nums=[self.best_enemy_unit.id_num], enemy_light=avoid_other_light, enemy_heavy=avoid_other_heavy
         )
+        # if self.unit.unit_id == 'unit_34':
+        #     util.show_map_array(cm).show()
+        #  Path to enemy  (with larger margin to allow for navigating around things better)
         path_to_enemy = self.master.pathfinder.fast_path(
-            self.unit.pos, self.best_intercept, costmap=cm
+            self.unit.pos, self.best_intercept, costmap=cm, margin=5
         )
 
         if len(path_to_enemy) > 1:
@@ -124,8 +131,8 @@ class ActionExecutor:
             util.move_to_cheapest_adjacent_space(self.master.pathfinder, self.unit)
             return True
         else:
-            logger.error(
-                f"{self.unit.log_prefix} error in final pathing to intercept {self.best_enemy_unit.unit_id}"
+            logger.warning(
+                f"{self.unit.log_prefix} failed in final pathing to intercept {self.best_enemy_unit.unit_id} at intercept {self.best_intercept}. Enemy currently at {self.best_enemy_unit.pos}"
             )
             return False
 

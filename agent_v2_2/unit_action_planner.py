@@ -93,35 +93,27 @@ class CollisionResolver:
         """Is the collision part way through travelling a-b
         Basically is the step after somewhere else and not final dest?
         """
-        step = collision.step
-        if step > len(self.unit_path) - 2:
-            logger.debug(
-                f"Collision too close to end of unit path to resolve if unit is travelling"
-            )
-            return False
-        path = self.unit_path[step : step + 2]
-        if len(path) != 3:
-            logger.error(f"not the right number of positions to compare, got {path}")
-            return False
-        if np.unique(path, axis=0) == path.shape[0]:
-            return True
+        was_moving = actions_util.was_unit_moving_at_step(self.unit_actions, collision.step)
+        will_be_moving = actions_util.will_unit_move_at_step(self.unit_actions, collision.step)
+        travelling = was_moving and will_be_moving
+        if travelling:
+            logger.debug(f'{self.unit.unit_id} is travelling at collision step {collision.step}, at {collision.pos}')
+        return travelling
 
     def _collision_on_factory(self, collision: Collision) -> bool:
         """Is the collision on a friendly factory tile?"""
-        if self.maps.factory_maps.friendly[collision.pos[0], collision.pos[1]] >= 0:
-            return True
+        at_factory = self.maps.factory_maps.friendly[collision.pos[0], collision.pos[1]] >= 0
+        if at_factory:
+            logger.debug(f'{self.unit.unit_id} is at factory at collision step {collision.step}, at {collision.pos}')
         return False
 
     def _collision_at_destination(self, collision: Collision) -> bool:
         """Is the collision at the destination of unit (i.e. doesn't move next step)"""
-        step = collision.step
-        path = self.unit_path[step : step + 1]
-        if len(path) != 2:
-            logger.error(f"not the right number of positions to compare, got {path}")
-            return False
-        if np.unique(path, axis=0) == 1:
-            return True
-        return False
+        will_be_moving = actions_util.will_unit_move_at_step(self.unit_actions, collision.step)
+        at_destination = not will_be_moving
+        if at_destination:
+            logger.debug(f'{self.unit.unit_id} is at destination at collision step {collision.step}, at {collision.pos}')
+        return at_destination
 
     def _next_dest_or_last_step(self, step: int) -> Tuple[int, util.POS_TYPE]:
         """Return the pos of the next dest or last move step after step
@@ -1369,7 +1361,7 @@ class SingleUnitActionPlanner:
             ]
             <= 0
         ):
-            logger.warning(
+            logger.info(
                 f"{self.unit.unit_id} MUST move first turn to avoid collision at {self.unit.pos}"
             )
             unit_must_move = True
