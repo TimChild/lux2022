@@ -62,7 +62,7 @@ class Status:
 
     def step_update_planned_actions(self, unit: FriendlyUnitManager):
         """Update the planned actions
-        0. if not a real update step return
+        0. if not a real update step return (debugging)
         1. else update planned actions assuming an action took place
         2. If no actions and no planned actions no update
         3. if action_queue and planned actions don't match, replace planned actions and set a flag
@@ -84,9 +84,12 @@ class Status:
                 logger.debug(f"no unit or planned actions, valid")
                 valid = True
             else:
-                logger.warning(f"{unit.log_prefix} a")
+                logger.error(f"{unit.log_prefix} unit actions empty, but len planned was {len(new_planned)}")
                 new_planned = []
                 valid = False
+        elif len(unit.start_of_turn_actions) == 0 and len(new_planned) == 0:
+            logger.debug(f"planned_actions empty but still valid")
+            valid = True
         elif np.all(unit.start_of_turn_actions[0] == new_planned[0]):
             logger.debug(f"planned_actions still valid")
             valid = True
