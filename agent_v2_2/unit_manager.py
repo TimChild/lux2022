@@ -326,7 +326,10 @@ class FriendlyUnitManager(UnitManager):
 
     def on_own_factory(self) -> bool:
         """Is this unit on its own factory"""
-        return self.factory_loc[self.pos[0], self.pos[1]] == 1
+        factory_loc = self.factory_loc
+        if factory_loc is not None:
+            return self.factory_loc[self.pos[0], self.pos[1]] == 1
+        return False
         # return (
         #     self.factory_loc[self.start_of_turn_pos[0], self.start_of_turn_pos[1]] == 1
         # )
@@ -359,10 +362,10 @@ class FriendlyUnitManager(UnitManager):
     def factory(self) -> FriendlyFactoryManager:
         if self.factory_id:
             factory = self.master.factories.friendly.get(self.factory_id, None)
-            return factory
-        else:
-            logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
-            raise ValueError(f'{self.log_prefix} has no factory')
+            if factory is not None:
+                return factory
+        logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
+        raise ValueError(f'{self.log_prefix} has no factory')
 
     def power_remaining(self, rubble: np.ndarray = None) -> int:
         """Return power remaining at final step in actions so far"""

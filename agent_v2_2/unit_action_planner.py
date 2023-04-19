@@ -281,6 +281,7 @@ class UnitInfo:
         unit: FriendlyUnitManager,
         act_info: ConsiderActInfo,
     ):
+
         unit_info = cls(
             unit=unit,
             act_info=act_info,
@@ -288,7 +289,7 @@ class UnitInfo:
             last_action_update_step=unit.status.last_action_update_step,
             len_action_queue=len(unit.action_queue),
             distance_to_factory=util.manhattan(unit.start_of_turn_pos, unit.factory.pos)
-            if unit.factory
+            if unit.factory_id is not None
             else None,
             is_heavy=unit.unit_type == "HEAVY",
             unit_type=unit.unit_type,
