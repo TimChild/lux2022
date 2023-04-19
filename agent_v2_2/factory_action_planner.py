@@ -539,6 +539,10 @@ class FactoryActionPlanner:
         water_left = game_state.teams[player].water
         metal_left = game_state.teams[player].metal
 
+        # how much to give to each factory
+        water = water_left // factories_to_place
+        metal = metal_left // factories_to_place
+
         # All possible spawns
         potential_spawns = list(zip(*np.where(game_state.board.valid_spawns_mask == 1)))
         df = pd.DataFrame(potential_spawns, columns=["x", "y"])
@@ -550,9 +554,24 @@ class FactoryActionPlanner:
             lambda row: util.manhattan(row.pos, util.nearest_non_zero(ice, row.pos)),
             axis=1,
         )
-        df = df.sort_values("ice_dist")
 
-        # Keep only top X distance to ice
+        # Find distance to ore
+        ore = game_state.board.ore
+        df["ore_dist"] = df.apply(
+            lambda row: util.manhattan(row.pos, util.nearest_non_zero(ore, row.pos)),
+            axis=1,
+        )
+
+        df["ice_less_than_X"] = df["ice_dist"] <= 4
+        df["ore_less_than_X"] = df["ore_dist"] <= 8
+
+        # df = df.sort_values("ice_dist")
+        df = df.sort_values(
+            ["ice_less_than_X", "ore_less_than_X", "ice_dist", "ore_dist"],
+            ascending=[False, False, True, True],
+        )
+
+        # Keep only top X before doing expensive calculations
         df = df.iloc[:20]
 
         # Value based nearby zero-rubble
@@ -563,9 +582,14 @@ class FactoryActionPlanner:
         df["zero_rubble_value"] = df.apply(
             lambda row: (conv_count_arr[row.x, row.y]), axis=1
         )
-        df = df.sort_values(["ice_dist", "zero_rubble_value"], ascending=[True, False])
+        df = df.sort_values(
+            ["ice_less_than_X", "ore_less_than_X", "zero_rubble_value"],
+            ascending=[False, False, False],
+        )
+        # df = df.sort_values(["ice_dist", "zero_rubble_value"], ascending=[True, False])
+
+        # print(df.head(10))
 
         # TODO: Calculate how close to nearest enemy factory for top X
-        # TODO: Calculate how close to nearest ore (not so important?)
 
-        return dict(spawn=df.iloc[0].pos, metal=150, water=150)
+        return dict(spawn=df.iloc[0].pos, metal=metal, water=water)

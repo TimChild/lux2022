@@ -58,7 +58,7 @@ class Agent:
 
     def bid(self, obs):
         """Bid for starting factory (default to 0)"""
-        return dict(faction="TheBuilders", bid=0)
+        return dict(faction="TheBuilders", bid=26)
 
     def early_setup(self, step: int, obs, remainingOverageTime: int = 60):
         """Required API for Agent. This is called until all factories are placed"""
