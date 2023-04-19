@@ -115,7 +115,7 @@ class Agent:
         logger.verbose(f"{self.player} Unit actions: {unit_actions}")
         logger.debug(f"{self.player} Factory actions: {factory_actions}")
         logger.warning(
-            f"========================= End of turn {self.master.game_state.real_env_steps+1} for {self.player}: Took {time.time()-tstart:.1f}s ==========================="
+            f"========================= End of turn {self.master.game_state.real_env_steps} for {self.player}: Took {time.time()-tstart:.1f}s ==========================="
         )
         return dict(**unit_actions, **factory_actions)
 

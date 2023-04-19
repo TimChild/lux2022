@@ -1,14 +1,13 @@
 from __future__ import annotations
-
+import time
+import os
 import threading
 from dataclasses import dataclass
-
 from scipy.ndimage import distance_transform_cdt
 from collections import deque
 import functools
 from tqdm.auto import tqdm
-
-from typing import Tuple, List, Union, Optional, TYPE_CHECKING, Dict
+from typing import Tuple, List, Union, Optional, TYPE_CHECKING, Dict, Callable
 import copy
 from scipy import ndimage
 from scipy.signal import convolve2d
@@ -26,13 +25,15 @@ from itertools import product
 from luxai_s2 import LuxAI_S2
 from luxai_s2.unit import UnitType
 
-from config import get_logger
-from new_path_finder import Pather
 from lux.kit import obs_to_game_state, GameState
 from lux.config import EnvConfig
 from lux.utils import direction_to
 from lux.unit import Unit
 from lux.cargo import UnitCargo
+
+from config import get_logger
+from new_path_finder import Pather
+
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager, UnitManager
@@ -43,8 +44,6 @@ logger = get_logger(__name__)
 POS_TYPE = Union[Tuple[int, int], np.ndarray, Tuple[np.ndarray]]
 PATH_TYPE = Union[List[Tuple[int, int]], np.ndarray]
 
-
-UTIL_VERSION = "AGENT_V2"
 
 ENV_CFG = EnvConfig()
 LIGHT_UNIT = Unit(
@@ -270,11 +269,12 @@ class MyReplayEnv(MyEnv):
 
     def init_agents(self):
         super().init_agents()
-        self.other_agent = None
         if self.player == "player_0":
             self.agents = {self.agent.player: self.agent}
         else:
+            self.agent = self.other_agent
             self.agents = {self.other_agent.player: self.other_agent}
+        self.other_agent = None
 
     def get_early_actions(self):
         actions = super().get_early_actions()
@@ -314,6 +314,38 @@ class MyReplayEnv(MyEnv):
             f"No more replay actions for {self.other_player} stopped at {len(all_step_actions)}"
         )
         return {}
+
+
+class LogFileWatcher:
+    def __init__(self, log_file_path, num_lines_increase):
+        self.log_file_path = log_file_path
+        self.num_lines_increase = num_lines_increase
+        self.initial_num_lines = self._get_num_lines()
+
+    def _get_num_lines(self):
+        with open(self.log_file_path, "r") as file:
+            return len(file.readlines())
+
+    def run_until_log_increases(self, func, break_condition: Callable = None):
+        self.initial_num_lines = self._get_num_lines()
+        with tqdm(total=self.num_lines_increase, desc="Watching log file") as pbar:
+            while True:
+                func()
+                current_num_lines = self._get_num_lines()
+                lines_increased = current_num_lines - self.initial_num_lines
+
+                pbar.n = lines_increased
+                pbar.refresh()
+
+                if lines_increased >= self.num_lines_increase or (
+                    break_condition is not None and break_condition()
+                ):
+                    break
+                time.sleep(0.01)  # Adjust the sleep time if needed
+        print(f"Logfile increased by {lines_increased}")
+
+
+##########################################
 
 
 def nearest_non_zero(
