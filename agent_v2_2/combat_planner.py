@@ -135,17 +135,15 @@ class ActionExecutor:
             # collision_only=True,  # don't collide with other units, but don't avoid enemies either
             enemy_nearby_start_cost=0,
         )
-        # if self.unit.unit_id == "unit_29":
-        #     util.show_map_array(cm).show()
         #  Path to enemy  (with larger margin to allow for navigating around things better)
         path_to_enemy = self.master.pathfinder.fast_path(
             self.unit.pos, self.best_intercept, costmap=cm, margin=5
         )
-        if self.unit.unit_id == "unit_27":
-            fig = util.show_map_array(cm)
-            if len(path_to_enemy) > 0:
-                util.plotly_plot_path(fig, path_to_enemy)
-            fig.show()
+        # if self.unit.unit_id == "unit_27":
+        #     fig = util.show_map_array(cm)
+        #     if len(path_to_enemy) > 0:
+        #         util.plotly_plot_path(fig, path_to_enemy)
+        #     fig.show()
 
         if len(path_to_enemy) > 1:
             self.master.pathfinder.append_path_to_actions(self.unit, path_to_enemy)
