@@ -235,10 +235,6 @@ class MyEnv:
         for player, agent in self.agents.items():
             acts = agent.act(self.env_step, self.obs[player])
             actions[player] = acts
-        # actions = {
-        #     player: agent.act(self.env_step, self.obs[player])
-        #     for player, agent in self.agents.items()
-        # }
         return actions
 
     def run_to_step(self, real_env_step: int):
@@ -307,10 +303,19 @@ class MyReplayEnv(MyEnv):
         all_step_actions = self._all_actions
         if len(all_step_actions) > step:
             actions = all_step_actions[step]
+            cleaned_actions = {}
             for k, acts in actions.items():
-                if isinstance(acts, list):
-                    actions[k] = np.array(acts, dtype=int)
-            return actions
+                # If a unit action
+                if isinstance(acts, list) and not k == 'spawn':
+                    # Only if that unit is still on that team
+                    if k in self.env.state.units[self.other_player].keys():
+                        cleaned_actions[k] = np.array(acts, dtype=int)
+                    else:
+                        logger.warning(f'Removed enemy actions for {k} because no longer on that team')
+                # Factory action
+                else:
+                    cleaned_actions[k] = acts
+            return cleaned_actions
         logger.info(
             f"No more replay actions for {self.other_player} stopped at {len(all_step_actions)}"
         )
