@@ -69,6 +69,7 @@ class Status:
         4. else set flag passed
         """
         step = unit.master.step
+        # print(unit.master.step, self._last_beginning_of_step_update)
         # Check if this is the same step as last update (i.e. running in my debugging env)
         if step == self._last_beginning_of_step_update:
             logger.warning(
@@ -127,12 +128,13 @@ class UnitManager(abc.ABC):
         self.start_of_turn_pos = tuple(unit.pos)
         self.start_of_turn_power = unit.power
 
-    def power_cost_of_actions(self, rubble: np.ndarray):
+    def power_cost_of_actions(self, rubble: np.ndarray, max_actions=None):
+        actions = self.action_queue[:max_actions]
         return util.power_cost_of_actions(
             start_pos=self.start_of_turn_pos,
             rubble=rubble,
             unit=self,
-            actions=self.action_queue,
+            actions=actions,
         )
 
     def _valid_moving_actions(

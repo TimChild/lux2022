@@ -279,7 +279,6 @@ class MyReplayEnv(MyEnv):
     def get_early_actions(self):
         actions = super().get_early_actions()
         actions[self.other_player] = self.get_replay_actions()
-        print(actions)
         return actions
 
     def get_actions(self):
@@ -1730,6 +1729,10 @@ def path_to_factory_edge_nearest_pos(
     if pos_to_be_near is None:
         raise ValueError(f"Need to provide pos_to_be_near")
 
+    # if np.all(pos == (22, 32)):
+    #     show_map_array(costmap).show()
+    #     show_map_array(factory_loc).show()
+
     factory_loc = factory_loc.copy()
 
     attempts = 0
@@ -1752,7 +1755,9 @@ def path_to_factory_edge_nearest_pos(
                 return path
         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
 
-    logger.warning(f"No path to edge of factory found without collisions")
+    logger.warning(
+        f"No path to edge of factory from {pos} aiming to be near {pos_to_be_near} found without collisions"
+    )
     return np.array([])
     # if max_delay_by_move_center > 0:
     #     logger.info(f'Adding delay to finding path to edge of factory')

@@ -935,9 +935,9 @@ class MiningRecommender:
         self, unit: FriendlyUnitManager, resource_map: np.ndarray
     ):
         # Generate costmap that allows heavy to ignore light (i.e. should force a light off a resource)
-        ignore_light = True if unit.unit_type == "HEAVY" else False
+        include_light = False if unit.unit_type == "HEAVY" else True
         cm = self.master.pathfinder.generate_costmap(
-            unit, friendly_light=ignore_light, enemy_light=ignore_light
+            unit, friendly_light=include_light, enemy_light=include_light
         )
 
         # Try 10 nearest resources (nearest to unit, will stop at factory for new actions)
@@ -959,6 +959,9 @@ class MiningRecommender:
         self, unit_pos: util.POS_TYPE, resource_pos: util.POS_TYPE, costmap: np.ndarray
     ) -> bool:
         # Just check if there exists a path to it according to costmap
+        # print(
+        #     f"checking {resource_pos},  cm there is {costmap[resource_pos[0], resource_pos[1]]}"
+        # )
         path_to_resource = self.master.pathfinder.fast_path(
             unit_pos,
             resource_pos,

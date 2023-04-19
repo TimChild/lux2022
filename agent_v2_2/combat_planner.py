@@ -5,6 +5,7 @@ import numpy as np
 
 from config import get_logger
 from actions_util import Actions
+import actions_util
 import util
 
 logger = get_logger(__name__)
@@ -18,12 +19,12 @@ if TYPE_CHECKING:
 class ActionDecider:
     def __init__(
         self,
-        unit,
-        master,
-        best_enemy_unit,
-        best_intercept,
-        best_power_at_enemy,
-        best_power_back_to_factory,
+        unit: FriendlyUnitManager,
+        master: MasterState,
+        best_enemy_unit: EnemyUnitManager,
+        best_intercept: util.POS_TYPE,
+        best_power_at_enemy: int,
+        best_power_back_to_factory: int,
     ):
         self.unit = unit
         self.master = master
@@ -34,8 +35,12 @@ class ActionDecider:
 
     def decide_action(self) -> str:
         if self.best_enemy_unit is None:
+            logger.debug(f"Deciding attack action with no best enemy")
             return self.decide_action_no_enemy()
         else:
+            logger.debug(
+                f"Deciding attack action for {self.best_enemy_unit.unit_id} at {self.best_enemy_unit.pos}, best intercept = {self.best_intercept}"
+            )
             return self.decide_action_with_enemy()
 
     def decide_action_no_enemy(self) -> str:
@@ -45,7 +50,7 @@ class ActionDecider:
             return "factory"
         else:
             logger.debug(
-                "No good intercept, but enough power to stay out, will set success to False so unit can be reassigned if necessary"
+                "No good intercept, but enough power to stay out, won't do anything"
             )
             return "nothing"
 
@@ -68,7 +73,7 @@ class ActionDecider:
             return "factory"
         else:
             logger.debug(
-                f"Enough power to stay out ({power_now}) will set status to doing NOTHING"
+                f"Enough power to stay out ({power_now}) will do nothing"
             )
             return "nothing"
 
@@ -80,7 +85,7 @@ class ActionDecider:
 
 
 class ActionExecutor:
-    def __init__(self, unit, master, what_do, best_enemy_unit, best_intercept):
+    def __init__(self, unit: FriendlyUnitManager, master: MasterState, what_do:  str, best_enemy_unit: EnemyUnitManager, best_intercept: util.POS_TYPE):
         self.unit = unit
         self.master = master
         self.what_do = what_do
@@ -89,14 +94,19 @@ class ActionExecutor:
 
     def execute_action(self) -> bool:
         if self.what_do == "attack":
+            logger.debug(f"Executing attack")
             return self.execute_attack()
         elif self.what_do == "factory":
+            logger.debug(f"Executing go to factory")
             return self.execute_factory()
         elif self.what_do == "nothing":
+            logger.debug(f"Executing do nothing")
             return self.execute_nothing()
         return False
 
     def execute_attack(self) -> bool:
+        if self.best_enemy_unit is None:
+            raise ValueError(f'Must have enemy unit to attack')
         cm = self.master.pathfinder.generate_costmap(
             self.unit, ignore_id_nums=[self.best_enemy_unit.id_num]
         )
@@ -120,7 +130,11 @@ class ActionExecutor:
             return False
 
     def execute_factory(self) -> bool:
-        cm = self.master.pathfinder.generate_costmap(self.unit)
+        if self.best_enemy_unit:
+            ignores = [self.best_enemy_unit.id_num]
+        else:
+            ignores = []
+        cm = self.master.pathfinder.generate_costmap(self.unit, ignore_id_nums=ignores)
         path_to_factory = util.path_to_factory_edge_nearest_pos(
             self.master.pathfinder,
             self.unit.factory_loc,
@@ -131,10 +145,15 @@ class ActionExecutor:
 
         if len(path_to_factory) > 0:
             self.master.pathfinder.append_path_to_actions(self.unit, path_to_factory)
+            power_required = self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
+            logger.debug(f'Adding power pickup back at factory. Aiming to pickup {power_required}')
+            self.unit.action_queue.append(self.unit.pickup(util.POWER, power_required))
             return True
         else:
             logger.error(f"{self.unit.log_prefix} error in pathing back to factory")
             return False
+
+
 
     def execute_nothing(self) -> bool:
         cm = self.master.pathfinder.generate_costmap(self.unit)
@@ -172,11 +191,14 @@ class BestEnemyUnit:
 
         return power_at_enemy, power_back_to_factory
 
-    def is_good_enemy(self, enemy_unit, power_at_enemy, path_to_enemy):
-        return (
-            enemy_unit.power - enemy_unit.unit_config.MOVE_COST * len(path_to_enemy)
-            <= power_at_enemy
-        )
+    def likely_enemy_power(self, enemy_unit: EnemyUnitManager, path_to_enemy) -> int:
+        actions_to_step = actions_util.split_actions_at_step(enemy_unit.action_queue, len(path_to_enemy))[0]
+        turns_of_actions = util.num_turns_of_actions(actions_to_step)
+        action_cost = util.power_cost_of_actions(enemy_unit.start_of_turn_pos, self.master.maps.rubble,  enemy_unit, actions_to_step)
+        if turns_of_actions < 0.7 * len(path_to_enemy):
+            extra_turns = turns_of_actions - len(path_to_enemy)
+            action_cost += extra_turns * enemy_unit.unit_config.MOVE_COST
+        return enemy_unit.power - action_cost
 
     def update_best_enemy_unit(
         self, enemy_unit, intercept, power_at_enemy, power_back_to_factory
@@ -190,11 +212,14 @@ class BestEnemyUnit:
         self.enemy_location_ids[self.enemy_location_ids == enemy_num] = -1
 
     def find_best_enemy_unit(self):
-        cm = self.master.pathfinder.generate_costmap(self.unit, collision_only=True)
-
+        logger.debug(f'Finding best enemy unit to attack')
+        cm = self.master.pathfinder.generate_costmap(self.unit, collision_only=True, enemy_light=False, enemy_heavy=True if self.unit.unit_type == 'LIGHT' else False)
+        # if self.unit.unit_id == 'unit_30':
+        #     util.show_map_array(cm).show()
         for i in range(20):
             enemies_map = self.enemy_location_ids >= 0
             nearest_intercept = util.nearest_non_zero(enemies_map, self.unit.pos)
+            # print(f'Nearest intercept = {nearest_intercept}')
             if nearest_intercept is None:
                 if self.best_enemy_unit is None:
                     logger.warning(f"{self.unit.log_prefix} No intercepts with enemy")
@@ -215,6 +240,12 @@ class BestEnemyUnit:
             path_to_enemy = self.master.pathfinder.fast_path(
                 self.unit.pos, nearest_intercept, costmap=cm
             )
+            if len(path_to_enemy) == 0:
+                logger.debug(f'No path to {enemy_id}')
+                self.remove_current_enemy(enemy_num)
+                continue
+
+            # print(f'len path to enemy {len(path_to_enemy)}')
             path_to_factory = util.path_to_factory_edge_nearest_pos(
                 self.master.pathfinder,
                 self.unit.factory_loc,
@@ -222,6 +253,7 @@ class BestEnemyUnit:
                 nearest_intercept,
                 costmap=cm,
             )
+            # print(f'len path to factory {len(path_to_factory)}')
             (
                 power_at_enemy,
                 power_back_to_factory,
@@ -229,7 +261,9 @@ class BestEnemyUnit:
                 path_to_enemy, path_to_factory
             )
 
-            if self.is_good_enemy(enemy_unit, power_at_enemy, path_to_enemy):
+            # Is this a good enemy to attack
+            likely_enemy_power = self.likely_enemy_power(enemy_unit, path_to_enemy)
+            if likely_enemy_power < power_at_enemy:
                 if power_back_to_factory > 0:
                     logger.info(
                         f"Found good enemy unit to intercept {enemy_unit.unit_id}, doing that"
@@ -252,11 +286,16 @@ class BestEnemyUnit:
                         power_back_to_factory,
                     )
 
+            # logger.debug(f'{enemy_id} not a good target for {self.unit.unit_id}')
+            # print(f'{enemy_id} not a good target for {self.unit.unit_id}')
+            # Remove that unit from intercepts and try again
             self.remove_current_enemy(enemy_num)
         else:
             logger.warning(
                 f"{self.unit.log_prefix} Checked 20 enemy units, breaking loop now"
             )
+        if self.best_enemy_unit is None:
+            logger.info(f'failed to find a good unit to attack for {self.unit.unit_id} from {self.unit.pos}')
 
 
 class Attack:
@@ -283,6 +322,8 @@ class Attack:
         )
         # Note: Only asking for one anyway, so will always be first in dict
         self.enemy_location_ids = next(iter(self.enemy_location_ids.values()))
+        # if self.unit.unit_id == 'unit_30':
+        #     util.show_map_array(self.enemy_location_ids).show()
 
     def find_best_enemy_unit(self):
         # Instantiate BestEnemyUnit class and call find_best_enemy_unit method
@@ -317,9 +358,13 @@ class Attack:
         return action_executor.execute_action()
 
     def perform_attack(self) -> bool:
+        logger.debug(f'Starting attack planning')
         self.find_interceptable_enemy_locations()
+        logger.debug(f'finding best enemy')
         self.find_best_enemy_unit()
+        logger.debug(f'Decding what to do next')
         what_do = self.decide_action()
+        logger.debug(f'Executing attack behavior {what_do}')
         return self.execute_action(what_do)
 
 
