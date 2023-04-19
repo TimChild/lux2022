@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 
 import numpy as np
 
@@ -134,8 +134,8 @@ class ActionExecutor:
             # collision_only=True,  # don't collide with other units, but don't avoid enemies either
             enemy_nearby_start_cost=0,
         )
-        if self.unit.unit_id == "unit_41":
-            util.show_map_array(cm).show()
+        # if self.unit.unit_id == "unit_41":
+        #     util.show_map_array(cm).show()
         #  Path to enemy  (with larger margin to allow for navigating around things better)
         path_to_enemy = self.master.pathfinder.fast_path(
             self.unit.pos, self.best_intercept, costmap=cm, margin=5
@@ -198,10 +198,12 @@ class BestEnemyUnit:
         master: MasterState,
         unit: FriendlyUnitManager,
         enemy_location_ids: np.ndarray,
+        targeted_enemies: Dict[str, FriendlyUnitManager],
     ):
         self.master = master
         self.unit = unit
         self.enemy_location_ids = enemy_location_ids
+        self.targeted_enemies = targeted_enemies
         self.best_enemy_unit = None
         self.best_intercept = None
         self.best_power_at_enemy = None
@@ -257,9 +259,9 @@ class BestEnemyUnit:
             enemy_light=False,
             enemy_heavy=True if self.unit.unit_type == "LIGHT" else False,
         )
-        if self.unit.unit_id == "unit_41":
-            print("here")
-            util.show_map_array(cm).show()
+        # if self.unit.unit_id == "unit_41":
+        #     print("here")
+        #     util.show_map_array(cm).show()
         for i in range(20):
             enemies_map = self.enemy_location_ids >= 0
             nearest_intercept = util.nearest_non_zero(enemies_map, self.unit.pos)
@@ -279,6 +281,14 @@ class BestEnemyUnit:
                     f"{self.unit.log_prefix}: Found {enemy_id} as nearest enemy, but not in enemy units"
                 )
                 break
+            elif (
+                enemy_id in self.targeted_enemies
+                and self.targeted_enemies[enemy_id].unit_id != self.unit.unit_id
+            ):
+                logger.debug(
+                    f"{self.unit.unit_id} not targetting {enemy_id} because its already targeted by {self.targeted_enemies[enemy_id].unit_id}"
+                )
+                continue
             enemy_unit: EnemyUnitManager
 
             path_to_enemy = self.master.pathfinder.fast_path(
@@ -345,15 +355,23 @@ class BestEnemyUnit:
 
 
 class Attack:
-    def __init__(self, unit: FriendlyUnitManager, master: MasterState):
+    def __init__(
+        self,
+        unit: FriendlyUnitManager,
+        master: MasterState,
+        targeted_enemies: Dict[str, FriendlyUnitManager],
+    ):
         self.unit = unit
         self.master = master
+        self.targeted_enemies = targeted_enemies
 
         self.enemy_location_ids = None
         self.best_enemy_unit = None
         self.best_intercept = None
         self.best_power_at_enemy = None
         self.best_power_back_to_factory = None
+
+        self.action_executed: str = None
 
     def find_interceptable_enemy_locations(self):
         self.enemy_location_ids = self.master.pathfinder.unit_paths.calculate_likely_unit_collisions(
@@ -374,7 +392,7 @@ class Attack:
     def find_best_enemy_unit(self):
         # Instantiate BestEnemyUnit class and call find_best_enemy_unit method
         best_enemy_unit_finder = BestEnemyUnit(
-            self.master, self.unit, self.enemy_location_ids
+            self.master, self.unit, self.enemy_location_ids, self.targeted_enemies
         )
         best_enemy_unit_finder.find_best_enemy_unit()
 
@@ -410,20 +428,48 @@ class Attack:
         self.find_best_enemy_unit()
         logger.debug(f"Decding what to do next")
         what_do = self.decide_action()
+        self.action_executed = what_do
         logger.debug(f"Executing attack behavior {what_do}")
-        return self.execute_action(what_do)
+        success = self.execute_action(what_do)
+        return success
 
 
 class CombatPlanner:
     def __init__(self, master: MasterState):
         self.master = master
 
+        # Keep dict of enemy unit_id, friendly unit attacking
+        self.targeted_enemies: Dict[str, FriendlyUnitManager] = {}
+
     def update(self):
-        pass
+        keys_to_pop = []
+        for enemy_id, friendly_unit in self.targeted_enemies.items():
+            if friendly_unit.status.current_action != Actions.ATTACK:
+                keys_to_pop.append(enemy_id)
+                logger.info(
+                    f"{self.targeted_enemies[enemy_id].unit_id} no longer targeting {enemy_id}"
+                )
+        for k in keys_to_pop:
+            self.targeted_enemies.pop(k)
 
     def attack(self, unit: FriendlyUnitManager) -> bool:
-        attack_instance = Attack(unit, self.master)
-        return attack_instance.perform_attack()
+        attack_instance = Attack(unit, self.master, self.targeted_enemies)
+        success = attack_instance.perform_attack()
+        if (
+            success
+            and attack_instance.best_enemy_unit is not None
+            and attack_instance.action_executed == "attack"
+        ):
+            enemy_id = attack_instance.best_enemy_unit.unit_id
+            if (
+                enemy_id in self.targeted_enemies
+                and self.targeted_enemies[enemy_id].unit_id != unit.unit_id
+            ):
+                logger.warning(
+                    f"{enemy_id} already targeted by {self.targeted_enemies[enemy_id].unit_id}, now {unit.unit_id} is targeting too"
+                )
+            self.targeted_enemies[enemy_id] = unit
+        return success
 
     # def attack(self, unit: FriendlyUnitManager, close_units: CloseUnits) -> bool:
     #     """Note: Unit MUST move, sitting still will result in automatic death on collision"""

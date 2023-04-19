@@ -84,11 +84,15 @@ class Status:
                 logger.debug(f"no unit or planned actions, valid")
                 valid = True
             else:
-                logger.error(f"{unit.log_prefix} unit actions empty, but len planned was {len(new_planned)}")
+                logger.error(
+                    f"{unit.log_prefix} unit actions empty, but len planned was {len(new_planned)}"
+                )
                 new_planned = []
                 valid = False
         elif len(unit.start_of_turn_actions) > 0 and len(new_planned) == 0:
-            logger.error(f"len(actions) = {len(unit.start_of_turn_actions)} != len(planned) = {len(new_planned)}")
+            logger.error(
+                f"{unit.log_prefix}: len(actions) = {len(unit.start_of_turn_actions)} != len(planned) = {len(new_planned)}"
+            )
             valid = False
         elif np.all(unit.start_of_turn_actions[0] == new_planned[0]):
             logger.debug(f"planned_actions still valid")
