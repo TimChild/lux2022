@@ -637,6 +637,8 @@ class UnitPaths:
         # if np.all(path[0] == (x, y)):
         #     path = path[1:]
 
+        # At least leave friendly units on map for one more turn (otherwise they get walked over while on factory)
+        max_extra = 10 if is_enemy else 1
         extra = 0
         for step in range(max_step):
             if step < len(path):
@@ -644,7 +646,7 @@ class UnitPaths:
                 arr[step, x, y] = unit.id_num
 
             # Use last enemy position as position for a few extra turns (so they can't hide by standing still)
-            elif x is not None and is_enemy and extra < 10:
+            elif x is not None and extra < max_extra:
                 arr[step, x, y] = unit.id_num
                 extra += 1
             # Don't do that for too long (probably not true) or for friendly (friendly will act again)
@@ -1927,8 +1929,11 @@ class MultipleUnitActionPlanner:
                 unit_actions[unit_id] = act_info.unit.action_queue[:20]
             else:
                 logger.warning(
-                    f"Updating {unit_id} with empty actions (could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
+                    f"Updating {unit_id} with empty actions (previous action len = {len(act_info.unit.start_of_turn_actions)}) (could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
                 )
+                if len(act_info.unit.start_of_turn_actions) == 0:
+                    # no need to actually send empty as a command if already empty
+                    continue
                 unit_actions[unit_id] = []
         return unit_actions
 
