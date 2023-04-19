@@ -776,10 +776,10 @@ def actions_to_path(
     ignore_repeat: bool = False,
 ) -> np.ndarray:
     """Convert list of actions (from start_pos) into a path
-    Note: First value in path is current position
+    Note: First value in path is current position, repeated values when not moving
     """
     path = [start_pos]
-    pos = start_pos
+    pos = copy.copy(start_pos)
     actions = copy.copy(actions)
     actions = list(actions)
     for i, action in enumerate(actions):
@@ -836,6 +836,7 @@ def move_to_new_spot_on_factory(
 
 
 def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManager):
+    """Move to cheapest location wherever unit currently is"""
     cm = pathfinder.generate_costmap(unit)
     success = False
     pos = np.array(unit.pos)

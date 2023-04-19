@@ -10,7 +10,7 @@ from config import get_logger
 from master_state import MasterState
 import util
 
-from actions import Actions
+from actions_util import Actions
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager

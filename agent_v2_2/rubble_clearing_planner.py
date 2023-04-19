@@ -11,7 +11,7 @@ from util import (
     add_direction_to_pos,
 )
 from master_state import MasterState, Planner, Maps
-from actions import Recommendation
+from actions_util import Recommendation
 from util import (
     power_cost_of_actions,
     POWER,

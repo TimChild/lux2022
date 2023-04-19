@@ -9,7 +9,7 @@ from lux.kit import GameState
 from lux.factory import Factory
 
 from factory_manager import FriendlyFactoryManager
-from actions import Actions
+from actions_util import Actions
 
 from master_state import MasterState
 import util

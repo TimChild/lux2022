@@ -8,7 +8,7 @@ from deprecation import deprecated
 from config import get_logger
 from new_path_finder import Pather
 from master_state import MasterState, Planner
-from actions import Recommendation
+from actions_util import Recommendation
 import util
 from util import (
     ICE,

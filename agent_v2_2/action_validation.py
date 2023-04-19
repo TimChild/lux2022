@@ -87,11 +87,11 @@ class ValidActionCalculator:
             **self.units_to_act.should_not_act, **self.units_to_act.has_updated_actions
         )
         for unit_id, act_info in all_infos.items():
-            self.apply_next_action(act_info.unit)
+            self.add_next_action(act_info.unit)
 
         return self.factory_resources
 
-    def apply_next_action(self, unit: FriendlyUnitManager):
+    def add_next_action(self, unit: FriendlyUnitManager):
         """Apply next action of unit to factories (i.e. update their resources if applicable)"""
         # Are there even actions?
         q = unit.action_queue

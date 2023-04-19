@@ -4,7 +4,7 @@ import numpy as np
 import re
 import abc
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from luxai_s2.unit import UnitCargo
 
@@ -34,6 +34,72 @@ class Status:
     previous_action: Actions
     last_action_update_step: int
     last_action_success: bool
+    action_queue_valid_after_step: bool
+    planned_actions: List[np.ndarray] = field(default_factory=list)
+    _last_beginning_of_step_update: int = 0
+
+    def _step_planned_actions(self) -> List[np.ndarray]:
+        new_actions = self.planned_actions.copy()
+        if len(new_actions) == 0:
+            return []
+        elif new_actions[0][util.ACT_N] > 1:
+            new_actions[0][util.ACT_N] -= 1
+            return new_actions
+        elif new_actions[0][util.ACT_N] == 1:
+            if new_actions[0][util.ACT_REPEAT] > 0:
+                logger.warning(f"Not implemented adding repeat actions to back of planned actions (might not make sense)")
+            new_actions.pop(0)
+            return new_actions
+        else:
+            logger.error(f"failed to update planned actions. First planned action = {new_actions[0]}")
+            raise NotImplementedError(f"failed to update planned actions. planned actions = {new_actions}")
+
+    def step_update_planned_actions(self, unit: FriendlyUnitManager):
+        """Update the planned actions
+        0. if not a real update step return
+        1. else update planned actions assuming an action took place
+        2. If no actions and no planned actions no update
+        3. if action_queue and planned actions don't match, replace planned actions and set a flag
+        4. else set flag passed
+        """
+        step = unit.master.step
+        # Check if this is the same step as last update (i.e. running in my debugging env)
+        if step == self._last_beginning_of_step_update:
+            logger.warning(f'{unit.log_prefix}: Trying to update for same step again, not updating')
+            return True
+
+        valid = False
+        new_planned = self._step_planned_actions()
+        if len(unit.start_of_turn_actions) == 0:
+            if len(new_planned) == 0:
+                logger.debug(f'no unit or planned actions, valid')
+                valid = True
+            else:
+                logger.warning(f'{unit.log_prefix} a')
+                new_planned = []
+                valid = False
+        elif np.all(unit.start_of_turn_actions[0] == new_planned[0]):
+            logger.debug(f'planned_actions still valid')
+            valid = True
+        else:
+            logger.warning(f'planned actions no longer match q1 = {unit.start_of_turn_actions[0]}, p1 = {new_planned[0]}. updating planned actions')
+            new_planned = unit.start_of_turn_actions.copy()
+            valid = False
+        self._last_beginning_of_step_update = step
+        self.planned_actions = new_planned
+        self.action_queue_valid_after_step = valid
+        return valid
+
+    def update_status(self, new_action: Actions, success: bool):
+        self.previous_action = self.current_action
+        self.current_action = new_action
+        self.last_action_success = success
+        # Action queue might not actually be getting updated
+        # self.status.last_action_update_step = self.master.step
+
+    def update_planned_actions(self, action_queue: List[np.ndarray]):
+        self.planned_actions = action_queue
+        self.action_queue_valid_after_step = True
 
 
 class UnitManager(abc.ABC):
@@ -59,16 +125,19 @@ class UnitManager(abc.ABC):
             actions=self.action_queue,
         )
 
-    def valid_moving_actions(
-        self, costmap: np.ndarray, max_len=20, ignore_repeat=False
+    def _valid_moving_actions(
+        self, costmap: np.ndarray, start_of_turn_pos, action_queue,  max_len=20, ignore_repeat=False,
     ) -> util.ValidActionsMoving:
         return util.calculate_valid_move_actions(
-            self.start_of_turn_pos,
-            self.action_queue,
+            start_of_turn_pos,
+            action_queue,
             valid_move_map=costmap,
             max_len=max_len,
             ignore_repeat=ignore_repeat,
         )
+
+    def valid_moving_actions(self, costmap, max_len=20, ignore_repeat=False) -> util.ValidActionsMoving:
+        return self._valid_moving_actions(costmap, self.start_of_turn_pos, self.action_queue, max_len, ignore_repeat)
 
     @property
     def log_prefix(self) -> str:
@@ -82,10 +151,12 @@ class UnitManager(abc.ABC):
         self.start_of_turn_pos = unit.pos
         self.start_of_turn_power = unit.power
 
-    def current_path(self, max_len: int = 10) -> np.ndarray:
+    def current_path(self, max_len: int = 10, actions=None) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
+        if actions is None:
+            actions = self.action_queue
         return util.actions_to_path(
-            self.start_of_turn_pos, self.action_queue, max_len=max_len
+            self.start_of_turn_pos, actions, max_len=max_len
         )
 
     @property
@@ -152,6 +223,10 @@ class EnemyUnitManager(UnitManager):
         logger.info(f"Enemy unit {self.unit_id} dead, nothing more to do")
 
 
+def step_actions(actions: List[np.ndarray]) -> List[np.ndarray]:
+    """Change actions as if an env step has occurred"""
+
+
 class FriendlyUnitManager(UnitManager):
     def __init__(self, unit: Unit, master_state: MasterState, factory_id: str):
         super().__init__(unit)
@@ -162,22 +237,46 @@ class FriendlyUnitManager(UnitManager):
             previous_action=Actions.NOTHING,
             last_action_update_step=0,
             last_action_success=True,
+            action_queue_valid_after_step=True,
         )
         self.start_of_turn_actions = []
 
+    @property
+    def log_prefix(self) -> str:
+        log_prefix = super().log_prefix
+        log_prefix += f'({self.status.current_action}):'
+        return log_prefix
+
     def update(self, unit: Unit):
+        """Beginning of turn update"""
         super().update(unit)
         self.start_of_turn_actions = copy.copy(unit.action_queue)
+        self.status.step_update_planned_actions(self)
+
+    def current_path(self, max_len: int = 10, actions=None, planned_actions=True) -> np.ndarray:
+        """Return current path from start of turn based on current action queue"""
+        if actions is None:
+            actions = self.status.planned_actions if planned_actions else self.action_queue
+        return super().current_path(max_len=max_len, actions=actions)
 
     def update_status(self, new_action, success: bool):
         """Update unit status with new action"""
-        self.status.previous_action = self.status.current_action
-        self.status.current_action = new_action
-        self.status.last_action_success = success
-        # Action queue might not actually be getting updated
-        # self.status.last_action_update_step = self.master.step
+        self.status.update_status(new_action, success)
+
+    def update_planned_actions_with_queue(self):
+        """Update the planned actions with the current action queue (i.e. after building new action queue)"""
+        self.status.update_planned_actions(self.action_queue)
+
+    def valid_moving_actions(self, costmap, max_len=20, ignore_repeat=False, planned_actions=True) -> util.ValidActionsMoving:
+        """Calculate the moving actions based on the planned actions queue"""
+        if planned_actions:
+            actions = self.status.planned_actions
+        else:
+            actions = self.action_queue
+        return self._valid_moving_actions(costmap, self.start_of_turn_pos, actions, max_len, ignore_repeat)
 
     def next_action_is_move(self) -> bool:
+        """Bool if next action is a move action"""
         if len(self.start_of_turn_actions) == 0:
             return False
         next_action = self.start_of_turn_actions[0]
