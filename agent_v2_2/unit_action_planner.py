@@ -1458,7 +1458,7 @@ class SingleUnitActionPlanner:
                 )
                 self.unit.pos = self.unit.start_of_turn_pos
                 self.unit.action_queue = []
-                util.move_to_cheapest_adjacent_space(self.master.pathfinder, self.unit)
+                move_success = util.move_to_cheapest_adjacent_space(self.master.pathfinder, self.unit)
                 success = False
         return success
 

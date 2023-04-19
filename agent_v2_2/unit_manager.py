@@ -144,6 +144,9 @@ class UnitManager(abc.ABC):
             actions=actions,
         )
 
+    def pickup(self, pickup_resource, pickup_amount, repeat=0, n=1):
+        return self.unit.pickup(pickup_resource, pickup_amount, repeat, n)
+
     def _valid_moving_actions(
         self,
         costmap: np.ndarray,
@@ -328,6 +331,23 @@ class FriendlyUnitManager(UnitManager):
         #     self.factory_loc[self.start_of_turn_pos[0], self.start_of_turn_pos[1]] == 1
         # )
 
+    def pickup(self, pickup_resource, pickup_amount, repeat=0, n=1):
+        """Keep track of a couple of turns of power pickups"""
+        turns_of_actions = util.num_turns_of_actions(self.action_queue)
+        # If this pickup is in very near future check the power is available
+        if turns_of_actions < 2 and pickup_resource == util.POWER:
+            logger.debug(f'Checking power pickup is valid and removing power from factory')
+            factory_num = self.master.maps.factory_maps.friendly[self.pos_slice]
+            if factory_num >= 0:
+                factory_id = f'factory_{factory_num}'
+                factory = self.master.factories.friendly.get(factory_id)
+                if factory.short_term_power < pickup_amount:
+                    logger.warning(f'{self.log_prefix} planning to pickup {pickup_amount} but {factory_id} expects to have {factory.short_term_power}')
+                factory.short_term_power -= pickup_amount
+            else:
+                logger.warning(f'{self.log_prefix} Did not find factory at {self.pos} for pickup')
+        return self.unit.pickup(pickup_resource, pickup_amount, repeat, n)
+
     @property
     def factory_loc(self) -> [None, np.ndarray]:
         """Shortcut to the factory_loc of this unit or None if not assigned a factory"""
@@ -336,13 +356,13 @@ class FriendlyUnitManager(UnitManager):
             return factory.factory_loc
 
     @property
-    def factory(self) -> [None, FriendlyFactoryManager]:
+    def factory(self) -> FriendlyFactoryManager:
         if self.factory_id:
             factory = self.master.factories.friendly.get(self.factory_id, None)
             return factory
         else:
             logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
-            return None
+            raise ValueError(f'{self.log_prefix} has no factory')
 
     def power_remaining(self, rubble: np.ndarray = None) -> int:
         """Return power remaining at final step in actions so far"""

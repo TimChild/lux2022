@@ -55,9 +55,20 @@ class FriendlyFactoryManager(FactoryManager):
         self.light_units: Dict[str, FriendlyUnitManager] = {}
         self.heavy_units: Dict[str, FriendlyUnitManager] = {}
 
+        # Keep track of some values that will change during planning
+        self._power = 0
+        self.short_term_power = 0
+
         # caching
         self._light_actions = None
         self._heavy_actions = None
+
+    @property
+    def power(self):
+        """This is just the start of turn power for now
+        Use factory.short_term_power to get expected power in the short term
+        """
+        return self._power
 
     @property
     def lichen_id(self) -> int:
@@ -76,6 +87,22 @@ class FriendlyFactoryManager(FactoryManager):
         super().update(factory)
         self._light_actions = None
         self._heavy_actions = None
+        self._power = factory.power
+        self.short_term_power = self._calculate_start_of_turn_short_term_power()
+
+    def _calculate_start_of_turn_short_term_power(self):
+        """
+        For now, assuming all assigned units only pickup power at own factory, and any power pickup is valid
+        """
+        short_power = self.power
+        for unit_id, unit in dict(**self.light_units, **self.heavy_units).items():
+            unit: FriendlyUnitManager
+            actions = unit.status.planned_actions
+            for action in actions[:2]:
+                if action[util.ACT_TYPE] == util.PICKUP and action[util.ACT_RESOURCE] == util.POWER:
+                    short_power -= action[util.ACT_AMOUNT]
+        return short_power
+
 
     def assign_unit(self, unit: FriendlyUnitManager):
         logger.debug(f"Assigning {unit.log_prefix} to {self.factory.unit_id}")
@@ -93,6 +120,22 @@ class FriendlyFactoryManager(FactoryManager):
         if self._heavy_actions is None:
             self._heavy_actions = self._get_actions(self.heavy_units)
         return self._heavy_actions
+
+    @property
+    def factory_loc(self) -> np.ndarray:
+        """Return an array with shape of map with 1s where factory is"""
+        arr = np.zeros_like(self.master.maps.rubble, dtype=int)
+        arr[self.factory.pos_slice] = 1
+        return arr
+
+    def dead(self):
+        """Called when factory is detected as dead"""
+        logger.info(f"dead, looking for assigned units")
+
+        for unit_id, unit in self.master.units.friendly.all.items():
+            if unit.factory_id == self.unit_id:
+                logger.info(f"Removing {self.unit_id} assignment for unit {unit_id}")
+                unit.factory_id = None
 
     def _get_actions(self, units: Dict[str, FriendlyUnitManager]) -> UnitActions:
         return UnitActions(
@@ -122,23 +165,3 @@ class FriendlyFactoryManager(FactoryManager):
                 if unit.status.current_action == Actions.NOTHING
             },
         )
-
-    @property
-    def factory_loc(self) -> np.ndarray:
-        """Return an array with shape of map with 1s where factory is"""
-        arr = np.zeros_like(self.master.maps.rubble, dtype=int)
-        arr[self.factory.pos_slice] = 1
-        return arr
-
-    @property
-    def power(self) -> int:
-        return self.factory.power
-
-    def dead(self):
-        """Called when factory is detected as dead"""
-        logger.info(f"dead, looking for assigned units")
-
-        for unit_id, unit in self.master.units.friendly.all.items():
-            if unit.factory_id == self.unit_id:
-                logger.info(f"Removing {self.unit_id} assignment for unit {unit_id}")
-                unit.factory_id = None

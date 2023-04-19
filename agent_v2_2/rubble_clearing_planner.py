@@ -439,9 +439,9 @@ class RubbleRoutePlanner:
             logger.debug(
                 f"topping up power from {self.unit.power} with {power_to_pickup}"
             )
-            if self.factory.power < power_to_pickup:
+            if self.factory.short_term_power < power_to_pickup:
                 logger.warning(
-                    f"{self.unit.unit_id} would like to pickup {power_to_pickup} but factory has {self.factory.power}. Not doing rubble clearing this turn"
+                    f"{self.unit.unit_id} would like to pickup {power_to_pickup} but factory has short term power {self.factory.short_term_power}. Not doing rubble clearing this turn"
                 )
                 return False
             if power_to_pickup > 0:

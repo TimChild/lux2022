@@ -921,10 +921,9 @@ def move_to_new_spot_on_factory(
     return success
 
 
-def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManager):
+def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManager) -> bool:
     """Move to cheapest location wherever unit currently is"""
     cm = pathfinder.generate_costmap(unit)
-    success = False
     pos = np.array(unit.pos)
     best_direction = None
     best_cost = 999
@@ -944,8 +943,14 @@ def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManage
         logger.error(
             f"{unit.log_prefix}: No adjacent direction to move, not doing anything"
         )
+        success = False
     else:
+        logger.info(
+            f"Moved unit to cheapest adjacent space at {pos+best_direction}"
+        )
         pathfinder.append_direction_to_actions(unit, best_direction)
+        success = True
+    return success
 
 
 ################### Plotting #################

@@ -179,6 +179,10 @@ class ActionExecutor:
             power_required = (
                 self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
             )
+            if util.num_turns_of_actions(self.unit.action_queue) < 2:
+                if self.unit.factory.short_term_power < power_required:
+                    logger.info(f'Probably not enough power at factory, skipping adding power pickup')
+                    return True
             logger.debug(
                 f"Adding power pickup back at factory. Aiming to pickup {power_required}"
             )

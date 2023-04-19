@@ -526,10 +526,27 @@ class BaseRoute:
             margin=2,
         )
         if len(path) == 0:
-            logger.error(
-                f"Apparently no way to get to the edge of the factory without colliding from {self.unit.pos}",
+            logger.warning(f'{self.unit.log_prefix} failed to find path to edge of factory with normal pathing, now trying avoiding direct collisions only')
+            cm = self.pathfinder.generate_costmap(self.unit, friendly_light=True, collision_only=True)
+            if self.unit.unit_id == 'unit_39':
+                util.show_map_array(cm).show()
+            path = path_to_factory_edge_nearest_pos(
+                pathfinder=self.pathfinder,
+                factory_loc=factory_loc,
+                pos=self.unit.pos,
+                pos_to_be_near=self.resource_pos,
+                costmap=cm,
+                margin=2,
             )
-            return False
+            if len(path) == 0:
+                logger.error(
+                    f"{self.unit.log_prefix} Apparently no way to get to the edge of {self.factory.unit_id}  at {self.factory.pos} without colliding from {self.unit.pos}",
+                )
+                return False
+            else:
+                logger.warning(f'succeeded in finding path avoiding collisions only')
+                self.pathfinder.append_path_to_actions(self.unit, path)
+                return True
         elif len(path) > 0:
             self.pathfinder.append_path_to_actions(self.unit, path)
             return True
@@ -609,17 +626,16 @@ class FactoryFirstRoute(BaseRoute):
         target_power = self._calculate_target_power(travel_cost, target_digs)
 
         # factory_power = self._calculate_factory_power()
-        factory_power = self.factory.power
+        factory_power = self.factory.power if util.num_turns_of_actions(self.unit.action_queue) < 3 else self.factory.short_term_power
+        # factory_power = self.factory.power
 
         n_digs = self._pickup_power_and_determine_digs(
             available_power, target_power, factory_power, travel_cost, target_digs
         )
-        if n_digs <= 0:
-            logger.error(
-                f"{self.unit.log_prefix} n_digs = {n_digs} should always be greater than 1"
+        if n_digs <= 0 or n_digs is False:
+            logger.warning(
+                f"{self.unit.log_prefix} n_digs = {n_digs}, likely not enough power (factory_power={factory_power}, target_power={target_power}, available_power={available_power})"
             )
-
-        if n_digs is False:
             return False
 
         if not self._add_journey_out(self._path_to_resource()):
@@ -701,6 +717,7 @@ class FactoryFirstRoute(BaseRoute):
                 logger.info(
                     f"picking up {power_to_pickup} power to achieve target of {target_power}"
                 )
+
                 self.unit.action_queue.append(
                     self.unit.pickup(
                         POWER,
@@ -731,7 +748,7 @@ class FactoryFirstRoute(BaseRoute):
 
         else:
             logger.warning(
-                f"{self.factory.unit_id} doesn't have enough energy for {self.unit.unit_id} to do a "
+                f"{self.factory.unit_id} doesn't have enough power ({factory_power}) for {self.unit.unit_id} to do a "
                 f"mining run to {self.resource_pos} from {self.unit.pos}"
             )
             return False
