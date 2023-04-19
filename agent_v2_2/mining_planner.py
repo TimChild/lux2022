@@ -528,8 +528,8 @@ class BaseRoute:
         if len(path) == 0:
             logger.warning(f'{self.unit.log_prefix} failed to find path to edge of factory with normal pathing, now trying avoiding direct collisions only')
             cm = self.pathfinder.generate_costmap(self.unit, friendly_light=True, collision_only=True)
-            if self.unit.unit_id == 'unit_39':
-                util.show_map_array(cm).show()
+            # if self.unit.unit_id == 'unit_39':
+            #     util.show_map_array(cm).show()
             path = path_to_factory_edge_nearest_pos(
                 pathfinder=self.pathfinder,
                 factory_loc=factory_loc,
