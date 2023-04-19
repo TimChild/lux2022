@@ -99,7 +99,7 @@ class Status:
             valid = True
         else:
             logger.warning(
-                f"planned actions no longer match q1 = {unit.start_of_turn_actions[0]}, p1 = {new_planned[0]}. updating planned actions"
+                f"{unit.log_prefix} planned actions no longer match q1 = {unit.start_of_turn_actions[0]}, p1 = {new_planned[0]}. updating planned actions"
             )
             new_planned = unit.start_of_turn_actions.copy()
             valid = False

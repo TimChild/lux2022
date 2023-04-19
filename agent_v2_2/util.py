@@ -38,6 +38,7 @@ from new_path_finder import Pather
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager, UnitManager
     from factory_manager import FriendlyFactoryManager
+    from  master_state import  MasterState
 
 logger = get_logger(__name__)
 
@@ -256,11 +257,12 @@ class MyEnv:
 
 
 class MyReplayEnv(MyEnv):
-    def __init__(self, seed, Agent, replay_json, log_file_path:str, my_player="player_0"):
+    def __init__(self, seed, Agent, replay_json, log_file_path:str, my_player="player_0", collector: CollectInfoFromEnv = None):
         self.replay_json = replay_json
         self.player = my_player
         self.other_player = "player_1" if self.player == "player_0" else "player_0"
         self.log_file_path = log_file_path
+        self.collector = collector
         super().__init__(seed, Agent, Agent)
 
         self._all_actions = self._all_replay_actions()
@@ -268,10 +270,10 @@ class MyReplayEnv(MyEnv):
     def init_agents(self):
         super().init_agents()
         if self.player == "player_0":
-            self.agents = {self.agent.player: self.agent}
+            self.agents = {'player_0': self.agent}
         else:
             self.agent = self.other_agent
-            self.agents = {self.other_agent.player: self.other_agent}
+            self.agents = {'player_1': self.other_agent}
         self.other_agent = None
 
     def get_early_actions(self):
@@ -296,11 +298,9 @@ class MyReplayEnv(MyEnv):
                 for i in range(len(self.replay_json["steps"]) - 1)
             ]
 
-    def get_replay_actions(self, step=None, player=None):
+    def get_replay_actions(self, step=None):
         if step is None:
             step = self.env_step
-        if player is None:
-            player = self.other_player
         all_step_actions = self._all_actions
         if len(all_step_actions) > step:
             actions = all_step_actions[step]
@@ -331,6 +331,8 @@ class MyReplayEnv(MyEnv):
         with tqdm(total=num_lines, desc="Watching log file") as pbar:
             while True:
                 self.step()
+                if self.collector is not None:
+                    self.collector.collect(self)
                 current_num_lines = self._get_num_lines()
                 lines_increased = current_num_lines - initial_num_lines
 
@@ -341,6 +343,56 @@ class MyReplayEnv(MyEnv):
                     break
                 time.sleep(0.01)  # Adjust the sleep time if needed
         print(f"Logfile increased by {lines_increased}")
+
+
+class CollectInfoFromEnv:
+    def __init__(self, player: str):
+        self.player = player
+        # For each step, unit_id, num since last update
+        self.unit_last_update_step: Dict[int, Dict[str, int]] = {}
+
+        self.agent = None
+        self.master: MasterState = None
+
+    def _collect_friendly_unit_info(self):
+        step_info = {}
+        for unit_id, unit in self.master.units.friendly.all.items():
+            unit: FriendlyUnitManager
+            step_info[unit_id] = unit.status.last_action_update_step
+        self.unit_last_update_step[self.master.step] = step_info
+
+    def collect(self, env: MyEnv):
+        self.agent = env.agents[self.player]
+        self.master: MasterState = self.agent.master
+
+        self._collect_friendly_unit_info()
+
+    def plot_unit_last_update_step(self) -> go.Figure:
+        # Prepare data for plotting
+        unit_data = {}
+        for idx, d in self.unit_last_update_step.items():
+            for unit, value in d.items():
+                if unit not in unit_data:
+                    unit_data[unit] = []
+                unit_data[unit].append((idx, value))
+
+        # Create a Plotly Scatter plot
+        fig = go.Figure()
+        fig.update_layout(template='plotly_white')
+
+        for unit, values in unit_data.items():
+            x_values = [v[0] for v in values]
+            y_values = [v[1] for v in values]
+            fig.add_trace(go.Scatter(x=x_values, y=y_values, mode='markers+lines', name=unit))
+
+        # Set the plot's title and axis labels
+        fig.update_layout(
+            title="Last update step vs Real Env Steps",
+            xaxis_title="Step Index",
+            yaxis_title="Last update step",
+        )
+        return fig
+
 
 
 
