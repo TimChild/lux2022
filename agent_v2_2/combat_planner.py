@@ -126,6 +126,7 @@ class ActionExecutor:
             and self.unit.power > 0.8 * self.unit.unit_config.BATTERY_CAPACITY
             else True
         )
+        logger.debug(f'avoid_light = {avoid_other_light}, avoid_heavy = {avoid_other_heavy}, ignoring {self.best_enemy_unit.unit_id}')
         cm = self.master.pathfinder.generate_costmap(
             self.unit,
             ignore_id_nums=[self.best_enemy_unit.id_num],
@@ -134,12 +135,17 @@ class ActionExecutor:
             # collision_only=True,  # don't collide with other units, but don't avoid enemies either
             enemy_nearby_start_cost=0,
         )
-        # if self.unit.unit_id == "unit_41":
+        # if self.unit.unit_id == "unit_29":
         #     util.show_map_array(cm).show()
         #  Path to enemy  (with larger margin to allow for navigating around things better)
         path_to_enemy = self.master.pathfinder.fast_path(
             self.unit.pos, self.best_intercept, costmap=cm, margin=5
         )
+        if self.unit.unit_id == "unit_27":
+            fig = util.show_map_array(cm)
+            if len(path_to_enemy) > 0:
+                util.plotly_plot_path(fig, path_to_enemy)
+            fig.show()
 
         if len(path_to_enemy) > 1:
             self.master.pathfinder.append_path_to_actions(self.unit, path_to_enemy)
@@ -454,6 +460,9 @@ class Attack:
                 # probably on own factory
                 return False
             else:
+                logger.info(
+                    f"Continuing attack on {enemy_id}, current dist = {util.manhattan(self.unit.start_of_turn_pos, enemy.start_of_turn_pos)}"
+                )
                 self.best_intercept = nearest_intercept
                 return self.execute_action("attack")
         elif len(self.unit.status.planned_actions) > 0:

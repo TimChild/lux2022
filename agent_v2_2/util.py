@@ -211,8 +211,8 @@ class MyEnv:
         try:
             actions = self.get_actions()
             self.env_step += 1
-            self.real_env_steps = self.env.state.real_env_steps
             self.obs, rewards, dones, infos = self.env.step(actions)
+            self.real_env_steps = self.env.state.real_env_steps
             if any(dones.values()) and self.env_step < 1000:
                 print(
                     f"One of the players dones came back True, previous state restored, use myenv.get_actions() to "
@@ -255,6 +255,7 @@ class MyEnv:
 
     def show(self) -> go.Figure:
         """Display the current env state"""
+        print(f'Displaying Step: {self.real_env_steps}')
         return show_env(self.env)
 
 

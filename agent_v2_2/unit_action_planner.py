@@ -414,6 +414,17 @@ class AllCollisionsForUnit:
     def all(self) -> Dict[str, Collision]:
         return dict(**self.with_friendly.all, **self.with_enemy.all)
 
+    def next_collision(self) -> Collision:
+        nearest_collision = None
+        nearest_step = 999
+        for enemy_id, collision in self.all.items():
+            if collision.step < nearest_step:
+                nearest_collision = collision
+                nearest_step = collision.step
+        if nearest_collision is None:
+            nearest_collision = Collision('none', 'none', False, (-1,  -1),  -1)
+        return nearest_collision
+
     def num_collisions(self, friendly=True, enemy=True):
         num = 0
         if enemy:
@@ -804,11 +815,13 @@ class UnitPaths:
                 # Calculate likely collisions
                 col_cm = util.convolve_array_kernel(arr, collision_kernel, fill=0)
 
+                # Set blocking (or targeting) costs
                 if i > 2 and collision_cost < 0:
                     # already expect to be off by a few steps, just make collision spaces expensive, not blocked
-                    collision_cost = 5
-                # Set blocking (or targeting) costs
-                cm[col_cm < 0] = collision_cost
+                    # unless already blocked!
+                    cm[(col_cm < 0) & (cm > 0)] = 5
+                else:
+                    cm[col_cm < 0] = collision_cost
         return cm
 
     def calculate_likely_unit_collisions(
@@ -1398,7 +1411,7 @@ class SingleUnitActionPlanner:
             <= 0
         ):
             logger.info(
-                f"{self.unit.unit_id} MUST move first turn to avoid collision at {self.unit.pos}"
+                f"{self.unit.unit_id} MUST move first turn to avoid collision at current pos {self.unit.pos}"
             )
             unit_must_move = True
 
@@ -1777,185 +1790,6 @@ class MultipleUnitActionPlanner:
             costmap[pos[0], pos[1]] = -1
         return costmap
 
-    # def decide_unit_actions(
-    #     self,
-    #     mining_planner: MiningPlanner,
-    #     rubble_clearing_planner: RubbleClearingPlanner,
-    #     combat_planner: CombatPlanner,
-    #     factory_desires: Dict[str, FactoryDesires],
-    #     factory_infos: Dict[str, FactoryInfo],
-    # ) -> Dict[str, List[np.ndarray]]:
-    #     """
-    #     Processes the units by choosing the actions the units should take this turn in order of priority
-    #
-    #     Returns:
-    #         Actions to update units with
-    #     """
-    #     logger.info(
-    #         f"process_units called with mining_planner: {mining_planner}, rubble_clearing_planner: {rubble_clearing_planner}"
-    #     )
-    #
-    #     # Which units should even think about acting
-    #     units_to_act = self._get_units_to_act(
-    #         self.master.units.friendly.all, self._all_close_units
-    #     )
-    #
-    #     # Get some info on those units and determine what order they should act
-    #     unit_infos = self._collect_unit_data(units_to_act.needs_to_act)
-    #     unit_infos.sort_by_priority()
-    #
-    #     # Get the base costmap for travel
-    #     # (basically rubble converted to cost and enemy factories impassible)
-    #     base_costmap = self._get_base_costmap()
-    #
-    #     # Calculate 3D path arrays to use for calculating costmaps later
-    #     existing_paths = UnitPaths.from_units(
-    #         friendly={k: act.unit for k, act in units_to_act.should_not_act.items()},
-    #         enemy=self.master.units.enemy.all,
-    #         friendly_valid_move_map=self.master.maps.valid_friendly_move,
-    #         enemy_valid_move_map=self.master.maps.valid_enemy_move,
-    #         max_step=50,
-    #     )
-    #
-    #     # Create the action validator for this turn
-    #     action_validator = ValidActionCalculator(
-    #         units_to_act=units_to_act,
-    #         factory_infos=factory_infos,
-    #         maps=self.master.maps,
-    #     )
-    #
-    #     # For each unit, decide to keep same or update actions
-    #     for unit_id, unit_info in unit_infos.infos.items():
-    #         # Remove from needs_to_act queue since we are calculating these actions now
-    #         unit = unit_info.unit
-    #         units_to_act.needs_to_act.pop(unit.unit_id)
-    #
-    #         # So I can keep track of units in logs
-    #         logger.info(
-    #             f"\n\nProcessing unit {unit.unit_id}({unit.pos}): "
-    #             f"is_heavy={unit_info.is_heavy}, enough_power_to_move={unit_info.enough_power_to_move}, "
-    #             f"power={unit_info.power}, ice={unit_info.ice}, ore={unit_info.ore}"
-    #         )
-    #
-    #         # Re-assign unit to a factory if necessary
-    #         if not unit.factory_id:
-    #             # TODO: pick factory better
-    #             factory_id = next(iter(self.master.factories.friendly.keys()))
-    #             factory = self.master.factories.friendly[factory_id]
-    #             unit.factory_id = factory_id
-    #             factory.assign_unit(unit)
-    #             logger.warning(
-    #                 f"Re-assigning to {factory_id} because no factory assigned"
-    #             )
-    #
-    #         # If only considering because action *might* be invalid, check now
-    #         if unit_info.act_info.reason in [
-    #             ActReasons.NEXT_ACTION_PICKUP,
-    #             ActReasons.NEXT_ACTION_TRANSFER,
-    #             ActReasons.NEXT_ACTION_DIG,
-    #         ]:
-    #             if (
-    #                 action_validator.next_action_valid(unit)
-    #                 # and not colliding with friendly next turn
-    #                 and unit.valid_moving_actions(
-    #                     costmap=existing_paths.to_costmap(
-    #                         unit.start_of_turn_pos,
-    #                         start_step=0,
-    #                         exclude_id_nums=[unit.id_num],
-    #                         friendly_light=True,
-    #                         friendly_heavy=True,
-    #                         enemy_heavy=False,
-    #                         enemy_light=False,
-    #                         collision_cost_value=-1,
-    #                         nearby_start_cost=None,
-    #                     ),
-    #                     max_len=1,
-    #                 ).was_valid
-    #             ):
-    #                 logger.debug(f"Next action IS valid, no need to update")
-    #                 # Make sure the next action is taken into account for next validation
-    #                 action_validator.apply_next_action(unit)
-    #                 existing_paths.add_unit(unit, is_enemy=False)
-    #                 units_to_act.should_not_act[unit_id] = unit_info.act_info
-    #                 continue
-    #             else:
-    #                 logger.debug(f"Next action NOT valid, will recalculate actions")
-    #
-    #         # Figure out new actions for unit  (i.e. RoutePlanners)
-    #         unit.action_queue = []
-    #         unit_action_planner = SingleUnitActionPlanner(
-    #             master=self.master,
-    #             base_costmap=base_costmap,
-    #             unit_paths=existing_paths,
-    #             unit_info=unit_info,
-    #             close_units=self._all_close_units,
-    #             factory_desires=factory_desires[unit.factory_id],
-    #             factory_info=factory_infos[unit.factory_id],
-    #             mining_planner=mining_planner,
-    #             rubble_clearing_planner=rubble_clearing_planner,
-    #             combat_planner=combat_planner,
-    #         )
-    #         success = unit_action_planner.calculate_actions_for_unit(unit)
-    #
-    #         # If first X actions are the same, don't update (unnecessary cost for unit)
-    #         if np.all(
-    #             np.array(unit.action_queue[: self.actions_same_check])
-    #             == np.array(unit.start_of_turn_actions[: self.actions_same_check])
-    #         ):
-    #             logger.debug(
-    #                 f"First {self.actions_same_check} actions same, not updating unit action queue"
-    #             )
-    #             # Put the action queue back to what it was since we are not updating it
-    #             unit.action_queue = unit.start_of_turn_actions
-    #
-    #             # Note: some other things about unit may be wrong, e.g. pos, power. But probably not important from here on (and slow to copy)
-    #             units_to_act.should_not_act[unit.unit_id] = unit_info.act_info
-    #         else:
-    #             logger.info(
-    #                 f"{unit.log_prefix} has updated actions "
-    #                 f"(last updated {self.master.step - unit.status.last_action_update_step} ago),"
-    #                 f"was {unit.status.previous_action}, now {unit.status.current_action}"
-    #                 f" first few actions are {unit.action_queue[:3]}"
-    #             )
-    #             unit.status.last_action_update_step = self.master.step
-    #             units_to_act.has_updated_actions[unit.unit_id] = unit_info.act_info
-    #
-    #     # Make sure the next action is taken into account for next validation
-    #     action_validator.apply_next_action(unit)
-    #     # And for next pathing
-    #     existing_paths.add_unit(unit, is_enemy=False)
-    # #
-    # # Collect the unit actions for returning to Env
-    # unit_actions = {}
-    # for unit_id, act_info in units_to_act.has_updated_actions.items():
-    #     if len(act_info.unit.action_queue) > 0:
-    #         unit_actions[unit_id] = act_info.unit.action_queue[:20]
-    #     else:
-    #         logger.error(
-    #             f"Updating {unit_id} with empty actions (could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
-    #         )
-    #         unit_actions[unit_id] = []
-    #
-    # # Quick validation of actions
-    # for unit_id, actions in unit_actions.items():
-    #     if not valid_action_space(actions):
-    #         logger.error(
-    #             f"Invalid action (action space) in actions ({actions}) for unit {unit_id}, returning earlier valid actions"
-    #         )
-    #         actions = []
-    #         for i, action in enumerate(actions):
-    #             logger.debug(f"Checking action {action}")
-    #             if valid_action_space(action):
-    #                 actions.append(action)
-    #             else:
-    #                 logger.error(f"Invalid action was {action} at position {i}")
-    #                 break
-    #         if len(actions) == 0:
-    #             # Move center
-    #             actions = [np.array([0, 0, 0, 0, 0, 1], dtype=int)]
-    #         unit_actions[unit_id] = actions
-    # return unit_actions
-
     def _collect_changed_actions(self, units_to_act):
         unit_actions = {}
         for unit_id, act_info in units_to_act.has_updated_actions.items():
@@ -2018,19 +1852,26 @@ class MultipleUnitActionPlanner:
             np.array(current_unit_actions[: self.actions_same_check])
             == np.array(planned_actions[: self.actions_same_check])
         ):
+            first_act = unit.start_of_turn_actions[0] if len(unit.start_of_turn_actions) > 0 else []
             logger.debug(
-                f"First {self.actions_same_check} real actions same, not updating unit action queue"
+                f"First {self.actions_same_check} real actions same ({first_act}), not updating unit action queue"
             )
             # Set the action_queue to what it will be (don't think this will actually get used again)
             unit.action_queue = planned_actions[:20]
             units_to_act.should_not_act[unit.unit_id] = unit_info.act_info
         else:
+            last_updated = self.master.step - unit.status.last_action_update_step
             logger.info(
                 f"{unit.log_prefix} has updated actions "
-                f"(last updated {self.master.step - unit.status.last_action_update_step} ago),"
+                f"(last updated {last_updated} ago),"
                 f"was {unit.status.previous_action}, now {unit.status.current_action}"
-                f" first few new actions are {planned_actions[:3]}"
+                f" first few new actions are {planned_actions[:3]}, first few old actions were {unit.start_of_turn_actions[:3]}"
             )
+            if last_updated < 3 or last_updated > 30 and unit.status.previous_action != Actions.NOTHING:
+                logger.warning(
+                    f"{unit.log_prefix} updated {last_updated} ago <<< This is just a note to see how things are going"
+                )
+
             unit.action_queue = planned_actions[:20]
             unit.status.last_action_update_step = self.master.step
             units_to_act.has_updated_actions[unit.unit_id] = unit_info.act_info
@@ -2075,8 +1916,10 @@ class MultipleUnitActionPlanner:
             unit_paths=existing_paths,
         )
 
-        for unit_id, act_info in units_to_act.needs_to_act.items():
-            unit = act_info.unit
+        # for unit_id, act_info in units_to_act.needs_to_act.items():
+        # Go through units in order of priority (unit_infos is sorted)
+        for unit_id, unit_info in unit_infos.infos.items():
+            unit = unit_info.unit
             self._assign_new_factory_if_necessary(unit, factory_infos)
             unit_info = unit_infos.infos[unit_id]
             unit_action_planner = SingleUnitActionPlanner(
