@@ -272,7 +272,7 @@ class BestEnemyUnit:
             # print(f'Nearest intercept = {nearest_intercept}')
             if nearest_intercept is None:
                 if self.best_enemy_unit is None:
-                    logger.warning(f"{self.unit.log_prefix} No intercepts with enemy")
+                    logger.info(f"{self.unit.log_prefix} No intercepts with enemy")
                 break
 
             enemy_num = self.enemy_location_ids[

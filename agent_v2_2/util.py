@@ -256,10 +256,11 @@ class MyEnv:
 
 
 class MyReplayEnv(MyEnv):
-    def __init__(self, seed, Agent, replay_json, my_player="player_0"):
+    def __init__(self, seed, Agent, replay_json, log_file_path:str, my_player="player_0"):
         self.replay_json = replay_json
         self.player = my_player
         self.other_player = "player_1" if self.player == "player_0" else "player_0"
+        self.log_file_path = log_file_path
         super().__init__(seed, Agent, Agent)
 
         self._all_actions = self._all_replay_actions()
@@ -321,34 +322,26 @@ class MyReplayEnv(MyEnv):
         )
         return {}
 
-
-class LogFileWatcher:
-    def __init__(self, log_file_path, num_lines_increase):
-        self.log_file_path = log_file_path
-        self.num_lines_increase = num_lines_increase
-        self.initial_num_lines = self._get_num_lines()
-
     def _get_num_lines(self):
         with open(self.log_file_path, "r") as file:
             return len(file.readlines())
 
-    def run_until_log_increases(self, func, break_condition: Callable = None):
-        self.initial_num_lines = self._get_num_lines()
-        with tqdm(total=self.num_lines_increase, desc="Watching log file") as pbar:
+    def run_until_log_increases(self, num_lines: int, max_step=None):
+        initial_num_lines = self._get_num_lines()
+        with tqdm(total=num_lines, desc="Watching log file") as pbar:
             while True:
-                func()
+                self.step()
                 current_num_lines = self._get_num_lines()
-                lines_increased = current_num_lines - self.initial_num_lines
+                lines_increased = current_num_lines - initial_num_lines
 
                 pbar.n = lines_increased
                 pbar.refresh()
 
-                if lines_increased >= self.num_lines_increase or (
-                    break_condition is not None and break_condition()
-                ):
+                if lines_increased >= num_lines or (max_step is not None and self.real_env_steps >= max_step):
                     break
                 time.sleep(0.01)  # Adjust the sleep time if needed
         print(f"Logfile increased by {lines_increased}")
+
 
 
 ##########################################
