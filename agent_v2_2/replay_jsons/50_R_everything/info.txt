@@ -1,0 +1,28 @@
+VS TITA about 10th game in
+
+Lights:
+- unit12 what is it doing on turn 6 to 10 (not moving)
+- where does it start going from 11 and then why does it change it's mind at 16
+- why does it stop chasing at 20 (it has more  power than enemy)
+- why does it get stepped on at 23/24
+
+
+- unit 24 ~turn 30 has similar issues fighting with unit 11 (again it has more power than enemy)
+
+- unit 21 turn 30 -- why does  it take such a long path back to factory
+
+- unit 13 turn 24 -- why doe it get actions with a bunch of moving before pickup, then a bunch more moving before dig
+- unit 13 turn 59 -- why does it walk into heavy unit 7 (on factory)
+- unit 19 turn 80 -- was pathing to ore, but then gets near enemy, why does it path back to factory first while on full power?
+	turn 110 -- why does it get assigned no actions
+	turn 199-205 -- oscillates between mining in two locations never actually mining
+	turn 232 -- stops acting while fighting even though it has more power
+Heavy:
+- unit 7 turn 37 -- why does it run away from the light enemy unit 15 and then choose a path running around the  factory?
+- unit 7 turn 45 -- gets new path but not enough power to do moves before pickup of power
+	turn 215 -- why does it get NOTHING action when light approaches it
+	turn 219 -- why does it try to go to far away resource?
+- unit 6 turn 68-90 -- Needs to not keep picking up a bit more power before setting off
+
+
+
