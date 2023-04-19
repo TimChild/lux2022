@@ -364,7 +364,9 @@ class Attack:
         self.unit = unit
         self.master = master
         self.targeted_enemies = targeted_enemies
-        self.targeted_enemies_reversed = {unit.unit_id: enemy_id for enemy_id, unit in targeted_enemies.items()}
+        self.targeted_enemies_reversed = {
+            unit.unit_id: enemy_id for enemy_id, unit in targeted_enemies.items()
+        }
 
         self.enemy_location_ids = None
         self.best_enemy_unit = None
@@ -426,26 +428,33 @@ class Attack:
 
     def continue_attack(self) -> bool:
         enemy_id = self.targeted_enemies_reversed[self.unit.unit_id]
-        enemy = self.master.units.enemy.get_unit(enemy_id, None)
+        enemy = self.master.units.enemy.get_unit(enemy_id)
         if enemy is None:
-            logger.warning(f'{self.unit.log_prefix} enemy {enemy_id} no longer exists')
+            logger.warning(f"{self.unit.log_prefix} enemy {enemy_id} no longer exists")
             self.targeted_enemies.pop(enemy_id)
             return False
         enemy: EnemyUnitManager
         self.best_enemy_unit = enemy
         self.find_interceptable_enemy_locations(specific_id_num=enemy.id_num)
         enemy_map = (self.enemy_location_ids >= 0).astype(int)
-        nearest_intercept = util.nearest_non_zero(enemy_map, self.unit.start_of_turn_pos)
+        nearest_intercept = util.nearest_non_zero(
+            enemy_map, self.unit.start_of_turn_pos
+        )
 
         # If new intercept, maybe can get there better
         if nearest_intercept is not None:
-            intercept_valid = self.master.maps.valid_friendly_move[nearest_intercept[0], nearest_intercept[1]] > 0
+            intercept_valid = (
+                self.master.maps.valid_friendly_move[
+                    nearest_intercept[0], nearest_intercept[1]
+                ]
+                > 0
+            )
             if not intercept_valid:
                 # probably on own factory
                 return False
             else:
                 self.best_intercept = nearest_intercept
-                return self.execute_action('attack')
+                return self.execute_action("attack")
         elif len(self.unit.status.planned_actions) > 0:
             # Carry on, enemy will probably pop up again
             self.unit.action_queue = self.unit.status.planned_actions.copy()

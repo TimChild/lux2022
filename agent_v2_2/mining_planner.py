@@ -920,6 +920,7 @@ class MiningRecommender:
         self.master = master
         self.ice = ice
         self.ore = ore
+        # self.assigned_resources   # TODO: Do this tomrrow (and figure out why units are still colliding)
 
     def get_resource_map(self, resource_type: int) -> np.ndarray:
         if resource_type == ICE:

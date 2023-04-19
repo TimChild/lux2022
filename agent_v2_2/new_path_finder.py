@@ -170,6 +170,9 @@ class Pather:
         """
         # TODO: Modify previous actions n if first new action is same direction (just a slight optimization)
         actions = util.path_to_actions(path)
+        if isinstance(unit.action_queue, np.ndarray):
+            logger.warning(f"Converting action queue from np.array to list")
+            unit.action_queue = list(unit.action_queue)
         unit.action_queue.extend(actions)
         if len(path) > 0 and len(path[-1] == 2):
             unit.pos = path[-1]
