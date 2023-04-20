@@ -19,6 +19,42 @@ if TYPE_CHECKING:
     pass
 
 
+def ensure_path_includes_at_least_next_step(path):
+    """
+    If path only 1 in length, probably unit has no action queue and will stay still (for at least 1 turn)
+    (i.e. if path is only [current_pos], next pos will probably be [current_pos] too)
+    """
+    if len(path) == 1:
+        path = [path[0], path[0]]
+    return path
+
+def check_next_move_will_happen(path, unit: UnitManager, rubble: np.ndarray):
+    """
+    Does the unit actually have enough energy to do first move if first action is to move
+    If not, add a not move to path so next step collisions can be found
+    """
+    # Is next action supposed to be move
+    if not np.all(path[0] == path[1]):
+        move_cost = (
+                unit.unit_config.MOVE_COST
+                + unit.unit_config.RUBBLE_MOVEMENT_COST * rubble[path[1][0], path[1][1]]
+        )
+        # TODO: Is there any way power can be tranferred to a unit to make this not true?
+        # TODO: Or does the charge cycle have any impact, I think charging happens last, so no?
+        # Unit isn't really going to move next turn
+        if move_cost > unit.start_of_turn_power:
+            path = list(path)
+            path.insert(0, path[0])
+    return path
+
+def sanitize_path_start(path, unit: UnitManager, rubble:  np.ndarray):
+    """Make sure the beginning of the path is accurate (for next step collisions)"""
+    path = ensure_path_includes_at_least_next_step(path)
+    path = check_next_move_will_happen(path, unit, rubble)
+    return path
+
+
+
 def find_collisions(
     this_unit: UnitManager,
     other_units: Iterable[UnitManager],
@@ -30,43 +66,10 @@ def find_collisions(
     I.e. Only first collision coordinate when comparing the two paths
     """
 
-    def ensure_path_includes_at_least_next_step(path):
-        """
-        If path only 1 in length, probably unit has no action queue and will stay still (for at least 1 turn)
-        (i.e. if path is only [current_pos], next pos will probably be [current_pos] too)
-        """
-        if len(path) == 1:
-            path = [path[0], path[0]]
-        return path
-
-    def check_next_move_will_happen(path, unit: UnitManager):
-        """
-        Does the unit actually have enough energy to do first move if first action is to move
-        If not, add a not move to path so next step collisions can be found
-        """
-        # Is next action supposed to be move
-        if not np.all(path[0] == path[1]):
-            move_cost = (
-                unit.unit_config.MOVE_COST
-                + unit.unit_config.RUBBLE_MOVEMENT_COST * rubble[path[1][0], path[1][1]]
-            )
-            # TODO: Is there any way power can be tranferred to a unit to make this not true?
-            # TODO: Or does the charge cycle have any impact, I think charging happens last, so no?
-            # Unit isn't really going to move next turn
-            if move_cost > unit.start_of_turn_power:
-                path = list(path)
-                path.insert(0, path[0])
-        return path
-
-    def sanitize_path_start(path, unit: UnitManager):
-        """Make sure the beginning of the path is accurate (for next step collisions)"""
-        path = ensure_path_includes_at_least_next_step(path)
-        path = check_next_move_will_happen(path, unit)
-        return path
 
     # Note: this defaults to planned path for friendly units
     this_path = this_unit.current_path(max_len=max_step)
-    this_path = sanitize_path_start(this_path, this_unit)
+    this_path = sanitize_path_start(this_path, this_unit, rubble)
 
     collisions = {}
     for other in other_units:
@@ -75,7 +78,7 @@ def find_collisions(
             continue
         # Note: this defaults to planned path for friendly units
         other_path = other.current_path(max_len=max_step)
-        other_path = sanitize_path_start(other_path, other)
+        other_path = sanitize_path_start(other_path, other, rubble)
 
         # Note: zip stops iterating when end of a path is reached
         for i, (this_pos, other_pos) in enumerate(zip(this_path, other_path)):
@@ -126,13 +129,15 @@ class CollisionResolver:
         """Is the collision part way through travelling a-b
         Basically is the step after somewhere else and not final dest?
         """
-        was_moving = actions_util.was_unit_moving_at_step(
+        # was_moving = actions_util.was_unit_moving_at_step(
+        #     self.unit_actions, collision.step
+        # )
+        moving_this_turn = actions_util.will_unit_move_at_step(
             self.unit_actions, collision.step
         )
-        will_be_moving = actions_util.will_unit_move_at_step(
-            self.unit_actions, collision.step
-        )
-        travelling = was_moving and will_be_moving
+        moving_next_turn = actions_util.will_unit_move_at_step(self.unit_actions,  collision.step+1)
+
+        travelling = moving_next_turn and moving_this_turn
         if travelling:
             logger.debug(
                 f"{self.unit.unit_id} is travelling at collision step {collision.step}, at {collision.pos}"
@@ -391,6 +396,8 @@ class UnitPaths:
 
     friendly_valid_move_map: np.ndarray
     enemy_valid_move_map: np.ndarray
+    rubble: np.ndarray  # For calculating if enough energy to actually take next step
+
     friendly_light: np.ndarray
     friendly_heavy: np.ndarray
     enemy_light: np.ndarray
@@ -410,49 +417,6 @@ class UnitPaths:
         self._friendly_collision_kernel = self._friendly_collision_blur()
         self._enemy_collision_kernel = self._enemy_collision_blur()
 
-    @property
-    def all(self):
-        """
-        There *SHOULD* only be one unit in any place at any time, so this *SHOULD* be ok to do
-        """
-        return np.sum(
-            [
-                self.friendly_light,
-                self.friendly_heavy,
-                self.enemy_light,
-                self.enemy_heavy,
-            ],
-            axis=0,
-        )
-
-    def _enemy_blur_kernel(self):
-        blur_size = 3
-        blur_kernel = (2 / 0.5) * 0.5 ** util.manhattan_kernel(blur_size)
-        # blur_kernel = (
-        #     util.pad_and_crop(
-        #         adj_kernel, blur_kernel, blur_size, blur_size, fill_value=1
-        #     )
-        #     * blur_kernel
-        # )
-        # blur_kernel[blur_kernel < 0] = -2
-        return blur_kernel
-
-    def _enemy_collision_blur(self):
-        adj_kernel = (util.manhattan_kernel(1) <= 1).astype(int) * -1
-        adj_kernel[adj_kernel >= 0] = 0
-        return adj_kernel
-
-    def _friendly_blur_kernel(self):
-        blur_size = 3
-        blur_kernel = (1 / 0.5) * 0.5 ** util.manhattan_kernel(blur_size)
-        blur_kernel[blur_size, blur_size] = -1
-        return blur_kernel
-
-    def _friendly_collision_blur(self):
-        adj_kernel = (util.manhattan_kernel(0) <= 1).astype(int) * -1
-        adj_kernel[adj_kernel >= 0] = 0
-        return adj_kernel
-
     @classmethod
     def from_units(
         cls,
@@ -461,6 +425,7 @@ class UnitPaths:
         friendly_valid_move_map,
         enemy_valid_move_map,
         max_step,
+        rubble: np.ndarray,
     ):
         friendly_light = {
             unit.id_num: unit for unit in friendly.values() if unit.unit_type == "LIGHT"
@@ -510,12 +475,56 @@ class UnitPaths:
         return cls(
             friendly_valid_move_map=friendly_valid_move_map,
             enemy_valid_move_map=enemy_valid_move_map,
+            rubble=rubble,
             friendly_light=arrays[0],
             friendly_heavy=arrays[1],
             enemy_light=arrays[2],
             enemy_heavy=arrays[3],
             max_step=max_step,
         )
+
+    @property
+    def all(self):
+        """
+        There *SHOULD* only be one unit in any place at any time, so this *SHOULD* be ok to do
+        """
+        return np.sum(
+            [
+                self.friendly_light,
+                self.friendly_heavy,
+                self.enemy_light,
+                self.enemy_heavy,
+            ],
+            axis=0,
+        )
+
+    def _enemy_blur_kernel(self):
+        blur_size = 3
+        blur_kernel = (2 / 0.5) * 0.5 ** util.manhattan_kernel(blur_size)
+        # blur_kernel = (
+        #     util.pad_and_crop(
+        #         adj_kernel, blur_kernel, blur_size, blur_size, fill_value=1
+        #     )
+        #     * blur_kernel
+        # )
+        # blur_kernel[blur_kernel < 0] = -2
+        return blur_kernel
+
+    def _enemy_collision_blur(self):
+        adj_kernel = (util.manhattan_kernel(1) <= 1).astype(int) * -1
+        adj_kernel[adj_kernel >= 0] = 0
+        return adj_kernel
+
+    def _friendly_blur_kernel(self):
+        blur_size = 3
+        blur_kernel = (1 / 0.5) * 0.5 ** util.manhattan_kernel(blur_size)
+        blur_kernel[blur_size, blur_size] = -1
+        return blur_kernel
+
+    def _friendly_collision_blur(self):
+        adj_kernel = (util.manhattan_kernel(0) <= 1).astype(int) * -1
+        adj_kernel[adj_kernel >= 0] = 0
+        return adj_kernel
 
     @staticmethod
     def _add_path_to_array(
@@ -560,7 +569,8 @@ class UnitPaths:
         unit_num = unit.id_num
         max_step = self.friendly_light.shape[0]
 
-        # Calculate the valid path (i.e. can't walk of edge of map or through enemy factory, doesn't consider energy)
+        # Calculate the valid path (i.e. can't walk of edge of map or through enemy factory)
+        # NOTE: does NOT include power considerations (i.e. if enough power to do first move)
         # Especially important for enemy units... Don't want to deal with invalid paths later
         valid_path = unit.valid_moving_actions(costmap=move_map, max_len=max_step)
 
@@ -568,6 +578,7 @@ class UnitPaths:
         path = util.actions_to_path(
             unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=max_step
         )
+        path = sanitize_path_start(path, unit, self.rubble)
 
         # Add that path to the 3D path array
         self._add_path_to_array(unit, path, array, max_step, is_enemy=is_enemy)

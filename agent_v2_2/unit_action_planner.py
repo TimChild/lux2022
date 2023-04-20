@@ -825,6 +825,7 @@ class MultipleUnitActionPlanner:
             friendly_valid_move_map=self.master.maps.valid_friendly_move,
             enemy_valid_move_map=self.master.maps.valid_enemy_move,
             max_step=self.max_pathing_steps,
+            rubble=self.master.maps.rubble,
         )
         self.debug_existing_paths = existing_paths
 
