@@ -9,7 +9,7 @@ import util
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager, FriendlyUnitManager
-    from agent_v2_2.collisions import UnitPaths
+    from agent_v3_0.collisions import UnitPaths
 
 logger = get_logger(__name__)
 
@@ -28,9 +28,7 @@ def _adjust_coords(start, end, lowers) -> Tuple[Tuple[int, int], Tuple[int, int]
     """Adjust coords to new reduced area map"""
     new_start = [c - l for c, l in zip(start, lowers)]
     new_end = [c - l for c, l in zip(end, lowers)]
-    return tuple(new_start), tuple(
-        new_end
-    )  # Complaining about unknown length of tuples
+    return tuple(new_start), tuple(new_end)  # Complaining about unknown length of tuples
 
 
 def _adjust_path_back(path: np.ndarray, lowers):
@@ -54,9 +52,7 @@ def _get_bounds(start: util.POS_TYPE, end: util.POS_TYPE, margin: int, map_shape
 
     # Bounds including margin (x, y)
     lowers = [max(0, v - margin) for v in mins]
-    uppers = [
-        min(s - 1, v + margin) + 1 for s, v in zip(reversed(map_shape), maxs)
-    ]  # +1 for range
+    uppers = [min(s - 1, v + margin) + 1 for s, v in zip(reversed(map_shape), maxs)]  # +1 for range
     return lowers, uppers
 
 
@@ -162,9 +158,7 @@ class Pather:
         path = _adjust_path_back(sub_path, lowers)
         return path
 
-    def append_path_to_actions(
-        self, unit: UnitManager, path: Union[List[Tuple[int, int]], np.ndarray]
-    ) -> None:
+    def append_path_to_actions(self, unit: UnitManager, path: Union[List[Tuple[int, int]], np.ndarray]) -> None:
         """
         Turns the path into actions that are appended to unit. This is how path should ALWAYS be updated
         """
@@ -182,9 +176,7 @@ class Pather:
         path = [unit.pos, util.add_direction_to_pos(unit.pos, direction)]
         self.append_path_to_actions(unit, path)
 
-    def slow_path(
-        self, start_pos: Tuple[int, int], end_pos: Tuple[int, int], costmap=None
-    ) -> np.ndarray:
+    def slow_path(self, start_pos: Tuple[int, int], end_pos: Tuple[int, int], costmap=None) -> np.ndarray:
         """
         Find A* path from start to end (does not update anything)
         Note: self.full_costmap (or provided costmap) should be such that collisions impossible for first 1 or 2 turns

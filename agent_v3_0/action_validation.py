@@ -12,7 +12,7 @@ import util
 if TYPE_CHECKING:
     from master_state import Maps
     from unit_action_planner import UnitsToAct
-    from agent_v2_2.collisions import UnitPaths
+    from agent_v3_0.collisions import UnitPaths
     from factory_action_planner import FactoryInfo
     from unit_manager import FriendlyUnitManager
 
@@ -84,9 +84,7 @@ class ValidActionCalculator:
             )
 
         # Update based on first action of units (pickup or transfer)
-        all_infos = dict(
-            **self.units_to_act.should_not_act, **self.units_to_act.has_updated_actions
-        )
+        all_infos = dict(**self.units_to_act.should_not_act, **self.units_to_act.has_updated_actions)
         for unit_id, act_info in all_infos.items():
             self.add_next_action(act_info.unit)
 
@@ -194,9 +192,7 @@ class ValidActionCalculator:
             true_intercept=True,
         )
         if act_type == util.MOVE:
-            valid = unit.valid_moving_actions(
-                allowed_move_map, max_len=1, ignore_repeat=True
-            )
+            valid = unit.valid_moving_actions(allowed_move_map, max_len=1, ignore_repeat=True)
             if valid.was_valid is False:
                 logger.warning(f"Move not valid because {valid.invalid_reasons[0]}")
                 return False
@@ -206,9 +202,7 @@ class ValidActionCalculator:
                 unit.unit_type,
             )
             if unit_power < move_cost:
-                logger.info(
-                    f"Move not valid because not enough power {unit_power} < {move_cost}"
-                )
+                logger.info(f"Move not valid because not enough power {unit_power} < {move_cost}")
                 return False
         elif act_type == util.PICKUP:
             f_num = self.maps.factory_maps.friendly[unit_pos[0], unit_pos[1]]
@@ -217,9 +211,7 @@ class ValidActionCalculator:
                 return False
             factory_id = factory_num_to_id(f_num)
 
-            available = self._get_available_factory_resource(
-                factory_id=factory_id, resource=resource
-            )
+            available = self._get_available_factory_resource(factory_id=factory_id, resource=resource)
             if amount > available:
                 logger.debug(f"False -- amount > available: {amount} > {available}")
                 return False
@@ -227,9 +219,7 @@ class ValidActionCalculator:
             pos = util.add_direction_to_pos(unit_pos, direction)
             f_num = self.maps.factory_maps.friendly[pos[0], pos[1]]
             if not f_num >= 0:
-                logger.warning(
-                    f"Transfer location {pos} not on factory, cannot transfer"
-                )
+                logger.warning(f"Transfer location {pos} not on factory, cannot transfer")
                 return False
             if resource == util.ICE and unit.cargo.ice == 0:
                 logger.warning(f"Attempting to transfer ice with 0 ice in cargo")
