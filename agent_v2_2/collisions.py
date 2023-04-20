@@ -355,6 +355,10 @@ class AllCollisionsForUnit:
 class UnitPaths:
     """Unit paths stored in a 3D array (step, x, y) where value is id_num (otherwise -1)"""
 
+    # How many extra layers to use in pathing (i.e. including taking an extra X turns of collisions in case it takes X
+    # turns more to get there)
+    additional_lag_steps = 3
+
     def __init__(
         self,
         friendly: Dict[str, FriendlyUnitManager],
@@ -560,7 +564,7 @@ class UnitPaths:
                         enemy_light=enemy_light,
                         enemy_heavy=enemy_heavy,
                     )
-                    for i in range(1, 5)
+                    for i in range(1, self.additional_lag_steps)
                 ]
             )
 
@@ -606,7 +610,10 @@ class UnitPaths:
                     cm[cm > 0] += add_cm[cm > 0]
 
                 # Calculate likely collisions
-                col_cm = util.convolve_array_kernel(arr, collision_kernel, fill=0)
+                if np.all(collision_kernel.shape == (1, 1)):
+                    col_cm = collision_kernel[0, 0] * arr
+                else:
+                    col_cm = util.convolve_array_kernel(arr, collision_kernel, fill=0)
 
                 # Set blocking (or targeting) costs
                 if i > 2 and collision_cost < 0:

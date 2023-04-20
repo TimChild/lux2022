@@ -53,12 +53,8 @@ class Status:
             new_actions.pop(0)
             return new_actions
         else:
-            logger.error(
-                f"failed to update planned actions. First planned action = {new_actions[0]}"
-            )
-            raise NotImplementedError(
-                f"failed to update planned actions. planned actions = {new_actions}"
-            )
+            logger.error(f"failed to update planned actions. First planned action = {new_actions[0]}")
+            raise NotImplementedError(f"failed to update planned actions. planned actions = {new_actions}")
 
     def step_update_planned_actions(self, unit: FriendlyUnitManager):
         """Update the planned actions
@@ -72,9 +68,7 @@ class Status:
         # print(unit.master.step, self._last_beginning_of_step_update)
         # Check if this is the same step as last update (i.e. running in my debugging env)
         if step == self._last_beginning_of_step_update:
-            logger.warning(
-                f"{unit.log_prefix}: Trying to update for same step again, not updating"
-            )
+            logger.warning(f"{unit.log_prefix}: Trying to update for same step again, not updating")
             return True
 
         valid = False
@@ -84,9 +78,7 @@ class Status:
                 logger.debug(f"no unit or planned actions, valid")
                 valid = True
             else:
-                logger.error(
-                    f"{unit.log_prefix} unit actions empty, but len planned was {len(new_planned)}"
-                )
+                logger.error(f"{unit.log_prefix} unit actions empty, but len planned was {len(new_planned)}")
                 new_planned = []
                 valid = False
         elif len(unit.start_of_turn_actions) > 0 and len(new_planned) == 0:
@@ -163,12 +155,8 @@ class UnitManager(abc.ABC):
             ignore_repeat=ignore_repeat,
         )
 
-    def valid_moving_actions(
-        self, costmap, max_len=20, ignore_repeat=False
-    ) -> util.ValidActionsMoving:
-        return self._valid_moving_actions(
-            costmap, self.start_of_turn_pos, self.action_queue, max_len, ignore_repeat
-        )
+    def valid_moving_actions(self, costmap, max_len=20, ignore_repeat=False) -> util.ValidActionsMoving:
+        return self._valid_moving_actions(costmap, self.start_of_turn_pos, self.action_queue, max_len, ignore_repeat)
 
     @property
     def log_prefix(self) -> str:
@@ -233,9 +221,7 @@ class UnitManager(abc.ABC):
     def power(self, value):
         self.unit.power = value
 
-    def actions_to_path(
-        self, actions: [None, List[np.ndarray]] = None, max_len=20
-    ) -> np.ndarray:
+    def actions_to_path(self, actions: [None, List[np.ndarray]] = None, max_len=20) -> np.ndarray:
         """
         Return a list of coordinates of the path the actions represent starting from unit.pos
         (which may have been updated since beginning of turn)
@@ -285,14 +271,10 @@ class FriendlyUnitManager(UnitManager):
         self.start_of_turn_actions = copy.copy(unit.action_queue)
         self.status.step_update_planned_actions(self)
 
-    def current_path(
-        self, max_len: int = 10, actions=None, planned_actions=True
-    ) -> np.ndarray:
+    def current_path(self, max_len: int = 10, actions=None, planned_actions=True) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
         if actions is None:
-            actions = (
-                self.status.planned_actions if planned_actions else self.action_queue
-            )
+            actions = self.status.planned_actions if planned_actions else self.action_queue
         return super().current_path(max_len=max_len, actions=actions)
 
     def update_status(self, new_action, success: bool):
@@ -311,19 +293,14 @@ class FriendlyUnitManager(UnitManager):
             actions = self.status.planned_actions
         else:
             actions = self.action_queue
-        return self._valid_moving_actions(
-            costmap, self.start_of_turn_pos, actions, max_len, ignore_repeat
-        )
+        return self._valid_moving_actions(costmap, self.start_of_turn_pos, actions, max_len, ignore_repeat)
 
     def next_action_is_move(self) -> bool:
         """Bool if next action is a move action"""
         if len(self.start_of_turn_actions) == 0:
             return False
         next_action = self.start_of_turn_actions[0]
-        if (
-            next_action[util.ACT_TYPE] == util.MOVE
-            and next_action[util.ACT_DIRECTION] != util.CENTER
-        ):
+        if next_action[util.ACT_TYPE] == util.MOVE and next_action[util.ACT_DIRECTION] != util.CENTER:
             return True
         return False
 
@@ -342,9 +319,7 @@ class FriendlyUnitManager(UnitManager):
         turns_of_actions = util.num_turns_of_actions(self.action_queue)
         # If this pickup is in very near future check the power is available
         if turns_of_actions < 2 and pickup_resource == util.POWER:
-            logger.debug(
-                f"Checking power pickup is valid and removing power from factory"
-            )
+            logger.debug(f"Checking power pickup is valid and removing power from factory")
             factory_num = self.master.maps.factory_maps.friendly[self.pos_slice]
             if factory_num >= 0:
                 factory_id = f"factory_{factory_num}"
@@ -355,9 +330,7 @@ class FriendlyUnitManager(UnitManager):
                     )
                 factory.short_term_power -= pickup_amount
             else:
-                logger.warning(
-                    f"{self.log_prefix} Did not find factory at {self.pos} for pickup"
-                )
+                logger.warning(f"{self.log_prefix} Did not find factory at {self.pos} for pickup")
         return self.unit.pickup(pickup_resource, pickup_amount, repeat, n)
 
     @property
@@ -379,7 +352,11 @@ class FriendlyUnitManager(UnitManager):
     def power_remaining(self, rubble: np.ndarray = None) -> int:
         """Return power remaining at final step in actions so far"""
         rubble = self.master.maps.rubble if rubble is None else rubble
-        return self.start_of_turn_power - self.power_cost_of_actions(rubble=rubble)
+        return (
+            self.start_of_turn_power
+            - self.unit_config.ACTION_QUEUE_POWER_COST
+            - self.power_cost_of_actions(rubble=rubble)
+        )
 
     def dead(self):
         """Called when unit is detected as dead"""
@@ -387,8 +364,6 @@ class FriendlyUnitManager(UnitManager):
         if self.factory_id:
             logger.info(f"removing from {self.factory_id} units also")
             fkey = "light" if self.unit.unit_type == "LIGHT" else "heavy"
-            popped = getattr(
-                self.master.factories.friendly[self.factory_id], f"{fkey}_units"
-            ).pop(self.unit_id, None)
+            popped = getattr(self.master.factories.friendly[self.factory_id], f"{fkey}_units").pop(self.unit_id, None)
             if popped is None:
                 logger.warning(f"{self.log_prefix}  was not in {self.factory_id} units")

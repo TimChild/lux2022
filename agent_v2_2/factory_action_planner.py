@@ -64,9 +64,7 @@ class FactoryInfo:
         current_heavy_actions = factory.get_heavy_actions()
 
         lichen = factory.own_lichen
-        connected_zeros = util.connected_array_values_from_pos(
-            master.maps.rubble, factory.pos, connected_value=0
-        )
+        connected_zeros = util.connected_array_values_from_pos(master.maps.rubble, factory.pos, connected_value=0)
         # ID array of other lichen
         other_lichen = master.maps.lichen_strains.copy()
         # Set own lichen to -1 (like no lichen)
@@ -165,20 +163,10 @@ class FactoryDesires:
     light_attacking: int = 0
 
     def total_light(self):
-        return (
-            self.light_mining_ice
-            + self.light_mining_ore
-            + self.light_clearing_rubble
-            + self.light_attacking
-        )
+        return self.light_mining_ice + self.light_mining_ore + self.light_clearing_rubble + self.light_attacking
 
     def total_heavy(self):
-        return (
-            self.heavy_mining_ice
-            + self.heavy_mining_ore
-            + self.heavy_clearing_rubble
-            + self.heavy_attacking
-        )
+        return self.heavy_mining_ice + self.heavy_mining_ore + self.heavy_clearing_rubble + self.heavy_attacking
 
     def copy(self) -> FactoryDesires:
         return copy.copy(self)
@@ -214,9 +202,7 @@ class FactoryDesires:
         # Rubble
         expansion_tiles = info.connected_growable_space - info.num_lichen_tiles
         if expansion_tiles < light_rubble_min_tiles and power_req_met:
-            self.light_clearing_rubble = min(
-                light_rubble_max_num, info.light_clearing_rubble + 1
-            )
+            self.light_clearing_rubble = min(light_rubble_max_num, info.light_clearing_rubble + 1)
         elif expansion_tiles > light_rubble_max_tiles:
             self.light_clearing_rubble = max(0, info.light_clearing_rubble - 1)
 
@@ -256,9 +242,7 @@ class FactoryDesires:
         # Rubble
         expansion_tiles = info.connected_growable_space - info.num_lichen_tiles
         if expansion_tiles < heavy_rubble_min_tiles and power_req_met:
-            self.heavy_clearing_rubble = min(
-                heavy_rubble_max_num, info.heavy_clearing_rubble + 1
-            )
+            self.heavy_clearing_rubble = min(heavy_rubble_max_num, info.heavy_clearing_rubble + 1)
         elif expansion_tiles > heavy_rubble_max_tiles:
             self.heavy_clearing_rubble = max(0, info.heavy_clearing_rubble - 1)
 
@@ -289,9 +273,7 @@ class FactoryActionPlanner:
         """
         logger.info(f"Updating FactoryActionPlanner")
         # Remove any dead factories from lists
-        for k in set(self._factory_desires.keys()) - set(
-            self.master.factories.friendly.keys()
-        ):
+        for k in set(self._factory_desires.keys()) - set(self.master.factories.friendly.keys()):
             logger.info(f"Removing factory {k}, assumed dead")
             self._factory_desires.pop(k)
             self._factory_infos.pop(k)
@@ -336,9 +318,7 @@ class FactoryActionPlanner:
 
             self._factory_desires[f_id] = desires
 
-    def _update_single_factory_desire(
-        self, prev_desire: FactoryDesires, info: FactoryInfo
-    ) -> FactoryDesires:
+    def _update_single_factory_desire(self, prev_desire: FactoryDesires, info: FactoryInfo) -> FactoryDesires:
         """Update the desires of the factory based on it's current state and it's previous desires"""
         step = self.master.step
         desires = prev_desire.copy()
@@ -352,14 +332,14 @@ class FactoryActionPlanner:
                 light_energy_consideration=300,
                 light_rubble_min_tiles=20,
                 light_rubble_max_tiles=40,
-                light_rubble_max_num=4,
+                light_rubble_max_num=5,
                 light_metal_min=50,
                 light_metal_max=200,
                 light_metal_max_num=2,
                 light_water_min=20,
                 light_water_max=100,
-                light_water_max_num=3,
-                light_attack_max_num=2,
+                light_water_max_num=0,
+                light_attack_max_num=1,
                 heavy_energy_consideration=1000,
                 heavy_rubble_min_tiles=30,
                 heavy_rubble_max_tiles=50,
@@ -376,7 +356,7 @@ class FactoryActionPlanner:
         elif step < 500:
             desires.update_desires(
                 info=info,
-                light_energy_consideration=600,
+                light_energy_consideration=1100,
                 light_rubble_min_tiles=50,
                 light_rubble_max_tiles=200,
                 light_rubble_max_num=6,
@@ -385,9 +365,9 @@ class FactoryActionPlanner:
                 light_metal_max_num=1,
                 light_water_min=100,
                 light_water_max=300,
-                light_water_max_num=3,
-                light_attack_max_num=5,
-                heavy_energy_consideration=500,
+                light_water_max_num=0,
+                light_attack_max_num=2,
+                heavy_energy_consideration=1000,
                 heavy_rubble_min_tiles=20,
                 heavy_rubble_max_tiles=40,
                 heavy_rubble_max_num=2,
@@ -397,30 +377,30 @@ class FactoryActionPlanner:
                 heavy_water_min=500,
                 heavy_water_max=1500,
                 heavy_water_max_num=3,
-                heavy_attack_max_num=2,
+                heavy_attack_max_num=3,
             )
         # mid late game
         elif step < 800:
             desires.update_desires(
                 info=info,
-                light_energy_consideration=1000,
-                light_rubble_min_tiles=30,
-                light_rubble_max_tiles=60,
+                light_energy_consideration=1100,
+                light_rubble_min_tiles=70,
+                light_rubble_max_tiles=100,
                 light_rubble_max_num=5,
                 light_metal_min=100,
                 light_metal_max=200,
                 light_metal_max_num=0,
                 light_water_min=300,
                 light_water_max=1000,
-                light_water_max_num=3,
-                light_attack_max_num=10,
-                heavy_energy_consideration=800,
-                heavy_rubble_min_tiles=5,
-                heavy_rubble_max_tiles=30,
-                heavy_rubble_max_num=1,
+                light_water_max_num=0,
+                light_attack_max_num=5,
+                heavy_energy_consideration=1000,
+                heavy_rubble_min_tiles=30,
+                heavy_rubble_max_tiles=70,
+                heavy_rubble_max_num=2,
                 heavy_metal_min=100,
                 heavy_metal_max=300,
-                heavy_metal_max_num=1,
+                heavy_metal_max_num=2,
                 heavy_water_min=1000,
                 heavy_water_max=2500,
                 heavy_water_max_num=4,
@@ -429,28 +409,28 @@ class FactoryActionPlanner:
         else:
             desires.update_desires(
                 info=info,
-                light_energy_consideration=500,
-                light_rubble_min_tiles=20,
-                light_rubble_max_tiles=50,
+                light_energy_consideration=1000,
+                light_rubble_min_tiles=50,
+                light_rubble_max_tiles=200,
                 light_rubble_max_num=10,
                 light_metal_min=100,
                 light_metal_max=200,
                 light_metal_max_num=0,
                 light_water_min=500,
                 light_water_max=1000,
-                light_water_max_num=5,
-                light_attack_max_num=15,
-                heavy_energy_consideration=1500,
-                heavy_rubble_min_tiles=5,
-                heavy_rubble_max_tiles=15,
-                heavy_rubble_max_num=2,
+                light_water_max_num=0,
+                light_attack_max_num=5,
+                heavy_energy_consideration=1000,
+                heavy_rubble_min_tiles=20,
+                heavy_rubble_max_tiles=50,
+                heavy_rubble_max_num=4,
                 heavy_metal_min=0,
                 heavy_metal_max=300,
                 heavy_metal_max_num=0,
                 heavy_water_min=500,
                 heavy_water_max=2500,
-                heavy_water_max_num=5,
-                heavy_attack_max_num=5,
+                heavy_water_max_num=3,
+                heavy_attack_max_num=3,
             )
         logger.debug(
             f"Desires after HeavyIce={desires.heavy_mining_ice}, LightRubble={desires.light_clearing_rubble}, LightOre={desires.light_mining_ore}, LightAttack={desires.light_attacking}, HeavyAttack={desires.heavy_attacking}"
@@ -459,17 +439,12 @@ class FactoryActionPlanner:
 
     def decide_factory_actions(self) -> Dict[str, int]:
         actions = {}
-        for f_info, f_desire in zip(
-            self._factory_infos.values(), self._factory_desires.values()
-        ):
+        for f_info, f_desire in zip(self._factory_infos.values(), self._factory_desires.values()):
             logger.debug(f"Deciding factory actions for {f_info.factory_id}")
             f_info: FactoryInfo
             f_desire: FactoryDesires
             center_occupied = (
-                True
-                if self.master.units.friendly.unit_at_position(f_info.factory.pos)
-                is not None
-                else False
+                True if self.master.units.friendly.unit_at_position(f_info.factory.pos) is not None else False
             )
             action = None
 
@@ -488,21 +463,15 @@ class FactoryActionPlanner:
                 actions[f_info.factory_id] = action
         return actions
 
-    def _build_unit_action(
-        self, info: FactoryInfo, desire: FactoryDesires
-    ) -> [None, int]:
+    def _build_unit_action(self, info: FactoryInfo, desire: FactoryDesires) -> [None, int]:
         total_light_desired = desire.total_light()
         total_heavy_desired = desire.total_heavy()
 
         can_build_light = info.factory.factory.can_build_light(self.master.game_state)
         can_build_heavy = info.factory.factory.can_build_heavy(self.master.game_state)
 
-        logger.debug(
-            f"can build heavy={can_build_heavy}, can_build_light={can_build_light}"
-        )
-        logger.debug(
-            f"desired_heavy={total_heavy_desired}, desired_light={total_light_desired}"
-        )
+        logger.debug(f"can build heavy={can_build_heavy}, can_build_light={can_build_light}")
+        logger.debug(f"desired_heavy={total_heavy_desired}, desired_light={total_light_desired}")
         logger.debug(f"current_heavy={info.num_heavy}, current_light={info.num_light}")
 
         if can_build_heavy:
@@ -516,15 +485,19 @@ class FactoryActionPlanner:
         min_water = 100
         if self.master.step <= 300:
             min_water = 200
+        elif self.master.step <= 400:
+            min_water = 400
         elif self.master.step <= 500:
-            min_water = 800
-        elif self.master.step <= 850:
+            min_water = 600
+        elif self.master.step <= 700:
+            min_water = 900
+        elif self.master.step <= 800:
             min_water = 1500
+        elif self.master.step <= 900:
+            min_water = 1000
         elif self.master.step <= 1000:
             min_water = 150
-        logger.debug(
-            f"Current water = {info.water}, water cost = {info.water_cost}, min_water = {min_water}"
-        )
+        logger.debug(f"Current water = {info.water}, water cost = {info.water_cost}, min_water = {min_water}")
         if info.water - info.water_cost > min_water:
             return info.factory.factory.water()
         return None
@@ -568,9 +541,7 @@ class FactoryActionPlanner:
             df["nearest_friendly_factory"] = [999] * len(df)
         else:
             df["nearest_friendly_factory"] = df.apply(
-                lambda row: util.manhattan(
-                    row.pos, util.nearest_non_zero(friendly_factory_map, row.pos)
-                ),
+                lambda row: util.manhattan(row.pos, util.nearest_non_zero(friendly_factory_map, row.pos)),
                 axis=1,
             )
 
@@ -598,9 +569,7 @@ class FactoryActionPlanner:
         count_arr = util.count_connected_values(rubble, value=0)
         kernel = util.factory_map_kernel(5, dist_multiplier=0.6)
         conv_count_arr = util.convolve_array_kernel(count_arr, kernel)
-        df["zero_rubble_value"] = df.apply(
-            lambda row: (conv_count_arr[row.x, row.y]), axis=1
-        )
+        df["zero_rubble_value"] = df.apply(lambda row: (conv_count_arr[row.x, row.y]), axis=1)
         df = df.sort_values(
             [
                 "ice_less_than_X",

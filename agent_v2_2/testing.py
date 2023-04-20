@@ -11,12 +11,14 @@ from config import update_logging_level
 
 
 parent_dir = Path(os.getcwd()).resolve().parent
-if str(parent_dir) not in sys.path:
-    print(f"Adding {parent_dir} to path")
-    sys.path.insert(0, str(parent_dir))
+print(parent_dir)
+# if str(parent_dir) not in sys.path:
+#     print(f"Adding {parent_dir} to path")
+sys.path.insert(0, str(parent_dir))
 
 # from agent_v2_0.agent import Agent as Agent_v2_0
 from agent import Agent
+from basic_agent.agent import Agent as BasicAgent
 
 
 if __name__ == "__main__":
@@ -27,7 +29,7 @@ if __name__ == "__main__":
     # seed = 178220973
 
     # Run initial setup (placing factories)
-    myenv = MyEnv(seed, Agent, Agent)
+    myenv = MyEnv(seed, Agent, BasicAgent)
     myenv.run_early_setup()
     myenv.run_to_step(200)
     myenv.show()
