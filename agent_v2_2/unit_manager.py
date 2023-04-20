@@ -183,10 +183,13 @@ class UnitManager(abc.ABC):
         self.start_of_turn_power = unit.power
 
     def current_path(self, max_len: int = 10, actions=None) -> np.ndarray:
-        """Return current path from start of turn based on current action queue"""
+        """Return current path from start of turn based on current action queue
+        Adds a single no-move if not enough power to do the next move (hopefully avoids collisions better?)
+        """
         if actions is None:
             actions = self.action_queue
-        return util.actions_to_path(self.start_of_turn_pos, actions, max_len=max_len)
+        path = util.actions_to_path(self.start_of_turn_pos, actions, max_len=max_len)
+        return path
 
     @property
     def action_queue(self) -> List[np.ndarray]:
@@ -339,16 +342,22 @@ class FriendlyUnitManager(UnitManager):
         turns_of_actions = util.num_turns_of_actions(self.action_queue)
         # If this pickup is in very near future check the power is available
         if turns_of_actions < 2 and pickup_resource == util.POWER:
-            logger.debug(f'Checking power pickup is valid and removing power from factory')
+            logger.debug(
+                f"Checking power pickup is valid and removing power from factory"
+            )
             factory_num = self.master.maps.factory_maps.friendly[self.pos_slice]
             if factory_num >= 0:
-                factory_id = f'factory_{factory_num}'
+                factory_id = f"factory_{factory_num}"
                 factory = self.master.factories.friendly.get(factory_id)
                 if factory.short_term_power < pickup_amount:
-                    logger.warning(f'{self.log_prefix} planning to pickup {pickup_amount} but {factory_id} expects to have {factory.short_term_power}')
+                    logger.warning(
+                        f"{self.log_prefix} planning to pickup {pickup_amount} but {factory_id} expects to have {factory.short_term_power}"
+                    )
                 factory.short_term_power -= pickup_amount
             else:
-                logger.warning(f'{self.log_prefix} Did not find factory at {self.pos} for pickup')
+                logger.warning(
+                    f"{self.log_prefix} Did not find factory at {self.pos} for pickup"
+                )
         return self.unit.pickup(pickup_resource, pickup_amount, repeat, n)
 
     @property
@@ -365,7 +374,7 @@ class FriendlyUnitManager(UnitManager):
             if factory is not None:
                 return factory
         logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
-        raise ValueError(f'{self.log_prefix} has no factory')
+        raise ValueError(f"{self.log_prefix} has no factory")
 
     def power_remaining(self, rubble: np.ndarray = None) -> int:
         """Return power remaining at final step in actions so far"""

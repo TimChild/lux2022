@@ -31,6 +31,7 @@ def find_collisions(
     other_units: Iterable[UnitManager],
     max_step: int,
     other_is_enemy: bool,
+    rubble: np.ndarray,
 ) -> Dict[str, Collision]:
     """Find the first collision point between this_unit and each other_unit
     I.e. Only first collision coordinate when comparing the two paths
@@ -45,9 +46,34 @@ def find_collisions(
             path = [path[0], path[0]]
         return path
 
+    def check_next_move_will_happen(path, unit: UnitManager):
+        """
+        Does the unit actually have enough energy to do first move if first action is to move
+        If not, add a not move to path so next step collisions can be found
+        """
+        # Is next action supposed to be move
+        if not np.all(path[0] == path[1]):
+            move_cost = (
+                unit.unit_config.MOVE_COST
+                + unit.unit_config.RUBBLE_MOVEMENT_COST * rubble[path[1][0], path[1][1]]
+            )
+            # TODO: Is there any way power can be tranferred to a unit to make this not true?
+            # TODO: Or does the charge cycle have any impact, I think charging happens last, so no?
+            # Unit isn't really going to move next turn
+            if move_cost > unit.start_of_turn_power:
+                path = list(path)
+                path.insert(0, path[0])
+        return path
+
+    def sanitize_path_start(path, unit: UnitManager):
+        """Make sure the beginning of the path is accurate (for next step collisions)"""
+        path = ensure_path_includes_at_least_next_step(path)
+        path = check_next_move_will_happen(path, unit)
+        return path
+
     # Note: this defaults to planned path for friendly units
     this_path = this_unit.current_path(max_len=max_step)
-    this_path = ensure_path_includes_at_least_next_step(this_path)
+    this_path = sanitize_path_start(this_path, this_unit)
 
     collisions = {}
     for other in other_units:
@@ -56,7 +82,7 @@ def find_collisions(
             continue
         # Note: this defaults to planned path for friendly units
         other_path = other.current_path(max_len=max_step)
-        other_path = ensure_path_includes_at_least_next_step(other_path)
+        other_path = sanitize_path_start(other_path, other)
 
         # Note: zip stops iterating when end of a path is reached
         for i, (this_pos, other_pos) in enumerate(zip(this_path, other_path)):
@@ -984,12 +1010,11 @@ def store_all_paths_to_array(
 
 
 def calculate_collisions(
-    all_units: AllUnits, check_steps_enemy: int = 5, check_steps_friendly: int = 20
+    all_units: AllUnits, rubble:np.ndarray, check_steps_enemy: int = 5, check_steps_friendly: int = 20
 ) -> Dict[str, AllCollisionsForUnit]:
     """Calculate first collisions in the next <check_steps> for all units"""
     all_unit_collisions = {}
     for unit_id, unit in all_units.friendly.all.items():
-        # print(f'checking {unit_id}')
         collisions_for_unit = AllCollisionsForUnit(
             with_friendly=CollisionsForUnit(
                 light=find_collisions(
@@ -997,12 +1022,14 @@ def calculate_collisions(
                     all_units.friendly.light.values(),
                     max_step=check_steps_friendly,
                     other_is_enemy=False,
+                    rubble=rubble,
                 ),
                 heavy=find_collisions(
                     unit,
                     all_units.friendly.heavy.values(),
                     max_step=check_steps_friendly,
                     other_is_enemy=False,
+                    rubble=rubble,
                 ),
             ),
             with_enemy=CollisionsForUnit(
@@ -1011,12 +1038,14 @@ def calculate_collisions(
                     all_units.enemy.light.values(),
                     max_step=check_steps_enemy,
                     other_is_enemy=True,
+                    rubble=rubble,
                 ),
                 heavy=find_collisions(
                     unit,
                     all_units.enemy.heavy.values(),
                     max_step=check_steps_enemy,
                     other_is_enemy=True,
+                    rubble=rubble,
                 ),
             ),
         )
@@ -1153,6 +1182,7 @@ class ActionDecider:
         if act_reason == ActReasons.NEED_ACTIONS_FROM_PLANNED:
             return Actions.CONTINUE_NO_CHANGE
 
+        # Check if action is still invalid (might not be now that other units have had a chance to move etc)
         if act_reason in [
             ActReasons.NEXT_ACTION_INVALID_MOVE,
             ActReasons.NEXT_ACTION_INVALID,
@@ -1167,6 +1197,12 @@ class ActionDecider:
             else:
                 logger.debug("Next action not valid, suggesting keep role but update")
                 return Actions.CONTINUE_UPDATE
+
+        # If low power, continue with same action but update path in case a difference decision should be made now
+        if act_reason == ActReasons.LOW_POWER:
+            # TODO: Not sure about this one... I don't want units that are nearly back at factory to continuously repath
+            logger.debug("Unit has low power, should consider changing plans")
+            return Actions.CONTINUE_UPDATE
         return None
 
     def _decide_light_unit_action(self, unit_must_move: bool) -> Actions:
@@ -1260,6 +1296,7 @@ class ActionDecider:
 
 class ActReasons(Enum):
     NOT_ENOUGH_POWER = "not enough power"
+    LOW_POWER = "low power"
     NO_ACTION_QUEUE = "no action queue"
     NEED_ACTIONS_FROM_PLANNED = "action queue is short, need new from planned"
     CURRENT_STATUS_NOTHING = "currently no action"
@@ -1295,18 +1332,15 @@ def should_unit_consider_acting(
     move_valid = unit.valid_moving_actions(
         unit.master.maps.valid_friendly_move, max_len=1
     )
+    # Can't be updated
     if unit.power < (
         unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST
     ):
         should_act.should_act = False
         should_act.reason = ActReasons.NOT_ENOUGH_POWER
+    # Previous action invalid
     elif unit.status.action_queue_valid_after_step is False:
         should_act.reason = ActReasons.PREVIOUS_ACTION_INVALID
-    elif move_valid.was_valid is False:
-        should_act.reason = ActReasons.NEXT_ACTION_INVALID_MOVE
-        logger.debug(
-            f"Move from {unit.start_of_turn_pos} was invalid for reason {move_valid.invalid_reasons[0]}, action={unit.action_queue[0]}"
-        )
     # If no queue
     elif len(unit.action_queue) == 0:
         should_act.reason = ActReasons.NO_ACTION_QUEUE
@@ -1322,6 +1356,12 @@ def should_unit_consider_acting(
         and upcoming_collisions[unit_id].num_collisions(friendly=True, enemy=False) > 0
     ):
         should_act.reason = ActReasons.COLLISION_WITH_FRIENDLY
+    # Next move invalid
+    elif move_valid.was_valid is False:
+        should_act.reason = ActReasons.NEXT_ACTION_INVALID_MOVE
+        logger.debug(
+            f"Move from {unit.start_of_turn_pos} was invalid for reason {move_valid.invalid_reasons[0]}, action={unit.action_queue[0]}"
+        )
     # If close to enemy
     elif unit_id in close_enemies:
         should_act.reason = ActReasons.CLOSE_TO_ENEMY
@@ -1340,6 +1380,10 @@ def should_unit_consider_acting(
     # If not doing anything maybe need an update
     elif unit.status.current_action == Actions.NOTHING:
         should_act.reason = ActReasons.CURRENT_STATUS_NOTHING
+    # TODO: Need to think more about how to handle low power (don't want to keep repathing especially at low power...)
+    # # If low power (might want to change plans)
+    # elif unit.start_of_turn_power < unit.unit_config.BATTERY_CAPACITY*0.15:
+    #     should_act.reason = ActReasons.LOW_POWER
     # If action queue is short but more actions planned
     elif len(unit.start_of_turn_actions) < 2 and len(unit.status.planned_actions) >= 2:
         should_act.reason = ActReasons.NEED_ACTIONS_FROM_PLANNED
@@ -1454,6 +1498,7 @@ class SingleUnitActionPlanner:
             factory_desires,
             factory_info,
             close_units.close_to_enemy.get(unit_info.unit_id, None),
+            master,
         )
         self.action_implementer = ActionImplementer(
             master=master,
@@ -1826,6 +1871,7 @@ class MultipleUnitActionPlanner:
         """Calculates the upcoming collisions based on action queues of all units"""
         all_collisions = calculate_collisions(
             self.master.units,
+            rubble=self.master.maps.rubble,
             check_steps_enemy=self.check_enemy_collision_steps,
             check_steps_friendly=self.check_friendly_collision_steps,
         )
