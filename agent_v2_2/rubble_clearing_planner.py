@@ -36,7 +36,10 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class RubbleDigValue:
+
+
+class RubbleValueCalculator:
+    """Calculate the value of rubble digging on the map"""
     def __init__(
         self,
         rubble: np.ndarray,
@@ -159,13 +162,6 @@ class RubbleDigValue:
         return self._low_rubble_value
 
     def calculate_final_value(self):
-        # self._get_rubble_subset()
-        # self._get_factory_weighting()
-        # self._get_manhattan_dist_to_zeros()
-        # self._get_boundary_array()
-        # self._get_conv_boundary_array()
-        # self._get_low_rubble_value()
-
         conv_boundary_array = self._get_conv_boundary_array()
         low_rubble_value = self._get_low_rubble_value()
         manhattan_dist_to_zeroes = self._get_manhattan_dist_to_zeros()
@@ -582,7 +578,7 @@ class RubbleClearingPlanner(Planner):
             # Calculated
             factory_pos = factory_manager.factory.pos
 
-            rubble_value = RubbleDigValue(
+            rubble_value = RubbleValueCalculator(
                 rubble=rubble,
                 maps=self.master.maps,
                 full_factory_map=all_factory_map,
