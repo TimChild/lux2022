@@ -5,7 +5,7 @@ FILEPATH = "logfile.log"
 
 ALL_LOGGERS = {}
 
-DEFAULT_LEVEL = logging.ERROR
+DEFAULT_LEVEL = logging.WARNING
 
 
 VERBOSE = 5
@@ -34,7 +34,6 @@ class LevelAboveFilter(logging.Filter):
 
     def filter(self, record):
         return record.levelno > self.level
-
 
 
 # Create a custom logger
@@ -67,16 +66,10 @@ other_handler.addFilter(LevelAboveFilter(logging.INFO))
 
 # Create formatters and add them to handlers
 FORMAT = "%(levelname)s:%(name)s:%(funcName)s:%(lineno)d: %(message)s"
-other_format = logging.Formatter(
-    f'{FORMAT}'
-)
-info_format = logging.Formatter(
-    f'\t{FORMAT}'
-)
+other_format = logging.Formatter(f"{FORMAT}")
+info_format = logging.Formatter(f"\t{FORMAT}")
 
-debug_format = logging.Formatter(
-    f'\t\t{FORMAT}'
-)
+debug_format = logging.Formatter(f"\t\t{FORMAT}")
 
 verbose_format = logging.Formatter("\t\t\t%(levelname)s: %(message)s")
 

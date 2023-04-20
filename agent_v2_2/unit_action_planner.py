@@ -354,9 +354,14 @@ class SingleUnitActionPlanner:
         do_update = True
 
         # If no update required, return now (queue not updated, so no changes will happen)
-        if desired_action in [Actions.CONTINUE_NO_CHANGE] and not unit_must_move:
-            logger.info(f"No update of actions necessary")
-            do_update = False
+        if desired_action in [Actions.CONTINUE_NO_CHANGE]:
+            if not unit_must_move or unit_must_move and unit.next_action_is_move():
+                logger.info(f"No update of actions necessary")
+                do_update = False
+            else:
+                logger.info(f"action change required to move on next step")
+                desired_action = unit.status.current_action
+                do_update = True
         elif desired_action == Actions.CONTINUE_UPDATE:
             resolve_action_status = self._resolve_continue_actions()
             desired_action = unit.status.current_action
