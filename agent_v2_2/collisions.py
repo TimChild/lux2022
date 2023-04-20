@@ -179,10 +179,6 @@ class CollisionResolver:
     def _make_path(self, start_step: int, start_pos: util.POS_TYPE, end_pos: util.POS_TYPE):
         cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step)
         new_path = self.pathfinder.fast_path(start_pos, end_pos, costmap=cm)
-        if self.unit.unit_id == "unit_31":
-            fig = util.show_map_array(cm)
-            util.plotly_plot_path(fig, new_path)
-            fig.show()
         if len(new_path) == 0:
             logger.info(f"Default pathing failed, Attempting to resolve path avoiding collisions only")
             cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step, collision_only=True)
@@ -221,8 +217,6 @@ class CollisionResolver:
             )
             return Actions.CONTINUE_UPDATE
         new_path = self._make_path(first_step, prev_dest_or_first_step, next_dest_or_last_step)
-        if self.unit.unit_id == "unit_31":
-            print(new_path)
 
         if len(new_path) == 0:
             logger.warning(
@@ -510,11 +504,7 @@ class UnitPaths:
 
         # Get the valid path coords (first value is current position)
         path = util.actions_to_path(unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=self.max_step)
-        if unit.unit_id == "unit_8":
-            print(f"unit_8 path before sanitizing = {path}")
         path = sanitize_path_start(path, unit, self.rubble)
-        if unit.unit_id == "unit_8":
-            print(f"unit_8 path after sanitizing = {path}")
 
         # Add that path to the 3D path array
         self._add_path_to_array(unit, path, array, self.max_step, is_enemy=is_enemy)
