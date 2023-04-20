@@ -13,6 +13,7 @@ from new_path_finder import Pather
 
 from unit_manager import UnitManager, FriendlyUnitManager, EnemyUnitManager
 from config import get_logger
+
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ def ensure_path_includes_at_least_next_step(path):
         path = [path[0], path[0]]
     return path
 
+
 def check_next_move_will_happen(path, unit: UnitManager, rubble: np.ndarray):
     """
     Does the unit actually have enough energy to do first move if first action is to move
@@ -35,10 +37,7 @@ def check_next_move_will_happen(path, unit: UnitManager, rubble: np.ndarray):
     """
     # Is next action supposed to be move
     if not np.all(path[0] == path[1]):
-        move_cost = (
-                unit.unit_config.MOVE_COST
-                + unit.unit_config.RUBBLE_MOVEMENT_COST * rubble[path[1][0], path[1][1]]
-        )
+        move_cost = unit.unit_config.MOVE_COST + unit.unit_config.RUBBLE_MOVEMENT_COST * rubble[path[1][0], path[1][1]]
         # TODO: Is there any way power can be tranferred to a unit to make this not true?
         # TODO: Or does the charge cycle have any impact, I think charging happens last, so no?
         # Unit isn't really going to move next turn
@@ -47,12 +46,12 @@ def check_next_move_will_happen(path, unit: UnitManager, rubble: np.ndarray):
             path.insert(0, path[0])
     return path
 
-def sanitize_path_start(path, unit: UnitManager, rubble:  np.ndarray):
+
+def sanitize_path_start(path, unit: UnitManager, rubble: np.ndarray):
     """Make sure the beginning of the path is accurate (for next step collisions)"""
     path = ensure_path_includes_at_least_next_step(path)
     path = check_next_move_will_happen(path, unit, rubble)
     return path
-
 
 
 def find_collisions(
@@ -65,7 +64,6 @@ def find_collisions(
     """Find the first collision point between this_unit and each other_unit
     I.e. Only first collision coordinate when comparing the two paths
     """
-
 
     # Note: this defaults to planned path for friendly units
     this_path = this_unit.current_path(max_len=max_step)
@@ -132,34 +130,24 @@ class CollisionResolver:
         # was_moving = actions_util.was_unit_moving_at_step(
         #     self.unit_actions, collision.step
         # )
-        moving_this_turn = actions_util.will_unit_move_at_step(
-            self.unit_actions, collision.step
-        )
-        moving_next_turn = actions_util.will_unit_move_at_step(self.unit_actions,  collision.step+1)
+        moving_this_turn = actions_util.will_unit_move_at_step(self.unit_actions, collision.step)
+        moving_next_turn = actions_util.will_unit_move_at_step(self.unit_actions, collision.step + 1)
 
         travelling = moving_next_turn and moving_this_turn
         if travelling:
-            logger.debug(
-                f"{self.unit.unit_id} is travelling at collision step {collision.step}, at {collision.pos}"
-            )
+            logger.debug(f"{self.unit.unit_id} is travelling at collision step {collision.step}, at {collision.pos}")
         return travelling
 
     def _collision_on_factory(self, collision: Collision) -> bool:
         """Is the collision on a friendly factory tile?"""
-        at_factory = (
-            self.maps.factory_maps.friendly[collision.pos[0], collision.pos[1]] >= 0
-        )
+        at_factory = self.maps.factory_maps.friendly[collision.pos[0], collision.pos[1]] >= 0
         if at_factory:
-            logger.debug(
-                f"{self.unit.unit_id} is at factory at collision step {collision.step}, at {collision.pos}"
-            )
+            logger.debug(f"{self.unit.unit_id} is at factory at collision step {collision.step}, at {collision.pos}")
         return False
 
     def _collision_at_destination(self, collision: Collision) -> bool:
         """Is the collision at the destination of unit (i.e. doesn't move next step)"""
-        will_be_moving = actions_util.will_unit_move_at_step(
-            self.unit_actions, collision.step
-        )
+        will_be_moving = actions_util.will_unit_move_at_step(self.unit_actions, collision.step)
         at_destination = not will_be_moving
         if at_destination:
             logger.debug(
@@ -171,16 +159,12 @@ class CollisionResolver:
         """Return the pos of the next dest or last move step after step
         Note: index returned is step of path (accounting for start step) (i.e. 0 == now, 1 == first action in list)
         """
-        index = actions_util.find_dest_step_from_step(
-            self.unit_path, step, direction="forward"
-        )
+        index = actions_util.find_dest_step_from_step(self.unit_path, step, direction="forward")
         return index, self.unit_path[index]
 
     def _previous_dest_or_start_step(self, step: int) -> Tuple[int, util.POS_TYPE]:
         """Return the pos of the previous dest before step, or start pos if no previous dest"""
-        index = actions_util.find_dest_step_from_step(
-            self.unit_path, step, direction="backward"
-        )
+        index = actions_util.find_dest_step_from_step(self.unit_path, step, direction="backward")
         return index, self.unit_path[index]
 
     def _replace_unit_actions(self, start_step, end_step, new_actions):
@@ -188,30 +172,24 @@ class CollisionResolver:
         Note: New actions may have different length"""
         #  update actions
         existing_actions = self.unit_actions
-        replaced_actions = actions_util.replace_actions(
-            existing_actions, start_step, end_step, new_actions
-        )
+        replaced_actions = actions_util.replace_actions(existing_actions, start_step, end_step, new_actions)
         self.unit.action_queue = replaced_actions
         self.unit_actions = replaced_actions
 
-    def _make_path(
-        self, start_step: int, start_pos: util.POS_TYPE, end_pos: util.POS_TYPE
-    ):
+    def _make_path(self, start_step: int, start_pos: util.POS_TYPE, end_pos: util.POS_TYPE):
         cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step)
         new_path = self.pathfinder.fast_path(start_pos, end_pos, costmap=cm)
+        if self.unit.unit_id == "unit_31":
+            fig = util.show_map_array(cm)
+            util.plotly_plot_path(fig, new_path)
+            fig.show()
         if len(new_path) == 0:
-            logger.info(
-                f"Default pathing failed, Attempting to resolve path avoiding collisions only"
-            )
-            cm = self.pathfinder.generate_costmap(
-                self.unit, override_step=start_step, collision_only=True
-            )
+            logger.info(f"Default pathing failed, Attempting to resolve path avoiding collisions only")
+            cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step, collision_only=True)
             new_path = self.pathfinder.fast_path(start_pos, end_pos, costmap=cm)
         return new_path
 
-    def _make_path_to_factory_edge(
-        self, start_step, factory_loc, start_pos, pos_to_be_near
-    ):
+    def _make_path_to_factory_edge(self, start_step, factory_loc, start_pos, pos_to_be_near):
         cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step)
         new_path = util.path_to_factory_edge_nearest_pos(
             self.pathfinder,
@@ -221,12 +199,8 @@ class CollisionResolver:
             costmap=cm,
         )
         if len(new_path) == 0:
-            logger.info(
-                f"Default pathing failed, Attempting to resolve path avoiding collisions only"
-            )
-            cm = self.pathfinder.generate_costmap(
-                self.unit, override_step=start_step, collision_only=True
-            )
+            logger.info(f"Default pathing failed, Attempting to resolve path avoiding collisions only")
+            cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step, collision_only=True)
             new_path = util.path_to_factory_edge_nearest_pos(
                 self.pathfinder,
                 factory_loc=factory_loc,
@@ -239,19 +213,17 @@ class CollisionResolver:
     def _resolve_travel_collision(self, collision: Collision) -> Actions:
         """Repath to later point on path (ideally destination)"""
         last_step, next_dest_or_last_step = self._next_dest_or_last_step(collision.step)
-        first_step, prev_dest_or_first_step = self._previous_dest_or_start_step(
-            collision.step
-        )
-        if np.all(next_dest_or_last_step == collision.pos) or np.all(
-            prev_dest_or_first_step == collision.step
-        ):
+        first_step, prev_dest_or_first_step = self._previous_dest_or_start_step(collision.step)
+        logger.debug(f"repathing from {prev_dest_or_first_step} to {next_dest_or_last_step}")
+        if np.all(next_dest_or_last_step == collision.pos) or np.all(prev_dest_or_first_step == collision.step):
             logger.error(
                 f"first or last dest was same as collision pos next={next_dest_or_last_step} prev={prev_dest_or_first_step} collision step={collision.step}"
             )
             return Actions.CONTINUE_UPDATE
-        new_path = self._make_path(
-            first_step, prev_dest_or_first_step, next_dest_or_last_step
-        )
+        new_path = self._make_path(first_step, prev_dest_or_first_step, next_dest_or_last_step)
+        if self.unit.unit_id == "unit_31":
+            print(new_path)
+
         if len(new_path) == 0:
             logger.warning(
                 f"failed to find new path from {prev_dest_or_first_step} to {next_dest_or_last_step} starting step {first_step}"
@@ -264,9 +236,7 @@ class CollisionResolver:
 
     def _resolve_factory_collision(self, collision: Collision) -> Actions:
         """Repath to new spot on factory if possible"""
-        first_step, prev_dest_or_first_step = self._previous_dest_or_start_step(
-            collision.step
-        )
+        first_step, prev_dest_or_first_step = self._previous_dest_or_start_step(collision.step)
         factory_num = self.maps.factory_maps.all[collision.pos[0], collision.pos[1]]
         if factory_num < 0:
             raise ValueError(f"collision not on factory")
@@ -325,9 +295,7 @@ class CollisionResolver:
         else:
             suggested_action = Actions.CONTINUE_UPDATE
         if suggested_action != Actions.CONTINUE_RESOLVED:
-            logger.info(
-                f"Failed to solve collision {nearest_collision}, route still needs updating"
-            )
+            logger.info(f"Failed to solve collision {nearest_collision}, route still needs updating")
             return Actions.CONTINUE_UPDATE
         logger.info(f"Nearest collisions solved, can continue")
         return Actions.CONTINUE_RESOLVED
@@ -390,22 +358,28 @@ class AllCollisionsForUnit:
         return num
 
 
-@dataclass
 class UnitPaths:
     """Unit paths stored in a 3D array (step, x, y) where value is id_num (otherwise -1)"""
 
-    friendly_valid_move_map: np.ndarray
-    enemy_valid_move_map: np.ndarray
-    rubble: np.ndarray  # For calculating if enough energy to actually take next step
+    def __init__(
+        self,
+        friendly: Dict[str, FriendlyUnitManager],
+        enemy: Dict[str, EnemyUnitManager],
+        friendly_valid_move_map: np.ndarray,
+        enemy_valid_move_map: np.ndarray,
+        max_step: int,
+        rubble: np.ndarray,
+    ):
+        self.friendly_valid_move_map = friendly_valid_move_map
+        self.enemy_valid_move_map = enemy_valid_move_map
+        self.rubble = rubble  # For calculating if enough energy to actually take next step
+        self.max_step = max_step
+        self.friendly_light = np.full((max_step + 1, rubble.shape[0], rubble.shape[1]), fill_value=-1, dtype=int)
+        self.friendly_heavy = np.full((max_step + 1, rubble.shape[0], rubble.shape[1]), fill_value=-1, dtype=int)
+        self.enemy_light = np.full((max_step + 1, rubble.shape[0], rubble.shape[1]), fill_value=-1, dtype=int)
+        self.enemy_heavy = np.full((max_step + 1, rubble.shape[0], rubble.shape[1]), fill_value=-1, dtype=int)
+        self._init_arrays(friendly_units=friendly, enemy_units=enemy)
 
-    friendly_light: np.ndarray
-    friendly_heavy: np.ndarray
-    enemy_light: np.ndarray
-    enemy_heavy: np.ndarray
-    max_step: int
-
-    def __post_init__(self):
-        # For use when indexing to create costmaps
         x, y = np.meshgrid(
             np.arange(self.friendly_valid_move_map.shape[0]),
             np.arange(self.friendly_valid_move_map.shape[1]),
@@ -417,35 +391,20 @@ class UnitPaths:
         self._friendly_collision_kernel = self._friendly_collision_blur()
         self._enemy_collision_kernel = self._enemy_collision_blur()
 
-    @classmethod
-    def from_units(
-        cls,
-        friendly: Dict[str, FriendlyUnitManager],
-        enemy: Dict[str, EnemyUnitManager],
-        friendly_valid_move_map,
-        enemy_valid_move_map,
-        max_step,
-        rubble: np.ndarray,
-    ):
-        friendly_light = {
-            unit.id_num: unit for unit in friendly.values() if unit.unit_type == "LIGHT"
-        }
-        friendly_heavy = {
-            unit.id_num: unit for unit in friendly.values() if unit.unit_type == "HEAVY"
-        }
-        enemy_light = {
-            unit.id_num: unit for unit in enemy.values() if unit.unit_type == "LIGHT"
-        }
-        enemy_heavy = {
-            unit.id_num: unit for unit in enemy.values() if unit.unit_type == "HEAVY"
-        }
+    def _init_arrays(self, friendly_units, enemy_units):
+        friendly_light = {unit.id_num: unit for unit in friendly_units.values() if unit.unit_type == "LIGHT"}
+        friendly_heavy = {unit.id_num: unit for unit in friendly_units.values() if unit.unit_type == "HEAVY"}
+        enemy_light = {unit.id_num: unit for unit in enemy_units.values() if unit.unit_type == "LIGHT"}
+        enemy_heavy = {unit.id_num: unit for unit in enemy_units.values() if unit.unit_type == "HEAVY"}
 
-        map_shape = friendly_valid_move_map.shape
+        map_shape = self.friendly_valid_move_map.shape
 
         # +1 so that last layer is always left empty of units (for longer pathing)
         arrays = [
             np.full(
-                (max_step + 1, map_shape[0], map_shape[1]), fill_value=-1, dtype=int
+                (self.max_step + 1, map_shape[0], map_shape[1]),
+                fill_value=-1,
+                dtype=int,
             )
             for _ in range(4)
         ]
@@ -453,35 +412,15 @@ class UnitPaths:
             arrays,
             [friendly_light, friendly_heavy, enemy_light, enemy_heavy],
             [
-                friendly_valid_move_map,
-                friendly_valid_move_map,
-                enemy_valid_move_map,
-                enemy_valid_move_map,
+                self.friendly_valid_move_map,
+                self.friendly_valid_move_map,
+                self.enemy_valid_move_map,
+                self.enemy_valid_move_map,
             ],
             [False, False, True, True],
         ):
             for unit_num, unit in dict_.items():
-                valid_path = unit.valid_moving_actions(
-                    costmap=move_map, max_len=max_step
-                )
-                path = util.actions_to_path(
-                    unit.start_of_turn_pos,
-                    actions=valid_path.valid_actions,
-                    max_len=max_step,
-                )
-
-                cls._add_path_to_array(unit, path, array, max_step, is_enemy=is_enemy)
-
-        return cls(
-            friendly_valid_move_map=friendly_valid_move_map,
-            enemy_valid_move_map=enemy_valid_move_map,
-            rubble=rubble,
-            friendly_light=arrays[0],
-            friendly_heavy=arrays[1],
-            enemy_light=arrays[2],
-            enemy_heavy=arrays[3],
-            max_step=max_step,
-        )
+                self.add_unit(unit, is_enemy=is_enemy)
 
     @property
     def all(self):
@@ -527,9 +466,7 @@ class UnitPaths:
         return adj_kernel
 
     @staticmethod
-    def _add_path_to_array(
-        unit: UnitManager, path, arr: np.ndarray, max_step: int, is_enemy: bool
-    ):
+    def _add_path_to_array(unit: UnitManager, path, arr: np.ndarray, max_step: int, is_enemy: bool):
         x, y = unit.start_of_turn_pos
         # # If first coord of path is x, y (which it should be), remove it (next pathing step will be step 1 in paths)
         # if np.all(path[0] == (x, y)):
@@ -566,22 +503,21 @@ class UnitPaths:
             else:
                 array = self.friendly_heavy
 
-        unit_num = unit.id_num
-        max_step = self.friendly_light.shape[0]
-
         # Calculate the valid path (i.e. can't walk of edge of map or through enemy factory)
         # NOTE: does NOT include power considerations (i.e. if enough power to do first move)
         # Especially important for enemy units... Don't want to deal with invalid paths later
-        valid_path = unit.valid_moving_actions(costmap=move_map, max_len=max_step)
+        valid_path = unit.valid_moving_actions(costmap=move_map, max_len=self.max_step)
 
         # Get the valid path coords (first value is current position)
-        path = util.actions_to_path(
-            unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=max_step
-        )
+        path = util.actions_to_path(unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=self.max_step)
+        if unit.unit_id == "unit_8":
+            print(f"unit_8 path before sanitizing = {path}")
         path = sanitize_path_start(path, unit, self.rubble)
+        if unit.unit_id == "unit_8":
+            print(f"unit_8 path after sanitizing = {path}")
 
         # Add that path to the 3D path array
-        self._add_path_to_array(unit, path, array, max_step, is_enemy=is_enemy)
+        self._add_path_to_array(unit, path, array, self.max_step, is_enemy=is_enemy)
 
     def to_costmap(
         self,
@@ -607,9 +543,7 @@ class UnitPaths:
             nearby_start_cost: None disables mutistep checking, 0 enables mutistep, but no extra cost from being near
 
         """
-        if (
-            friendly_nearby_start_cost is not None and friendly_nearby_start_cost < 0
-        ) or (
+        if (friendly_nearby_start_cost is not None and friendly_nearby_start_cost < 0) or (
             friendly_nearby_start_cost is not None and friendly_nearby_start_cost < 0
         ):
             raise ValueError(f"Nearby start cost must be positive, zero, or None")
@@ -624,9 +558,7 @@ class UnitPaths:
                 enemy_heavy=enemy_heavy,
             )
         ]
-        if (
-            enemy_nearby_start_cost or friendly_nearby_start_cost
-        ) and not true_intercept:
+        if (enemy_nearby_start_cost or friendly_nearby_start_cost) and not true_intercept:
             close_encounters_dicts.extend(
                 [
                     self.calculate_likely_unit_collisions(
@@ -676,14 +608,8 @@ class UnitPaths:
                 arr = (arr >= 0).astype(float)
 
                 # Do nearby blur if not None or 0
-                if (
-                    enemy_nearby_start_cost is not None
-                    and enemy_nearby_start_cost
-                    and not true_intercept
-                ):
-                    blur *= nearby_start_cost * step_dropoff_multiplier ** (
-                        start_step + i
-                    )
+                if enemy_nearby_start_cost is not None and enemy_nearby_start_cost and not true_intercept:
+                    blur *= nearby_start_cost * step_dropoff_multiplier ** (start_step + i)
                     # Blur that with kernel
                     add_cm = util.convolve_array_kernel(arr, blur, fill=0)
                     # Add non-blocking costs
@@ -724,9 +650,7 @@ class UnitPaths:
                 logger.error(f"{start_step} must be between 0 and {self.max_step}")
                 start_step = 0
             elif start_step >= self.max_step:
-                logger.debug(
-                    f"Requesting map outside of max_steps {self.max_step} returning empty"
-                )
+                logger.debug(f"Requesting map outside of max_steps {self.max_step} returning empty")
                 do_calcs = False
 
         if do_calcs:
@@ -746,9 +670,7 @@ class UnitPaths:
         # Start with empty
         x, y = self._x, self._y
         likely_collision_id_maps = OrderedDict()
-        teams, utypes = self._get_teams_and_utypes(
-            friendly_light, friendly_heavy, enemy_light, enemy_heavy
-        )
+        teams, utypes = self._get_teams_and_utypes(friendly_light, friendly_heavy, enemy_light, enemy_heavy)
         for team, utype in zip(teams, utypes):
             key = f"{team}_{utype}"
             arr = getattr(self, key)
@@ -782,9 +704,7 @@ class UnitPaths:
         return teams, utypes
 
 
-def store_all_paths_to_array(
-    paths: Dict[int, np.ndarray], map_shape, max_step=30, fill_value: int = -1
-) -> np.ndarray:
+def store_all_paths_to_array(paths: Dict[int, np.ndarray], map_shape, max_step=30, fill_value: int = -1) -> np.ndarray:
     """
     Fill a 3D numpy array with keys corresponding to each path.
 
@@ -809,7 +729,10 @@ def store_all_paths_to_array(
 
 
 def calculate_collisions(
-    all_units: AllUnits, rubble:np.ndarray, check_steps_enemy: int = 5, check_steps_friendly: int = 20
+    all_units: AllUnits,
+    rubble: np.ndarray,
+    check_steps_enemy: int = 5,
+    check_steps_friendly: int = 20,
 ) -> Dict[str, AllCollisionsForUnit]:
     """Calculate first collisions in the next <check_steps> for all units"""
     all_unit_collisions = {}

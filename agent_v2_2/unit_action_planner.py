@@ -58,15 +58,11 @@ class UnitInfo:
             else None,
             is_heavy=unit.unit_type == "HEAVY",
             unit_type=unit.unit_type,
-            enough_power_to_move=(
-                unit.power
-                > unit.unit_config.MOVE_COST + unit.unit_config.ACTION_QUEUE_POWER_COST
-            ),
+            enough_power_to_move=(unit.power > unit.unit_config.MOVE_COST + unit.unit_config.ACTION_QUEUE_POWER_COST),
             power=unit.power,
             ice=unit.cargo.ice,
             ore=unit.cargo.ore,
-            power_over_20_percent=unit.start_of_turn_power
-            > unit.unit_config.BATTERY_CAPACITY * 0.2,
+            power_over_20_percent=unit.start_of_turn_power > unit.unit_config.BATTERY_CAPACITY * 0.2,
         )
         return unit_info
 
@@ -161,9 +157,7 @@ class CloseUnits:
     def closest(self) -> Optional[UnitManager]:
         if len(self.other_unit_distances) == 0:
             return None
-        return self.other_units[
-            self.other_unit_distances.index(min(self.other_unit_distances))
-        ]
+        return self.other_units[self.other_unit_distances.index(min(self.other_unit_distances))]
 
 
 @dataclass
@@ -175,9 +169,7 @@ class AllCloseUnits:
     close_threshold: int
 
     @classmethod
-    def from_info(
-        cls, all_units: AllUnits, close_threshold: int, map_shape: Tuple[int, int]
-    ):
+    def from_info(cls, all_units: AllUnits, close_threshold: int, map_shape: Tuple[int, int]):
         """Calculates which friendly units are close to any other unit"""
         friendly = {}
         enemy = {}
@@ -287,21 +279,12 @@ class SingleUnitActionPlanner:
 
     def _unit_must_move(self):
         """Must move if current location will be occupied at step 1 (not zero which is now)"""
-        start_costmap = self.master.pathfinder.generate_costmap(
-            self.unit, override_step=1, collision_only=True
-        )
+        start_costmap = self.master.pathfinder.generate_costmap(self.unit, override_step=1, collision_only=True)
 
         unit_must_move = False
         # If current location will be occupied
-        if (
-            start_costmap[
-                self.unit.start_of_turn_pos[0], self.unit.start_of_turn_pos[1]
-            ]
-            <= 0
-        ):
-            logger.info(
-                f"{self.unit.unit_id} MUST move first turn to avoid collision at current pos {self.unit.pos}"
-            )
+        if start_costmap[self.unit.start_of_turn_pos[0], self.unit.start_of_turn_pos[1]] <= 0:
+            logger.info(f"{self.unit.unit_id} MUST move first turn to avoid collision at current pos {self.unit.pos}")
             unit_must_move = True
 
         # If very close to enemy that can kill us
@@ -328,20 +311,14 @@ class SingleUnitActionPlanner:
             )
             resolve_action_status = collision_resolver.resolve()
             return resolve_action_status
-        logger.info(
-            f"Don't know how to resolve {self.unit_info.act_info.reason} without calling the planner again"
-        )
+        logger.info(f"Don't know how to resolve {self.unit_info.act_info.reason} without calling the planner again")
         return Actions.CONTINUE_UPDATE
 
     def _force_moving_if_necessary(self, unit_must_move: bool) -> bool:
         success = True
         if unit_must_move:
             q = self.unit.action_queue
-            if (
-                len(q) == 0
-                or q[0][util.ACT_TYPE] != util.MOVE
-                or q[0][util.ACT_DIRECTION] == util.CENTER
-            ):
+            if len(q) == 0 or q[0][util.ACT_TYPE] != util.MOVE or q[0][util.ACT_DIRECTION] == util.CENTER:
                 logger.warning(
                     f"{self.unit.log_prefix} was required to move first turn, but actions are {q}, trying to move unit"
                 )
@@ -462,34 +439,24 @@ class ActionImplementer:
         return success
 
     def _mine_ore(self, unit, unit_must_move) -> bool:
-        rec = self.mining_planner.recommend(
-            unit, util.ORE, unit_must_move=unit_must_move
-        )
+        rec = self.mining_planner.recommend(unit, util.ORE, unit_must_move=unit_must_move)
         if rec is not None:
-            success = self.mining_planner.carry_out(
-                unit, rec, unit_must_move=unit_must_move
-            )
+            success = self.mining_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
         else:
             success = False
         return success
 
     def _mine_ice(self, unit, unit_must_move) -> bool:
-        rec = self.mining_planner.recommend(
-            unit, util.ICE, unit_must_move=unit_must_move
-        )
+        rec = self.mining_planner.recommend(unit, util.ICE, unit_must_move=unit_must_move)
         if rec is not None:
-            success = self.mining_planner.carry_out(
-                unit, rec, unit_must_move=unit_must_move
-            )
+            success = self.mining_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
         else:
             success = False
         return success
 
     def _clear_rubble(self, unit, unit_must_move) -> bool:
         rec = self.rubble_clearing_planner.recommend(unit)
-        success = self.rubble_clearing_planner.carry_out(
-            unit, rec, unit_must_move=unit_must_move
-        )
+        success = self.rubble_clearing_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
         return success
 
     def _do_nothing(self, unit, unit_must_move) -> bool:
@@ -498,9 +465,7 @@ class ActionImplementer:
         success = True
         if unit_must_move:
             if not unit.factory_id:
-                logger.error(
-                    f"Unit must move, but has action {Actions.NOTHING} and no factory assigned"
-                )
+                logger.error(f"Unit must move, but has action {Actions.NOTHING} and no factory assigned")
             else:
                 success = self._handle_nothing_with_must_move(unit)
         return success
@@ -619,9 +584,7 @@ class MultipleUnitActionPlanner:
                 )
                 unit.action_queue = valid_actions.valid_actions
 
-    def _get_units_to_act(
-        self, units: Dict[str, FriendlyUnitManager], close_units: AllCloseUnits
-    ) -> UnitsToAct:
+    def _get_units_to_act(self, units: Dict[str, FriendlyUnitManager], close_units: AllCloseUnits) -> UnitsToAct:
         """
         Determines which units should potentially act this turn, and which should continue with current actions
         Does this based on:
@@ -635,9 +598,7 @@ class MultipleUnitActionPlanner:
         Returns:
             Instance of UnitsToAct
         """
-        logger.info(
-            f"units_should_consider_acting called with len(units): {len(units)}"
-        )
+        logger.info(f"units_should_consider_acting called with len(units): {len(units)}")
 
         all_unit_collisions = self._calculate_collisions()
         all_unit_close_to_enemy = close_units.close_to_enemy
@@ -738,9 +699,7 @@ class MultipleUnitActionPlanner:
 
         return unit_actions
 
-    def _assign_new_factory_if_necessary(
-        self, unit: FriendlyUnitManager, factory_infos: Dict[str, FactoryInfo]
-    ):
+    def _assign_new_factory_if_necessary(self, unit: FriendlyUnitManager, factory_infos: Dict[str, FactoryInfo]):
         """If doesn't have a factory, assign it to an existing one"""
         if not unit.factory_id:
             best_factory = None
@@ -751,13 +710,9 @@ class MultipleUnitActionPlanner:
                     best_factory = f_info.factory
             unit.factory_id = best_factory.unit_id
             best_factory.assign_unit(unit)
-            logger.warning(
-                f"Re-assigning to {best_factory.unit_id} because no factory assigned"
-            )
+            logger.warning(f"Re-assigning to {best_factory.unit_id} because no factory assigned")
 
-    def _should_real_actions_update(
-        self, unit: FriendlyUnitManager, unit_info: UnitInfo, units_to_act: UnitsToAct
-    ):
+    def _should_real_actions_update(self, unit: FriendlyUnitManager, unit_info: UnitInfo, units_to_act: UnitsToAct):
         current_unit_actions = unit.start_of_turn_actions
         planned_actions = unit.status.planned_actions
 
@@ -766,11 +721,7 @@ class MultipleUnitActionPlanner:
             np.array(current_unit_actions[: self.actions_same_check])
             == np.array(planned_actions[: self.actions_same_check])
         ):
-            first_act = (
-                unit.start_of_turn_actions[0]
-                if len(unit.start_of_turn_actions) > 0
-                else []
-            )
+            first_act = unit.start_of_turn_actions[0] if len(unit.start_of_turn_actions) > 0 else []
             logger.info(
                 f"First {self.actions_same_check} real actions same ({first_act}), not updating unit action queue"
             )
@@ -785,11 +736,7 @@ class MultipleUnitActionPlanner:
                 f"was {unit.status.previous_action}, now {unit.status.current_action}"
                 f" first few new actions are {planned_actions[:3]}, first few old actions were {unit.start_of_turn_actions[:3]}"
             )
-            if (
-                last_updated < 3
-                or last_updated > 30
-                and unit.status.previous_action != Actions.NOTHING
-            ):
+            if last_updated < 3 or last_updated > 30 and unit.status.previous_action != Actions.NOTHING:
                 logger.info(
                     f"{unit.log_prefix} updated {last_updated} ago <<< This is just a note to see how things are going"
                 )
@@ -808,9 +755,7 @@ class MultipleUnitActionPlanner:
     ) -> Dict[str, List[np.ndarray]]:
         logger.info(f"deciding all unit actions")
 
-        units_to_act = self._get_units_to_act(
-            self.master.units.friendly.all, self.all_close_units
-        )
+        units_to_act = self._get_units_to_act(self.master.units.friendly.all, self.all_close_units)
         self.debug_units_to_act_start = copy.deepcopy(units_to_act)
         self.debug_units_to_act = units_to_act
 
@@ -819,7 +764,7 @@ class MultipleUnitActionPlanner:
         self.debug_unit_infos = unit_infos
 
         # Calculate 3D path arrays to use for calculating costmaps later
-        existing_paths = UnitPaths.from_units(
+        existing_paths = UnitPaths(
             friendly={k: act.unit for k, act in units_to_act.should_not_act.items()},
             enemy=self.master.units.enemy.all,
             friendly_valid_move_map=self.master.maps.valid_friendly_move,
