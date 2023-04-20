@@ -9,7 +9,7 @@ import util
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager, FriendlyUnitManager
-    from unit_action_planner import UnitPaths
+    from agent_v2_2.collisions import UnitPaths
 
 logger = get_logger(__name__)
 
