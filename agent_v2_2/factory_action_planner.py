@@ -529,8 +529,7 @@ class FactoryActionPlanner:
             return info.factory.factory.water()
         return None
 
-    @staticmethod
-    def place_factory(game_state: GameState, player):
+    def place_factory(self, game_state: GameState, player):
         """Place factory in early_setup"""
         # how many factories you have left to place
         factories_to_place = game_state.teams[player].factories_to_place
@@ -562,13 +561,31 @@ class FactoryActionPlanner:
             axis=1,
         )
 
+        # Find min distance to friendly other friendly factories
+        friendly_factory_map = (self.master.maps.factory_maps.friendly >= 0).astype(int)
+
+        df["nearest_friendly_factory"] = df.apply(
+            lambda row: util.manhattan(
+                row.pos, util.nearest_non_zero(friendly_factory_map, row.pos)
+            ),
+            axis=1,
+        )
+        # df["nearest_friendly_factory"].replace(to_replace=None, value=999, inplace=True)
+
         df["ice_less_than_X"] = df["ice_dist"] <= 4
         df["ore_less_than_X"] = df["ore_dist"] <= 8
+        df["friendly_further_than_X"] = df["nearest_friendly_factory"] >= 15
 
         # df = df.sort_values("ice_dist")
         df = df.sort_values(
-            ["ice_less_than_X", "ore_less_than_X", "ice_dist", "ore_dist"],
-            ascending=[False, False, True, True],
+            [
+                "ice_less_than_X",
+                "ore_less_than_X",
+                "friendly_further_than_X",
+                "ice_dist",
+                "ore_dist",
+            ],
+            ascending=[False, False, False, True, True],
         )
 
         # Keep only top X before doing expensive calculations
@@ -583,8 +600,13 @@ class FactoryActionPlanner:
             lambda row: (conv_count_arr[row.x, row.y]), axis=1
         )
         df = df.sort_values(
-            ["ice_less_than_X", "ore_less_than_X", "zero_rubble_value"],
-            ascending=[False, False, False],
+            [
+                "ice_less_than_X",
+                "ore_less_than_X",
+                "friendly_further_than_X",
+                "zero_rubble_value",
+            ],
+            ascending=[False, False, False, False],
         )
         # df = df.sort_values(["ice_dist", "zero_rubble_value"], ascending=[True, False])
 
