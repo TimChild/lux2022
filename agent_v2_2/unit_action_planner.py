@@ -35,14 +35,28 @@ def find_collisions(
     """Find the first collision point between this_unit and each other_unit
     I.e. Only first collision coordinate when comparing the two paths
     """
+
+    def ensure_path_includes_at_least_next_step(path):
+        """
+        If path only 1 in length, probably unit has no action queue and will stay still (for at least 1 turn)
+        (i.e. if path is only [current_pos], next pos will probably be [current_pos] too)
+        """
+        if len(path) == 1:
+            path = [path[0], path[0]]
+        return path
+
+    # Note: this defaults to planned path for friendly units
     this_path = this_unit.current_path(max_len=max_step)
+    this_path = ensure_path_includes_at_least_next_step(this_path)
 
     collisions = {}
     for other in other_units:
         # Don't include collisions with self
         if this_unit.unit_id == other.unit_id:
             continue
+        # Note: this defaults to planned path for friendly units
         other_path = other.current_path(max_len=max_step)
+        other_path = ensure_path_includes_at_least_next_step(other_path)
 
         # Note: zip stops iterating when end of a path is reached
         for i, (this_pos, other_pos) in enumerate(zip(this_path, other_path)):
@@ -156,6 +170,48 @@ class CollisionResolver:
         self.unit.action_queue = replaced_actions
         self.unit_actions = replaced_actions
 
+    def _make_path(
+        self, start_step: int, start_pos: util.POS_TYPE, end_pos: util.POS_TYPE
+    ):
+        cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step)
+        new_path = self.pathfinder.fast_path(start_pos, end_pos, costmap=cm)
+        if len(new_path) == 0:
+            logger.info(
+                f"Default pathing failed, Attempting to resolve path avoiding collisions only"
+            )
+            cm = self.pathfinder.generate_costmap(
+                self.unit, override_step=start_step, collision_only=True
+            )
+            new_path = self.pathfinder.fast_path(start_pos, end_pos, costmap=cm)
+        return new_path
+
+    def _make_path_to_factory_edge(
+        self, start_step, factory_loc, start_pos, pos_to_be_near
+    ):
+        cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step)
+        new_path = util.path_to_factory_edge_nearest_pos(
+            self.pathfinder,
+            factory_loc=factory_loc,
+            pos=start_pos,
+            pos_to_be_near=pos_to_be_near,
+            costmap=cm,
+        )
+        if len(new_path) == 0:
+            logger.info(
+                f"Default pathing failed, Attempting to resolve path avoiding collisions only"
+            )
+            cm = self.pathfinder.generate_costmap(
+                self.unit, override_step=start_step, collision_only=True
+            )
+            new_path = util.path_to_factory_edge_nearest_pos(
+                self.pathfinder,
+                factory_loc=factory_loc,
+                pos=start_pos,
+                pos_to_be_near=pos_to_be_near,
+                costmap=cm,
+            )
+        return new_path
+
     def _resolve_travel_collision(self, collision: Collision) -> Actions:
         """Repath to later point on path (ideally destination)"""
         last_step, next_dest_or_last_step = self._next_dest_or_last_step(collision.step)
@@ -169,9 +225,8 @@ class CollisionResolver:
                 f"first or last dest was same as collision pos next={next_dest_or_last_step} prev={prev_dest_or_first_step} collision step={collision.step}"
             )
             return Actions.CONTINUE_UPDATE
-        cm = self.pathfinder.generate_costmap(self.unit, override_step=first_step)
-        new_path = self.pathfinder.fast_path(
-            prev_dest_or_first_step, next_dest_or_last_step, costmap=cm
+        new_path = self._make_path(
+            first_step, prev_dest_or_first_step, next_dest_or_last_step
         )
         if len(new_path) == 0:
             logger.warning(
@@ -193,13 +248,8 @@ class CollisionResolver:
             raise ValueError(f"collision not on factory")
 
         factory_loc = (self.maps.factory_maps.all == factory_num).astype(int)
-        cm = self.pathfinder.generate_costmap(self.unit, override_step=first_step)
-        new_path = util.path_to_factory_edge_nearest_pos(
-            self.pathfinder,
-            factory_loc,
-            prev_dest_or_first_step,
-            prev_dest_or_first_step,
-            cm,
+        new_path = self._make_path_to_factory_edge(
+            first_step, factory_loc, prev_dest_or_first_step, prev_dest_or_first_step
         )
         if len(new_path) == 0:
             logger.warning(
@@ -281,7 +331,6 @@ class UnitInfo:
         unit: FriendlyUnitManager,
         act_info: ConsiderActInfo,
     ):
-
         unit_info = cls(
             unit=unit,
             act_info=act_info,
@@ -423,7 +472,7 @@ class AllCollisionsForUnit:
                 nearest_collision = collision
                 nearest_step = collision.step
         if nearest_collision is None:
-            nearest_collision = Collision('none', 'none', False, (-1,  -1),  -1)
+            nearest_collision = Collision("none", "none", False, (-1, -1), -1)
         return nearest_collision
 
     def num_collisions(self, friendly=True, enemy=True):
@@ -727,7 +776,9 @@ class UnitPaths:
     ):
         """Create a costmap from a specific position at a specific step
         Args:
-            true_intercept: True disables multi-step and only adds cost where collisions would occur if travelling shortest manhattan dist
+            true_intercept: True disables multi-step and only adds cost where collisions would occur if travelling
+                shortest manhattan dist. Note: Still blocks tiles adjacent to enemy unless
+                collision cost > 0 (i.e. not blocked)
             nearby_start_cost: None disables mutistep checking, 0 enables mutistep, but no extra cost from being near
 
         """
@@ -983,6 +1034,7 @@ class ActionDecider:
         factory_desires: FactoryDesires,
         factory_info: FactoryInfo,
         close_enemy_units: Union[None, CloseUnits],
+        master: MasterState,
     ):
         self.unit = unit
         self.unit_info = unit_info
@@ -990,6 +1042,7 @@ class ActionDecider:
         self.factory_desires = factory_desires
         self.factory_info = factory_info
         self.close_units = close_enemy_units
+        self.master = master
 
     def _possible_switch_to_attack(self) -> Optional[Actions]:
         """Potentially switch to attacking if an enemy wanders by"""
@@ -1025,7 +1078,6 @@ class ActionDecider:
 
     def _decide_noops(self, unit_must_move: bool):
         act_reason = self.unit_info.act_info.reason
-
         # Validation only
         if act_reason in [
             ActReasons.NEXT_ACTION_PICKUP,
@@ -1033,6 +1085,24 @@ class ActionDecider:
             ActReasons.NEXT_ACTION_DIG,
         ]:
             if self.action_validator.next_action_valid(self.unit):
+                # Additionally check that diggers have enough energy to get back to factory
+                if act_reason == ActReasons.NEXT_ACTION_DIG:
+                    # Not worrying about collisions for this
+                    cheap_path_to_factory = self.master.pathfinder.fast_path(
+                        self.unit.start_of_turn_pos, self.unit.factory.pos
+                    )
+                    if (
+                        util.power_cost_of_path(
+                            cheap_path_to_factory,
+                            self.master.maps.rubble,
+                            self.unit.unit_type,
+                        )
+                        > self.unit.start_of_turn_power
+                    ):
+                        logger.info(
+                            f"Next action dig, but not enough power to get back to factory, recommending update"
+                        )
+                        return Actions.CONTINUE_UPDATE
                 logger.debug("Next pickup, transfer, dig is valid, do not update")
                 return Actions.CONTINUE_NO_CHANGE
             else:
@@ -1078,6 +1148,10 @@ class ActionDecider:
             and self.unit.status.current_action == Actions.ATTACK
         ):
             return Actions.CONTINUE_UPDATE
+
+        # Just need update from planned
+        if act_reason == ActReasons.NEED_ACTIONS_FROM_PLANNED:
+            return Actions.CONTINUE_NO_CHANGE
 
         if act_reason in [
             ActReasons.NEXT_ACTION_INVALID_MOVE,
@@ -1187,6 +1261,7 @@ class ActionDecider:
 class ActReasons(Enum):
     NOT_ENOUGH_POWER = "not enough power"
     NO_ACTION_QUEUE = "no action queue"
+    NEED_ACTIONS_FROM_PLANNED = "action queue is short, need new from planned"
     CURRENT_STATUS_NOTHING = "currently no action"
     COLLISION_WITH_ENEMY = "collision with enemy"
     COLLISION_WITH_FRIENDLY = "collision with friendly"
@@ -1215,7 +1290,7 @@ def should_unit_consider_acting(
 ) -> ConsiderActInfo:
     unit_id = unit.unit_id
     # If not enough power to do something meaningful
-    should_act = ConsiderActInfo(unit=unit)
+    should_act = ConsiderActInfo(unit=unit, should_act=True)
 
     move_valid = unit.valid_moving_actions(
         unit.master.maps.valid_friendly_move, max_len=1
@@ -1226,55 +1301,51 @@ def should_unit_consider_acting(
         should_act.should_act = False
         should_act.reason = ActReasons.NOT_ENOUGH_POWER
     elif unit.status.action_queue_valid_after_step is False:
-        should_act.should_act = True
         should_act.reason = ActReasons.PREVIOUS_ACTION_INVALID
     elif move_valid.was_valid is False:
-        should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_INVALID_MOVE
         logger.debug(
             f"Move from {unit.start_of_turn_pos} was invalid for reason {move_valid.invalid_reasons[0]}, action={unit.action_queue[0]}"
         )
     # If no queue
     elif len(unit.action_queue) == 0:
-        should_act.should_act = True
         should_act.reason = ActReasons.NO_ACTION_QUEUE
-    # If colliding with friendly
-    elif (
-        unit_id in upcoming_collisions
-        and upcoming_collisions[unit_id].num_collisions(friendly=True, enemy=False) > 0
-    ):
-        should_act.should_act = True
-        should_act.reason = ActReasons.COLLISION_WITH_FRIENDLY
     # If colliding with enemy
     elif (
         unit_id in upcoming_collisions
         and upcoming_collisions[unit_id].num_collisions(friendly=False, enemy=True) > 0
     ):
-        should_act.should_act = True
         should_act.reason = ActReasons.COLLISION_WITH_ENEMY
+    # If colliding with friendly
+    elif (
+        unit_id in upcoming_collisions
+        and upcoming_collisions[unit_id].num_collisions(friendly=True, enemy=False) > 0
+    ):
+        should_act.reason = ActReasons.COLLISION_WITH_FRIENDLY
     # If close to enemy
     elif unit_id in close_enemies:
-        should_act.should_act = True
         should_act.reason = ActReasons.CLOSE_TO_ENEMY
+    # Attacking needs regular updates
     elif unit.status.current_action == Actions.ATTACK:
-        should_act.should_act = True
         should_act.reason = ActReasons.ATTACKING
+    # Check pickup is valid
     elif unit.action_queue[0][util.ACT_TYPE] == util.PICKUP:
-        should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_PICKUP
+    # Check transfer is valid
     elif unit.action_queue[0][util.ACT_TYPE] == util.TRANSFER:
-        should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_TRANSFER
+    # Check dig is valid
     elif unit.action_queue[0][util.ACT_TYPE] == util.DIG:
-        should_act.should_act = True
         should_act.reason = ActReasons.NEXT_ACTION_DIG
+    # If not doing anything maybe need an update
     elif unit.status.current_action == Actions.NOTHING:
-        should_act.should_act = True
         should_act.reason = ActReasons.CURRENT_STATUS_NOTHING
+    # If action queue is short but more actions planned
+    elif len(unit.start_of_turn_actions) < 2 and len(unit.status.planned_actions) >= 2:
+        should_act.reason = ActReasons.NEED_ACTIONS_FROM_PLANNED
     else:
         should_act.should_act = False
         should_act.reason = ActReasons.NO_REASON_TO_ACT
-
     if should_act.should_act:
         logger.info(f"{unit_id} should consider acting -- {should_act.reason}")
     else:
@@ -1459,11 +1530,15 @@ class SingleUnitActionPlanner:
                 )
                 self.unit.pos = self.unit.start_of_turn_pos
                 self.unit.action_queue = []
-                move_success = util.move_to_cheapest_adjacent_space(self.master.pathfinder, self.unit, collision_only=True)
+                move_success = util.move_to_cheapest_adjacent_space(
+                    self.master.pathfinder, self.unit, collision_only=True
+                )
                 if move_success:
-                    logger.warning(f'successfully forced move out of the way')
+                    logger.warning(f"successfully forced move out of the way")
                 else:
-                    logger.error(f'{self.unit.log_prefix} was required to move first turn, but did not, and failed to force a move to empty adjacent cell')
+                    logger.error(
+                        f"{self.unit.log_prefix} was required to move first turn, but did not, and failed to force a move to empty adjacent cell"
+                    )
                 success = False
         return success
 
@@ -1857,7 +1932,11 @@ class MultipleUnitActionPlanner:
             np.array(current_unit_actions[: self.actions_same_check])
             == np.array(planned_actions[: self.actions_same_check])
         ):
-            first_act = unit.start_of_turn_actions[0] if len(unit.start_of_turn_actions) > 0 else []
+            first_act = (
+                unit.start_of_turn_actions[0]
+                if len(unit.start_of_turn_actions) > 0
+                else []
+            )
             logger.info(
                 f"First {self.actions_same_check} real actions same ({first_act}), not updating unit action queue"
             )
@@ -1872,7 +1951,11 @@ class MultipleUnitActionPlanner:
                 f"was {unit.status.previous_action}, now {unit.status.current_action}"
                 f" first few new actions are {planned_actions[:3]}, first few old actions were {unit.start_of_turn_actions[:3]}"
             )
-            if last_updated < 3 or last_updated > 30 and unit.status.previous_action != Actions.NOTHING:
+            if (
+                last_updated < 3
+                or last_updated > 30
+                and unit.status.previous_action != Actions.NOTHING
+            ):
                 logger.info(
                     f"{unit.log_prefix} updated {last_updated} ago <<< This is just a note to see how things are going"
                 )
@@ -1946,7 +2029,7 @@ class MultipleUnitActionPlanner:
             unit_action_planner.calculate_actions_for_unit()
 
             # Check if planned actions differ from existing actions on next turn
-            # TODO:  Currently checks whole action, can instead check next step only
+            # TODO: Currently checks whole action (i.e. does n match), can instead check next step only
             self._should_real_actions_update(unit, unit_info, units_to_act)
 
             # Make sure the next action is taken into account for next validation
@@ -1956,5 +2039,5 @@ class MultipleUnitActionPlanner:
 
         unit_actions = self._collect_changed_actions(units_to_act)
         unit_actions = self._validate_changed_actions_against_action_space(unit_actions)
-        logger.info(f'Updating actions of {list(unit_actions.keys())}')
+        logger.info(f"Updating actions of {list(unit_actions.keys())}")
         return unit_actions
