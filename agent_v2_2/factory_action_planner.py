@@ -563,14 +563,16 @@ class FactoryActionPlanner:
 
         # Find min distance to friendly other friendly factories
         friendly_factory_map = (self.master.maps.factory_maps.friendly >= 0).astype(int)
-
-        df["nearest_friendly_factory"] = df.apply(
-            lambda row: util.manhattan(
-                row.pos, util.nearest_non_zero(friendly_factory_map, row.pos)
-            ),
-            axis=1,
-        )
-        # df["nearest_friendly_factory"].replace(to_replace=None, value=999, inplace=True)
+        if np.all(friendly_factory_map == 0):
+            # No friendly factories placed yet
+            df["nearest_friendly_factory"] = [999] * len(df)
+        else:
+            df["nearest_friendly_factory"] = df.apply(
+                lambda row: util.manhattan(
+                    row.pos, util.nearest_non_zero(friendly_factory_map, row.pos)
+                ),
+                axis=1,
+            )
 
         df["ice_less_than_X"] = df["ice_dist"] <= 4
         df["ore_less_than_X"] = df["ore_dist"] <= 8
