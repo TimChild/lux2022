@@ -11,7 +11,7 @@ from util import (
     add_direction_to_pos,
 )
 from master_state import MasterState, Planner, Maps
-from actions import Recommendation
+from actions_util import Recommendation
 from util import (
     power_cost_of_actions,
     POWER,
@@ -250,7 +250,7 @@ class RubbleRoutePlanner:
 
         # These will be changed during route planning
         self.unit = unit
-        self.unit.action_queue = []
+        # self.unit.action_queue = []
         self._future_rubble = self.rubble.copy()
         self._future_value = self.rubble_value_map.copy()
 
@@ -263,7 +263,7 @@ class RubbleRoutePlanner:
             self._future_rubble[self.unit.pos_slice] = 0
             # If on factory, move to new spot first
             if self._unit_starting_on_factory():
-                logger.info(f"Also moving on factory to get out of the way")
+                logger.debug(f"Also moving on factory to get out of the way")
                 #  TODO: make the move toward the best area to rubble clear instead of just anywhere on factory
                 success = move_to_new_spot_on_factory(
                     self.pathfinder, self.unit, self.factory
@@ -317,7 +317,9 @@ class RubbleRoutePlanner:
                 value_array = self._get_boundary_values() * unit_multiplier
                 value_at_pos = value_array[self.unit.pos[0], self.unit.pos[1]]
                 value_to_move, new_pos = calc_value_to_move(
-                    self.unit.pos, value_array, costmap,
+                    self.unit.pos,
+                    value_array,
+                    costmap,
                 )
 
                 # Decide what to do based on values
@@ -437,9 +439,9 @@ class RubbleRoutePlanner:
             logger.debug(
                 f"topping up power from {self.unit.power} with {power_to_pickup}"
             )
-            if self.factory.power < power_to_pickup:
+            if self.factory.short_term_power < power_to_pickup:
                 logger.warning(
-                    f"{self.unit.unit_id} would like to pickup {power_to_pickup} but factory has {self.factory.power}. Not doing rubble clearing this turn"
+                    f"{self.unit.unit_id} would like to pickup {power_to_pickup} but factory has short term power {self.factory.short_term_power}. Not doing rubble clearing this turn"
                 )
                 return False
             if power_to_pickup > 0:
@@ -496,7 +498,7 @@ class RubbleRoutePlanner:
             self.unit.start_of_turn_pos, rubble, self.unit, actions
         )
 
-    def _path_to_factory(self, costmap:np.ndarray=None) -> np.ndarray:
+    def _path_to_factory(self, costmap: np.ndarray = None) -> np.ndarray:
         if costmap is None:
             costmap = self.pathfinder.generate_costmap(self.unit)
         return calc_path_to_factory(

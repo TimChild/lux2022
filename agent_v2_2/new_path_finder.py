@@ -79,33 +79,48 @@ class Pather:
         ignore_id_nums: Optional[List[int]] = None,
         friendly_light=True,
         friendly_heavy=True,
-        enemy_light=True,
+        enemy_light=None,
         enemy_heavy=True,
         collision_only=False,
-        collision_value=-1,
-        # nearby_start_cost=1,
+        enemy_collision_value=-1,
+        friendly_collision_value=-1,
+        enemy_nearby_start_cost=2,
+        friendly_nearby_start_cost=0.5,
+        override_step=None,
     ):
-        """Generate the costmap for the current step (i.e. taking into account pos of unit and all other unit paths)"""
-        len_actions = util.num_turns_of_actions(unit.action_queue)
+        """Generate the costmap for the current step (i.e. taking into account pos of unit and all other unit paths)
+        Note: Step 0 are current locations of units, correct to use when pathing from current position.
+        Note: Step 1 should be used for checking if unit needs to move this turn (i.e. the spot will become occupied)
+        """
+        # By default, have friendly heavy ignore enemy light units
+        if enemy_light is None:
+            enemy_light = False if unit.unit_type == "HEAVY" else True
+
+        if override_step is None:
+            step = util.num_turns_of_actions(unit.action_queue)
+        else:
+            step = override_step
         ignore_id_nums = ignore_id_nums if ignore_id_nums is not None else []
         if unit.id_num not in ignore_id_nums:
             ignore_id_nums.append(unit.id_num)
         cm = self.unit_paths.to_costmap(
             pos=unit.pos,
-            start_step=len_actions,
+            start_step=step,
             exclude_id_nums=ignore_id_nums,
             friendly_light=friendly_light,
             friendly_heavy=friendly_heavy,
             enemy_light=enemy_light,
             enemy_heavy=enemy_heavy,
-            collision_cost_value=collision_value,
-            # nearby_start_cost=nearby_start_cost,
+            enemy_collision_cost_value=enemy_collision_value,
+            friendly_collision_cost_value=friendly_collision_value,
+            enemy_nearby_start_cost=enemy_nearby_start_cost,
+            friendly_nearby_start_cost=friendly_nearby_start_cost,
             true_intercept=collision_only,
             # step_dropoff_multiplier=0.92,
         )
         # Note: Be careful not to make -1s or 0s become positive (blocked becomes unblocked)
         blocked = np.logical_or(cm <= 0, self.base_costmap <= 0)
-        cm *= self.base_costmap
+        cm += self.base_costmap
         cm[blocked == 1] = -1
         return cm
 
@@ -155,8 +170,11 @@ class Pather:
         """
         # TODO: Modify previous actions n if first new action is same direction (just a slight optimization)
         actions = util.path_to_actions(path)
+        if isinstance(unit.action_queue, np.ndarray):
+            logger.warning(f"Converting action queue from np.array to list")
+            unit.action_queue = list(unit.action_queue)
         unit.action_queue.extend(actions)
-        if len(path) > 0:
+        if len(path) > 0 and len(path[-1] == 2):
             unit.pos = path[-1]
 
     def append_direction_to_actions(self, unit: UnitManager, direction: int):

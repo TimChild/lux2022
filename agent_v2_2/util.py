@@ -1,14 +1,13 @@
 from __future__ import annotations
-
+import time
+import os
 import threading
 from dataclasses import dataclass
-
 from scipy.ndimage import distance_transform_cdt
 from collections import deque
 import functools
 from tqdm.auto import tqdm
-
-from typing import Tuple, List, Union, Optional, TYPE_CHECKING, Dict
+from typing import Tuple, List, Union, Optional, TYPE_CHECKING, Dict, Callable
 import copy
 from scipy import ndimage
 from scipy.signal import convolve2d
@@ -26,25 +25,26 @@ from itertools import product
 from luxai_s2 import LuxAI_S2
 from luxai_s2.unit import UnitType
 
-from config import get_logger
-from new_path_finder import Pather
 from lux.kit import obs_to_game_state, GameState
 from lux.config import EnvConfig
 from lux.utils import direction_to
 from lux.unit import Unit
 from lux.cargo import UnitCargo
 
+from config import get_logger
+from new_path_finder import Pather
+
+
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager, UnitManager
     from factory_manager import FriendlyFactoryManager
+    from  master_state import  MasterState
 
 logger = get_logger(__name__)
 
 POS_TYPE = Union[Tuple[int, int], np.ndarray, Tuple[np.ndarray]]
 PATH_TYPE = Union[List[Tuple[int, int]], np.ndarray]
 
-
-UTIL_VERSION = "AGENT_V2"
 
 ENV_CFG = EnvConfig()
 LIGHT_UNIT = Unit(
@@ -201,7 +201,7 @@ class MyEnv:
         self._previous_obs.append(self.obs)
         self._previous_env.append(copy.deepcopy(self.env))
 
-    def step(self):
+    def step(self) -> bool:
         """Progress a single step"""
         logger.info(
             f"Carrying out real step {self.real_env_steps}, env step {self.env_step}"
@@ -212,8 +212,8 @@ class MyEnv:
         try:
             actions = self.get_actions()
             self.env_step += 1
-            self.real_env_steps = self.env.state.real_env_steps
             self.obs, rewards, dones, infos = self.env.step(actions)
+            self.real_env_steps = self.env.state.real_env_steps
             if any(dones.values()) and self.env_step < 1000:
                 print(
                     f"One of the players dones came back True, previous state restored, use myenv.get_actions() to "
@@ -236,10 +236,6 @@ class MyEnv:
         for player, agent in self.agents.items():
             acts = agent.act(self.env_step, self.obs[player])
             actions[player] = acts
-        # actions = {
-        #     player: agent.act(self.env_step, self.obs[player])
-        #     for player, agent in self.agents.items()
-        # }
         return actions
 
     def run_to_step(self, real_env_step: int):
@@ -256,36 +252,45 @@ class MyEnv:
 
     def show(self) -> go.Figure:
         """Display the current env state"""
+        print(f'Displaying Step: {self.real_env_steps}')
         return show_env(self.env)
 
 
 class MyReplayEnv(MyEnv):
-    def __init__(self, seed, Agent, replay_json, my_player="player_0"):
+    def __init__(self, seed, Agent, replay_json, log_file_path:str, my_player="player_0", collector: CollectInfoFromEnv = None):
         self.replay_json = replay_json
         self.player = my_player
         self.other_player = "player_1" if self.player == "player_0" else "player_0"
+        self.log_file_path = log_file_path
+        self.collector = collector
         super().__init__(seed, Agent, Agent)
 
         self._all_actions = self._all_replay_actions()
 
     def init_agents(self):
         super().init_agents()
-        self.other_agent = None
         if self.player == "player_0":
-            self.agents = {self.agent.player: self.agent}
+            self.agents = {'player_0': self.agent}
         else:
-            self.agents = {self.other_agent.player: self.other_agent}
+            self.agent = self.other_agent
+            self.agents = {'player_1': self.other_agent}
+        self.other_agent = None
 
     def get_early_actions(self):
         actions = super().get_early_actions()
         actions[self.other_player] = self.get_replay_actions()
-        print(actions)
         return actions
 
     def get_actions(self):
         actions = super().get_actions()
         actions[self.other_player] = self.get_replay_actions()
         return actions
+
+    def step(self) -> bool:
+        success = super().step()
+        if success and self.collector is not None:
+            self.collector.collect(self)
+        return success
 
     def _all_replay_actions(self):
         if "actions" in self.replay_json:
@@ -299,22 +304,103 @@ class MyReplayEnv(MyEnv):
                 for i in range(len(self.replay_json["steps"]) - 1)
             ]
 
-    def get_replay_actions(self, step=None, player=None):
+    def get_replay_actions(self, step=None):
         if step is None:
             step = self.env_step
-        if player is None:
-            player = self.other_player
         all_step_actions = self._all_actions
         if len(all_step_actions) > step:
             actions = all_step_actions[step]
+            cleaned_actions = {}
             for k, acts in actions.items():
-                if isinstance(acts, list):
-                    actions[k] = np.array(acts, dtype=int)
-            return actions
+                # If a unit action
+                if isinstance(acts, list) and not k == 'spawn':
+                    # Only if that unit is still on that team
+                    if k in self.env.state.units[self.other_player].keys():
+                        cleaned_actions[k] = np.array(acts, dtype=int)
+                    else:
+                        logger.warning(f'Removed enemy actions for {k} because no longer on that team')
+                # Factory action
+                else:
+                    cleaned_actions[k] = acts
+            return cleaned_actions
         logger.info(
             f"No more replay actions for {self.other_player} stopped at {len(all_step_actions)}"
         )
         return {}
+
+    def _get_num_lines(self):
+        with open(self.log_file_path, "r") as file:
+            return len(file.readlines())
+
+    def run_until_log_increases(self, num_lines: int, max_step=None):
+        initial_num_lines = self._get_num_lines()
+        with tqdm(total=num_lines, desc="Watching log file") as pbar:
+            while True:
+                success = self.step()
+                current_num_lines = self._get_num_lines()
+                lines_increased = current_num_lines - initial_num_lines
+
+                pbar.n = lines_increased
+                pbar.refresh()
+
+                if success is False or lines_increased >= num_lines or (max_step is not None and self.real_env_steps >= max_step):
+                    break
+                time.sleep(0.01)  # Adjust the sleep time if needed
+        print(f"Logfile increased by {lines_increased}")
+
+
+class CollectInfoFromEnv:
+    def __init__(self, player: str):
+        self.player = player
+        # For each step, unit_id, num since last update
+        self.unit_last_update_step: Dict[int, Dict[str, int]] = {}
+
+        self.agent = None
+        self.master: MasterState = None
+
+    def _collect_friendly_unit_info(self):
+        step_info = {}
+        for unit_id, unit in self.master.units.friendly.all.items():
+            unit: FriendlyUnitManager
+            step_info[unit_id] = unit.status.last_action_update_step
+        self.unit_last_update_step[self.master.step] = step_info
+
+    def collect(self, env: MyEnv):
+        self.agent = env.agents[self.player]
+        self.master: MasterState = self.agent.master
+
+        self._collect_friendly_unit_info()
+
+    def plot_unit_last_update_step(self) -> go.Figure:
+        # Prepare data for plotting
+        unit_data = {}
+        for idx, d in self.unit_last_update_step.items():
+            for unit, value in d.items():
+                if unit not in unit_data:
+                    unit_data[unit] = []
+                unit_data[unit].append((idx, value))
+
+        # Create a Plotly Scatter plot
+        fig = go.Figure()
+        fig.update_layout(template='plotly_white')
+
+        for unit, values in unit_data.items():
+            x_values = [v[0] for v in values]
+            y_values = [v[1] for v in values]
+            fig.add_trace(go.Scatter(x=x_values, y=y_values, mode='markers+lines', name=unit))
+
+        # Set the plot's title and axis labels
+        fig.update_layout(
+            title="Last update step vs Real Env Steps",
+            xaxis_title="Step Index",
+            yaxis_title="Last update step",
+        )
+        return fig
+
+
+
+
+##########################################
 
 
 def nearest_non_zero(
@@ -776,10 +862,10 @@ def actions_to_path(
     ignore_repeat: bool = False,
 ) -> np.ndarray:
     """Convert list of actions (from start_pos) into a path
-    Note: First value in path is current position
+    Note: First value in path is current position, repeated values when not moving
     """
     path = [start_pos]
-    pos = start_pos
+    pos = copy.copy(start_pos)
     actions = copy.copy(actions)
     actions = list(actions)
     for i, action in enumerate(actions):
@@ -835,9 +921,9 @@ def move_to_new_spot_on_factory(
     return success
 
 
-def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManager):
-    cm = pathfinder.generate_costmap(unit)
-    success = False
+def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManager, collision_only=False) -> bool:
+    """Move to cheapest location wherever unit currently is"""
+    cm = pathfinder.generate_costmap(unit, collision_only=collision_only)
     pos = np.array(unit.pos)
     best_direction = None
     best_cost = 999
@@ -857,8 +943,14 @@ def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManage
         logger.error(
             f"{unit.log_prefix}: No adjacent direction to move, not doing anything"
         )
+        success = False
     else:
+        logger.info(
+            f"Moved unit to cheapest adjacent space at {pos+best_direction}"
+        )
         pathfinder.append_direction_to_actions(unit, best_direction)
+        success = True
+    return success
 
 
 ################### Plotting #################
@@ -1729,6 +1821,10 @@ def path_to_factory_edge_nearest_pos(
     if pos_to_be_near is None:
         raise ValueError(f"Need to provide pos_to_be_near")
 
+    # if np.all(pos == (22, 32)):
+    #     show_map_array(costmap).show()
+    #     show_map_array(factory_loc).show()
+
     factory_loc = factory_loc.copy()
 
     attempts = 0
@@ -1751,8 +1847,10 @@ def path_to_factory_edge_nearest_pos(
                 return path
         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
 
-    logger.warning(f"No path to edge of factory found without collisions")
-    return np.array([[]])
+    logger.warning(
+        f"No path to edge of factory from {pos} aiming to be near {pos_to_be_near} found without collisions"
+    )
+    return np.array([])
     # if max_delay_by_move_center > 0:
     #     logger.info(f'Adding delay to finding path to edge of factory')
     #     new_collision_params = CollisionParams(

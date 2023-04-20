@@ -9,7 +9,7 @@ from lux.kit import GameState
 from lux.factory import Factory
 
 from factory_manager import FriendlyFactoryManager
-import actions
+from actions_util import Actions
 
 from master_state import MasterState
 import util
@@ -27,9 +27,10 @@ WATER = 2
 
 @dataclass
 class FactoryInfo:
-    factory: Factory
+    factory: FriendlyFactoryManager
     factory_id: str
     power: int
+    short_term_power: int
     water: int
     ice: int
     ore: int
@@ -82,9 +83,10 @@ class FactoryInfo:
         )
 
         factory_info = cls(
-            factory=factory.factory,
+            factory=factory,
             factory_id=factory.unit_id,
             power=factory.power,
+            short_term_power=factory.short_term_power,
             water=factory.factory.cargo.water,
             ice=factory.factory.cargo.ice,
             ore=factory.factory.cargo.ore,
@@ -132,18 +134,18 @@ class FactoryInfo:
             f"Removing {unit.unit_id} assignment of {unit.status.current_action} from factory_info count ({self.factory_id})"
         )
         if unit.unit_type == "HEAVY":
-            if unit.status.current_action == actions.MINE_ICE:
+            if unit.status.current_action == Actions.MINE_ICE:
                 self.heavy_mining_ice -= 1
-            elif unit.status.current_action == actions.MINE_ORE:
+            elif unit.status.current_action == Actions.MINE_ORE:
                 self.heavy_mining_ore -= 1
-            elif unit.status.current_action == actions.ATTACK:
+            elif unit.status.current_action == Actions.ATTACK:
                 self.heavy_attacking -= 1
         else:
-            if unit.status.current_action == actions.MINE_ORE:
+            if unit.status.current_action == Actions.MINE_ORE:
                 self.light_mining_ore -= 1
-            elif unit.status.current_action == actions.CLEAR_RUBBLE:
+            elif unit.status.current_action == Actions.CLEAR_RUBBLE:
                 self.light_clearing_rubble -= 1
-            elif unit.status.current_action == actions.ATTACK:
+            elif unit.status.current_action == Actions.ATTACK:
                 self.light_attacking -= 1
 
     @staticmethod
@@ -208,7 +210,7 @@ class FactoryDesires:
         heavy_attack_max_num=2,
     ):
         # Consider more LIGHT units
-        power_req_met = info.power > light_energy_consideration
+        power_req_met = info.short_term_power > light_energy_consideration
         # Rubble
         expansion_tiles = info.connected_growable_space - info.num_lichen_tiles
         if expansion_tiles < light_rubble_min_tiles and power_req_met:
@@ -232,12 +234,11 @@ class FactoryDesires:
 
         # Attack
         if info.num_light == self.total_light():
-            self.light_attacking = max(light_attack_max_num, info.light_attacking+1)
+            self.light_attacking = max(light_attack_max_num, info.light_attacking + 1)
         elif info.num_light < self.total_heavy():
-            self.light_attacking = max(0, info.light_attacking-1)
+            self.light_attacking = max(0, info.light_attacking - 1)
 
-
-        power_req_met = info.power > heavy_energy_consideration
+        power_req_met = info.short_term_power > heavy_energy_consideration
 
         # Consider more HEAVY units
         # Ice
@@ -263,9 +264,9 @@ class FactoryDesires:
 
         # Attack
         if info.num_heavy == self.total_heavy():
-            self.heavy_attacking = max(heavy_attack_max_num, info.heavy_attacking+1)
+            self.heavy_attacking = max(heavy_attack_max_num, info.heavy_attacking + 1)
         elif info.num_heavy < self.total_heavy():
-            self.heavy_attacking = max(0, info.heavy_attacking-1)
+            self.heavy_attacking = max(0, info.heavy_attacking - 1)
 
 
 class FactoryActionPlanner:
@@ -299,7 +300,7 @@ class FactoryActionPlanner:
         self._update_factory_info()
 
         # Calculate new desires for turn and then every X after that
-        if self.master.step == 0 or self.master.step % 10 == 0:
+        if self.master.step == 0 or self.master.step % 5 == 0:
             self._update_factory_desires()
 
     def get_factory_desires(self) -> Dict[str, FactoryDesires]:
@@ -349,8 +350,8 @@ class FactoryActionPlanner:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=300,
-                light_rubble_min_tiles=10,
-                light_rubble_max_tiles=50,
+                light_rubble_min_tiles=20,
+                light_rubble_max_tiles=40,
                 light_rubble_max_num=4,
                 light_metal_min=50,
                 light_metal_max=200,
@@ -376,8 +377,8 @@ class FactoryActionPlanner:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=600,
-                light_rubble_min_tiles=10,
-                light_rubble_max_tiles=50,
+                light_rubble_min_tiles=50,
+                light_rubble_max_tiles=200,
                 light_rubble_max_num=6,
                 light_metal_min=50,
                 light_metal_max=200,
@@ -403,8 +404,8 @@ class FactoryActionPlanner:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=1000,
-                light_rubble_min_tiles=10,
-                light_rubble_max_tiles=30,
+                light_rubble_min_tiles=30,
+                light_rubble_max_tiles=60,
                 light_rubble_max_num=5,
                 light_metal_min=100,
                 light_metal_max=200,
@@ -429,8 +430,8 @@ class FactoryActionPlanner:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=500,
-                light_rubble_min_tiles=10,
-                light_rubble_max_tiles=20,
+                light_rubble_min_tiles=20,
+                light_rubble_max_tiles=50,
                 light_rubble_max_num=10,
                 light_metal_min=100,
                 light_metal_max=200,
@@ -493,8 +494,8 @@ class FactoryActionPlanner:
         total_light_desired = desire.total_light()
         total_heavy_desired = desire.total_heavy()
 
-        can_build_light = info.factory.can_build_light(self.master.game_state)
-        can_build_heavy = info.factory.can_build_heavy(self.master.game_state)
+        can_build_light = info.factory.factory.can_build_light(self.master.game_state)
+        can_build_heavy = info.factory.factory.can_build_heavy(self.master.game_state)
 
         logger.debug(
             f"can build heavy={can_build_heavy}, can_build_light={can_build_light}"
@@ -506,10 +507,10 @@ class FactoryActionPlanner:
 
         if can_build_heavy:
             if total_heavy_desired > info.num_heavy:
-                return info.factory.build_heavy()
+                return info.factory.factory.build_heavy()
         elif can_build_light:
             if total_light_desired > info.num_light:
-                return info.factory.build_light()
+                return info.factory.factory.build_light()
 
     def _water(self, info: FactoryInfo, desire: FactoryDesires) -> [None, int]:
         min_water = 100
@@ -525,7 +526,7 @@ class FactoryActionPlanner:
             f"Current water = {info.water}, water cost = {info.water_cost}, min_water = {min_water}"
         )
         if info.water - info.water_cost > min_water:
-            return info.factory.water()
+            return info.factory.factory.water()
         return None
 
     @staticmethod
@@ -538,6 +539,10 @@ class FactoryActionPlanner:
         water_left = game_state.teams[player].water
         metal_left = game_state.teams[player].metal
 
+        # how much to give to each factory
+        water = water_left // factories_to_place
+        metal = metal_left // factories_to_place
+
         # All possible spawns
         potential_spawns = list(zip(*np.where(game_state.board.valid_spawns_mask == 1)))
         df = pd.DataFrame(potential_spawns, columns=["x", "y"])
@@ -549,9 +554,24 @@ class FactoryActionPlanner:
             lambda row: util.manhattan(row.pos, util.nearest_non_zero(ice, row.pos)),
             axis=1,
         )
-        df = df.sort_values("ice_dist")
 
-        # Keep only top X distance to ice
+        # Find distance to ore
+        ore = game_state.board.ore
+        df["ore_dist"] = df.apply(
+            lambda row: util.manhattan(row.pos, util.nearest_non_zero(ore, row.pos)),
+            axis=1,
+        )
+
+        df["ice_less_than_X"] = df["ice_dist"] <= 4
+        df["ore_less_than_X"] = df["ore_dist"] <= 8
+
+        # df = df.sort_values("ice_dist")
+        df = df.sort_values(
+            ["ice_less_than_X", "ore_less_than_X", "ice_dist", "ore_dist"],
+            ascending=[False, False, True, True],
+        )
+
+        # Keep only top X before doing expensive calculations
         df = df.iloc[:20]
 
         # Value based nearby zero-rubble
@@ -562,9 +582,14 @@ class FactoryActionPlanner:
         df["zero_rubble_value"] = df.apply(
             lambda row: (conv_count_arr[row.x, row.y]), axis=1
         )
-        df = df.sort_values(["ice_dist", "zero_rubble_value"], ascending=[True, False])
+        df = df.sort_values(
+            ["ice_less_than_X", "ore_less_than_X", "zero_rubble_value"],
+            ascending=[False, False, False],
+        )
+        # df = df.sort_values(["ice_dist", "zero_rubble_value"], ascending=[True, False])
+
+        # print(df.head(10))
 
         # TODO: Calculate how close to nearest enemy factory for top X
-        # TODO: Calculate how close to nearest ore (not so important?)
 
-        return dict(spawn=df.iloc[0].pos, metal=150, water=150)
+        return dict(spawn=df.iloc[0].pos, metal=metal, water=water)

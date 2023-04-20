@@ -4,7 +4,7 @@ import time
 from typing import TYPE_CHECKING
 import numpy as np
 
-from unit_action_planner import UnitActionPlanner
+from unit_action_planner import MultipleUnitActionPlanner
 from lux.kit import obs_to_game_state
 from lux.config import EnvConfig
 from lux.utils import my_turn_to_place_factory
@@ -43,7 +43,7 @@ class Agent:
         self.rubble_clearing_planner = RubbleClearingPlanner(self.master)
         self.combat_planner = CombatPlanner(self.master)
         self.factory_action_planner = FactoryActionPlanner(self.master)
-        self.unit_action_planner = UnitActionPlanner(self.master)
+        self.unit_action_planner = MultipleUnitActionPlanner(self.master)
 
     def _beginning_of_step_update(
         self, step: int, obs: dict, remainingOverageTime: int
@@ -58,7 +58,7 @@ class Agent:
 
     def bid(self, obs):
         """Bid for starting factory (default to 0)"""
-        return dict(faction="TheBuilders", bid=0)
+        return dict(faction="TheBuilders", bid=26)
 
     def early_setup(self, step: int, obs, remainingOverageTime: int = 60):
         """Required API for Agent. This is called until all factories are placed"""
@@ -115,7 +115,7 @@ class Agent:
         logger.verbose(f"{self.player} Unit actions: {unit_actions}")
         logger.debug(f"{self.player} Factory actions: {factory_actions}")
         logger.warning(
-            f"========================= End of turn {self.master.game_state.real_env_steps+1} for {self.player}: Took {time.time()-tstart:.1f}s ==========================="
+            f"========================= End of turn {self.master.game_state.real_env_steps} for {self.player}: Took {time.time()-tstart:.1f}s ==========================="
         )
         return dict(**unit_actions, **factory_actions)
 

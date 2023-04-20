@@ -29,5 +29,5 @@ if __name__ == "__main__":
     # Run initial setup (placing factories)
     myenv = MyEnv(seed, Agent, Agent)
     myenv.run_early_setup()
-    myenv.run_to_step(1000)
+    myenv.run_to_step(200)
     myenv.show()

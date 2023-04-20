@@ -5,7 +5,7 @@ FILEPATH = "logfile.log"
 
 ALL_LOGGERS = {}
 
-DEFAULT_LEVEL = logging.DEBUG
+DEFAULT_LEVEL = logging.ERROR
 
 
 VERBOSE = 5
@@ -66,7 +66,7 @@ other_handler.setLevel(logging.WARNING)
 other_handler.addFilter(LevelAboveFilter(logging.INFO))
 
 # Create formatters and add them to handlers
-FORMAT = "%(levelname)s:%(name)s:%(lineno)d: %(message)s"
+FORMAT = "%(levelname)s:%(name)s:%(funcName)s:%(lineno)d: %(message)s"
 other_format = logging.Formatter(
     f'{FORMAT}'
 )
