@@ -6,6 +6,7 @@ from collections import OrderedDict
 import functools
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union, Optional, Iterable
+import copy
 
 import numpy as np
 import pandas as pd
@@ -1605,9 +1606,9 @@ class SingleUnitActionPlanner:
         do_update = True
 
         # If no update required, return now (queue not updated, so no changes will happen)
-        if desired_action in [Actions.CONTINUE_NO_CHANGE]:
+        if desired_action in [Actions.CONTINUE_NO_CHANGE] and not unit_must_move:
             logger.info(f"No update of actions necessary")
-            return True
+            do_update = False
         elif desired_action == Actions.CONTINUE_UPDATE:
             resolve_action_status = self._resolve_continue_actions()
             desired_action = unit.status.current_action
@@ -1775,11 +1776,18 @@ class MultipleUnitActionPlanner:
         # Will be filled on update
         self.factory_desires: Dict[str, FactoryDesires] = None
         self.factory_infos: Dict[str, FactoryInfo] = None
-
-        # Caching
         self.base_costmap: np.ndarray = None
         self.all_upcoming_collisions: Dict[str, AllCollisionsForUnit] = None
         self.all_close_units: AllCloseUnits = None
+
+        # Stored for ease of access debugging
+        self.debug_units_to_act_start = None
+        self.debug_units_to_act = None
+        self.debug_unit_infos = None
+        self.debug_action_validator = None
+        self.debug_single_action_planners = {}
+        self.debug_existing_paths = None
+        self.debug_actions_returned = None
 
     def update(
         self,
@@ -1803,6 +1811,15 @@ class MultipleUnitActionPlanner:
 
         # Calculate close units
         self.all_close_units = self._calculate_close_units()
+
+        # Clear things that are only stored for ease of access debugging
+        self.debug_units_to_act_start = None
+        self.debug_units_to_act = None
+        self.debug_unit_infos = None
+        self.debug_action_validator = None
+        self.debug_single_action_planners = {}
+        self.debug_existing_paths = None
+        self.debug_actions_returned = None
 
     def _calculate_close_units(self) -> AllCloseUnits:
         return AllCloseUnits.from_info(
@@ -2023,8 +2040,12 @@ class MultipleUnitActionPlanner:
         units_to_act = self._get_units_to_act(
             self.master.units.friendly.all, self.all_close_units
         )
+        self.debug_units_to_act_start = copy.deepcopy(units_to_act)
+        self.debug_units_to_act = units_to_act
+
         unit_infos = self._collect_unit_data(units_to_act.needs_to_act)
         unit_infos.sort_by_priority()
+        self.debug_unit_infos = unit_infos
 
         # Calculate 3D path arrays to use for calculating costmaps later
         existing_paths = UnitPaths.from_units(
@@ -2034,6 +2055,7 @@ class MultipleUnitActionPlanner:
             enemy_valid_move_map=self.master.maps.valid_enemy_move,
             max_step=self.max_pathing_steps,
         )
+        self.debug_existing_paths = existing_paths
 
         # Update the pathfinder now that we know which units are acting
         base_costmap = self.base_costmap
@@ -2049,6 +2071,7 @@ class MultipleUnitActionPlanner:
             maps=self.master.maps,
             unit_paths=existing_paths,
         )
+        self.debug_action_validator = action_validator
 
         # for unit_id, act_info in units_to_act.needs_to_act.items():
         # Go through units in order of priority (unit_infos is sorted)
@@ -2073,6 +2096,7 @@ class MultipleUnitActionPlanner:
                 collision_resolve_max_step=self.max_pathing_steps,
             )
             unit_action_planner.calculate_actions_for_unit()
+            self.debug_single_action_planners[unit_id] = unit_action_planner
 
             # Check if planned actions differ from existing actions on next turn
             # TODO: Currently checks whole action (i.e. does n match), can instead check next step only
@@ -2085,5 +2109,6 @@ class MultipleUnitActionPlanner:
 
         unit_actions = self._collect_changed_actions(units_to_act)
         unit_actions = self._validate_changed_actions_against_action_space(unit_actions)
+        self.debug_actions_returned = unit_actions
         logger.info(f"Updating actions of {list(unit_actions.keys())}")
         return unit_actions

@@ -276,7 +276,7 @@ class FriendlyUnitManager(UnitManager):
     @property
     def log_prefix(self) -> str:
         log_prefix = super().log_prefix
-        log_prefix += f"({self.status.current_action}):"
+        log_prefix += f"({self.status.current_action}):\n\t\t\t"
         return log_prefix
 
     def update(self, unit: Unit):
