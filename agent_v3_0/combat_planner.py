@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Dict
 import numpy as np
 
 from base_planners import BaseUnitPlanner, BaseGeneralPlanner
-from unit_status import ActCategory
+from unit_status import ActCategory, CombatActSubCategory
 from config import get_logger
 import actions_util
 import util
@@ -452,38 +452,21 @@ class CombatUnitPlanner(BaseUnitPlanner):
             return self.create_new_actions()
 
     def create_new_actions(self):
-        return self.planner.attack(self.unit)
-
-
-class CombatPlanner(BaseGeneralPlanner):
-    def __init__(self, master: MasterState):
-        super().__init__(master)
-        self.master = master
-
-        # Keep dict of enemy unit_id, friendly unit attacking
-        self.targeted_enemies: Dict[str, FriendlyUnitManager] = {}
-        self.single_unit_planners: Dict[str, CombatUnitPlanner] = {}
-
-    def update(self):
-        keys_to_pop = []
-        for enemy_id, friendly_unit in self.targeted_enemies.items():
-            act_status = friendly_unit.status.current_action
-            if act_status.category != ActCategory.COMBAT:
-                keys_to_pop.append(enemy_id)
-                logger.info(f"{self.targeted_enemies[enemy_id].unit_id} no longer targeting {enemy_id}")
-        for k in keys_to_pop:
-            self.targeted_enemies.pop(k)
+        return self.attack(self.unit)
 
     def attack(self, unit: FriendlyUnitManager) -> bool:
-        attack_instance = Attack(unit, self.master, self.targeted_enemies)
+        attack_instance = Attack(unit, self.master, self.planner.targeted_enemies)
         success = attack_instance.perform_attack()
         if success and attack_instance.best_enemy_unit is not None and attack_instance.action_executed == "attack":
             enemy_id = attack_instance.best_enemy_unit.unit_id
-            if enemy_id in self.targeted_enemies and self.targeted_enemies[enemy_id].unit_id != unit.unit_id:
+            if (
+                enemy_id in self.planner.targeted_enemies
+                and self.planner.targeted_enemies[enemy_id].unit_id != unit.unit_id
+            ):
                 logger.warning(
-                    f"{enemy_id} already targeted by {self.targeted_enemies[enemy_id].unit_id}, now {unit.unit_id} is targeting too"
+                    f"{enemy_id} already targeted by {self.planner.targeted_enemies[enemy_id].unit_id}, now {unit.unit_id} is targeting too"
                 )
-            self.targeted_enemies[enemy_id] = unit
+            self.planner.targeted_enemies[enemy_id] = unit
         return success
 
     def run_away(self, unit: FriendlyUnitManager):
@@ -513,11 +496,62 @@ class CombatPlanner(BaseGeneralPlanner):
             logger.error(f"{unit.log_prefix}: No path to factory")
             return False
 
+
+class CombatPlanner(BaseGeneralPlanner):
+    def __init__(self, master: MasterState):
+        super().__init__(master)
+        self.master = master
+
+        # Keep dict of enemy unit_id, friendly unit attacking
+        self.targeted_enemies: Dict[str, FriendlyUnitManager] = {}
+        self.single_unit_planners: Dict[str, CombatUnitPlanner] = {}
+
+        # Update these each turn
+        # Map of current enemy locations and values of attacking that enemy (probably want to account for factory dist when using these)
+        self.light_enemy_value_map: np.ndarray = np.zeros(self.master.maps.map_shape)
+        self.heavy_enemy_value_map: np.ndarray = np.zeros(self.master.maps.map_shape)
+
+    def update(self):
+        # Keep track of targeted enemies (if unit no longer attacking, remove from targeted)
+        keys_to_pop = []
+        for enemy_id, friendly_unit in self.targeted_enemies.items():
+            act_status = friendly_unit.status.current_action
+            if act_status.category != ActCategory.COMBAT or act_status.sub_category in [
+                CombatActSubCategory.RUN_AWAY,
+                CombatActSubCategory.RETREAT_HOLD,
+            ]:
+                keys_to_pop.append(enemy_id)
+                logger.info(f"{self.targeted_enemies[enemy_id].unit_id} no longer targeting {enemy_id}")
+        for k in keys_to_pop:
+            self.targeted_enemies.pop(k)
+
+        # Update enemy values
+        self.light_enemy_value_map = np.zeros(self.master.maps.map_shape)
+        self.heavy_enemy_value_map = np.zeros(self.master.maps.map_shape)
+        for enemy_id, enemy_unit in self.master.units.enemy.all.items():
+            cfg = enemy_unit.unit_config
+            pos = enemy_unit.pos
+            value = 0
+            # If some cargo
+            if enemy_unit.cargo.ice + enemy_unit.ore > cfg.CARGO_SPACE * 0.3:
+                value += 20
+            # If more cargo
+            if enemy_unit.cargo.ice + enemy_unit.ore > cfg.CARGO_SPACE * 0.6:
+                value += 20
+            # If currently on a resource
+            if self.master.maps.resource_at_tile(enemy_unit.pos) >= 0:
+                value += 40
+            # On its own factory (untouchable)
+            if self.master.maps.factory_maps.enemy[pos[0], pos[1]] >= 0:
+                value = 0
+            if enemy_unit.unit_type == "LIGHT":
+                self.light_enemy_value_map[pos[0], pos[1]] = value
+            else:
+                self.heavy_enemy_value_map[pos[0], pos[1]] = value
+
     def get_unit_planner(self, unit: FriendlyUnitManager) -> CombatUnitPlanner:
         """Return a subclass of BaseUnitPlanner to actually update or create new actions for a single Unit"""
         if unit.unit_id not in self.unit_planners:
             unit_planner = CombatUnitPlanner(self.master, self, unit)
             self.unit_planners[unit.unit_id] = unit_planner
         return self.unit_planners[unit.unit_id]
-
-    # New

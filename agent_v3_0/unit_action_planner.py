@@ -356,14 +356,14 @@ class SingleUnitActionPlanner:
         self.unit.status.turn_status.must_move = unit_must_move
 
         # Decide what action needs to be taken next (may be to continue with current plan)
-        desired_action = self.action_decider.decide_action(unit_must_move)
+        new_action_info = self.action_decider.decide_action(unit_must_move)
 
         success = False
         do_update = True
 
         # TODO: Replace this chunk once planners are able to handle this stuff
         # If no update required, return now (queue not updated, so no changes will happen)
-        if desired_action is None and unit.status.turn_status.recommend_plan_udpdate is False:
+        if new_action_info is None and unit.status.turn_status.recommend_plan_udpdate is False:
             if not unit_must_move or unit_must_move and unit.next_action_is_move():
                 logger.info(f"No update of actions necessary")
                 do_update = False
@@ -371,13 +371,13 @@ class SingleUnitActionPlanner:
                 logger.info(f"action change required to move on next step")
                 unit.status.turn_status.recommend_plan_udpdate = True
                 do_update = True
-        elif desired_action is None and unit.status.turn_status.recommend_plan_udpdate is True:
+        elif new_action_info is None and unit.status.turn_status.recommend_plan_udpdate is True:
             status_updated = self._attempt_resolve_continue_actions()
             if unit.status.turn_status.recommend_plan_udpdate is False:
                 do_update = False
             else:
                 do_update = True
-            desired_action = unit.status.current_action
+            new_action_info = unit.status.current_action
 
         # Do or redo the planning for this unit if necessary
         if do_update:
@@ -388,7 +388,7 @@ class SingleUnitActionPlanner:
             # Build the new action queue
             success = self.action_implementer.implement_desired_action(
                 unit,
-                desired_action,
+                new_action_info,
                 unit_must_move=unit_must_move,
             )
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import abc
 import copy
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Tuple
 from dataclasses import dataclass, field
 import collections
 
@@ -467,6 +467,7 @@ class Maps:
         self.factory_maps: FactoryMaps = None
         self.valid_friendly_move: np.ndarray = None
         self.valid_enemy_move: np.ndarray = None
+        self.map_shape: Tuple[int, int] = None
 
         self.first_update_done = False
 
@@ -477,6 +478,7 @@ class Maps:
             self.ice = board.ice.copy()
             self.ore = board.ore.copy()
             self.first_update_done = True
+            self.map_shape = board.ice.shape
         self.rubble = board.rubble.copy()
         self.lichen = board.lichen.copy()
         self.lichen_strains = board.lichen_strains.copy()
