@@ -146,7 +146,7 @@ class FactoryInfo:
                 and unit.status.current_action.sub_category == MineActSubCategory.ORE
             ):
                 self.heavy_mining_ore -= 1
-            elif unit.status.current_action.category == ActCategory.ATTACK:
+            elif unit.status.current_action.category == ActCategory.COMBAT:
                 self.heavy_attacking -= 1
             elif (
                 unit.status.current_action.category == ActCategory.CLEAR
@@ -169,7 +169,7 @@ class FactoryInfo:
                 and unit.status.current_action.sub_category == MineActSubCategory.ORE
             ):
                 self.light_mining_ore -= 1
-            elif unit.status.current_action.category == ActCategory.ATTACK:
+            elif unit.status.current_action.category == ActCategory.COMBAT:
                 self.light_attacking -= 1
             elif (
                 unit.status.current_action.category == ActCategory.CLEAR

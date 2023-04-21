@@ -113,7 +113,7 @@ class DestStatus:
 class ActCategory(enum.Enum):
     """Which planner should be sent to"""
 
-    ATTACK = "attack"
+    COMBAT = "combat"
     MINE = "mine"
     CLEAR = "clear"
     RUN_AWAY = "runaway"
@@ -135,11 +135,12 @@ class ClearActSubCategory(ActSubCategory):
     LICHEN = "lichen"
 
 
-class AttackActSubCategory(ActSubCategory):
+class CombatActSubCategory(ActSubCategory):
     RETREAT_HOLD = "retreat hold"
     ATTACK_HOLD = "attack hold"
     TEMPORARY = "temporary"
     CONSERVE = "conserve"
+    RUN_AWAY = "run away"
 
 
 @dataclass

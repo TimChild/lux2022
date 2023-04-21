@@ -468,7 +468,7 @@ class CombatPlanner(BaseGeneralPlanner):
         keys_to_pop = []
         for enemy_id, friendly_unit in self.targeted_enemies.items():
             act_status = friendly_unit.status.current_action
-            if act_status.category != ActCategory.ATTACK:
+            if act_status.category != ActCategory.COMBAT:
                 keys_to_pop.append(enemy_id)
                 logger.info(f"{self.targeted_enemies[enemy_id].unit_id} no longer targeting {enemy_id}")
         for k in keys_to_pop:

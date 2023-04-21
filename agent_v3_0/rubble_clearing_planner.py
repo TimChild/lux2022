@@ -462,10 +462,6 @@ class RubbleClearingRecommendation(Recommendation):
 
 
 
-class ClearingPlanner(BaseGeneralPlanner, abc.ABC):
-    pass
-
-
 class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
     pass
 
@@ -476,19 +472,6 @@ class LichenUnitPlanner(ClearingUnitPlanner):
 
     def create_new_actions(self):
         pass
-
-
-class LichenPlanner(ClearingPlanner):
-    def update(self):
-        pass
-
-    def get_unit_planner(self, unit: FriendlyUnitManager) -> LichenUnitPlanner:
-        """Return a subclass of BaseUnitPlanner to actually update or create new actions for a single Unit"""
-        if unit.unit_id not in self.unit_planners:
-            unit_planner = LichenUnitPlanner(self.master, self, unit)
-            self.unit_planners[unit.unit_id] = unit_planner
-        return self.unit_planners[unit.unit_id]
-
 
 class RubbleUnitPlanner(ClearingUnitPlanner):
     def update_planned_actions(self):
@@ -533,7 +516,7 @@ class RubbleUnitPlanner(ClearingUnitPlanner):
             return False
 
 
-class RubbleClearingPlanner(ClearingPlanner):
+class ClearingPlanner(BaseGeneralPlanner):
 
     def __init__(self, master: MasterState):
         super().__init__(master)

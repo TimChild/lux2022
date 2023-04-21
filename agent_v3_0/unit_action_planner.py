@@ -16,12 +16,12 @@ from factory_action_planner import FactoryDesires, FactoryInfo
 from master_state import MasterState, AllUnits
 from mining_planner import MiningPlanner
 from new_path_finder import Pather
-from rubble_clearing_planner import RubbleClearingPlanner
+from rubble_clearing_planner import ClearingPlanner
 from combat_planner import CombatPlanner
 from unit_manager import FriendlyUnitManager, UnitManager
 from action_validation import ValidActionCalculator, valid_action_space
 from decide_actions import ActStatus
-from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, AttackActSubCategory
+from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, CombatActSubCategory
 
 logger = get_logger(__name__)
 
@@ -236,7 +236,7 @@ class SingleUnitActionPlanner:
         factory_info: FactoryInfo,
         action_validator: ValidActionCalculator,
         mining_planner: MiningPlanner,
-        rubble_clearing_planner: RubbleClearingPlanner,
+        rubble_clearing_planner: ClearingPlanner,
         combat_planner: CombatPlanner,
         collision_resolve_max_step: int,
     ):
@@ -273,7 +273,7 @@ class SingleUnitActionPlanner:
             factory_desires=factory_desires,
             factory_info=factory_info,
             mining_planner=mining_planner,
-            rubble_clearing_planner=rubble_clearing_planner,
+            clearing_planner=rubble_clearing_planner,
             combat_planner=combat_planner,
         )
 
@@ -411,7 +411,7 @@ class ActionImplementer:
         factory_desires: FactoryDesires,
         factory_info: FactoryInfo,
         mining_planner: MiningPlanner,
-        rubble_clearing_planner: RubbleClearingPlanner,
+        clearing_planner: ClearingPlanner,
         combat_planner: CombatPlanner,
     ):
         self.master = master
@@ -422,7 +422,7 @@ class ActionImplementer:
         self.factory_desires = factory_desires
         self.factory_info = factory_info
         self.mining_planner = mining_planner
-        self.rubble_clearing_planner = rubble_clearing_planner
+        self.clearing_planner = clearing_planner
         self.combat_planner = combat_planner
 
     def implement_desired_action(
@@ -431,51 +431,22 @@ class ActionImplementer:
         desired_action: ActStatus,
         unit_must_move: bool,
     ):
-        if desired_action.category == ActCategory.ATTACK:
-            # success = self.combat_planner.attack(unit)
+        if desired_action.category == ActCategory.COMBAT:
             success = self.combat_planner.get_unit_planner(unit).update_planned_actions()
-        elif desired_action.category == ActCategory.RUN_AWAY:
-            success = self.combat_planner.run_away(unit)
-        elif desired_action.category == ActCategory.MINE and desired_action.sub_category == MineActSubCategory.ORE:
+        elif desired_action.category == ActCategory.MINE:
             success = self.mining_planner.get_unit_planner(unit).update_planned_actions()
-            # success = self._mine_ore(unit, unit_must_move)
-        elif desired_action.category == ActCategory.MINE and desired_action.sub_category == MineActSubCategory.ICE:
-            success = self.mining_planner.get_unit_planner(unit).update_planned_actions()
-            # success = self._mine_ice(unit, unit_must_move)
-        elif desired_action.category == ActCategory.CLEAR and desired_action.sub_category == ClearActSubCategory.RUBBLE:
-            success = self.rubble_clearing_planner.get_unit_planner(unit).update_planned_actions()
-            # success = self._clear_rubble(unit, unit_must_move)
+        elif desired_action.category == ActCategory.CLEAR:
+            success = self.clearing_planner.get_unit_planner(unit).update_planned_actions()
         elif desired_action.category == ActCategory.NOTHING:
             success = self._do_nothing(unit, unit_must_move)
         else:
-            logger.error(f"{desired_action.category} not understood as an action")
+            logger.error(f"{desired_action} not understood as an action")
             success = False
 
         if success:
             pass
         else:
             unit.status.update_action_status(new_action=ActStatus())
-        return success
-
-    def _mine_ore(self, unit, unit_must_move) -> bool:
-        rec = self.mining_planner.recommend(unit, util.ORE, unit_must_move=unit_must_move)
-        if rec is not None:
-            success = self.mining_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
-        else:
-            success = False
-        return success
-
-    def _mine_ice(self, unit, unit_must_move) -> bool:
-        rec = self.mining_planner.recommend(unit, util.ICE, unit_must_move=unit_must_move)
-        if rec is not None:
-            success = self.mining_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
-        else:
-            success = False
-        return success
-
-    def _clear_rubble(self, unit, unit_must_move) -> bool:
-        rec = self.rubble_clearing_planner.recommend(unit)
-        success = self.rubble_clearing_planner.carry_out(unit, rec, unit_must_move=unit_must_move)
         return success
 
     def _do_nothing(self, unit, unit_must_move) -> bool:
@@ -769,7 +740,7 @@ class MultipleUnitActionPlanner:
     def decide_unit_actions(
         self,
         mining_planner: MiningPlanner,
-        rubble_clearing_planner: RubbleClearingPlanner,
+        rubble_clearing_planner: ClearingPlanner,
         combat_planner: CombatPlanner,
         factory_desires: Dict[str, FactoryDesires],
         factory_infos: Dict[str, FactoryInfo],

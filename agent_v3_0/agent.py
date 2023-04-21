@@ -11,7 +11,7 @@ from lux.utils import my_turn_to_place_factory
 
 from master_state import MasterState
 from mining_planner import MiningPlanner
-from rubble_clearing_planner import RubbleClearingPlanner
+from rubble_clearing_planner import ClearingPlanner
 from combat_planner import CombatPlanner
 from factory_action_planner import FactoryActionPlanner
 
@@ -40,7 +40,7 @@ class Agent:
         )
 
         self.mining_planner = MiningPlanner(self.master)
-        self.rubble_clearing_planner = RubbleClearingPlanner(self.master)
+        self.rubble_clearing_planner = ClearingPlanner(self.master)
         self.combat_planner = CombatPlanner(self.master)
         self.factory_action_planner = FactoryActionPlanner(self.master)
         self.unit_action_planner = MultipleUnitActionPlanner(self.master)

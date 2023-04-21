@@ -138,7 +138,7 @@ class ActionDecider:
         # If already attacking, just update in case new path to enemy
         if (
             act_reason in [ActReasons.CLOSE_TO_ENEMY, ActReasons.COLLISION_WITH_ENEMY]
-            and self.unit.status.current_action.category == ActCategory.ATTACK
+            and self.unit.status.current_action.category == ActCategory.COMBAT
         ):
             self.unit.status.turn_status.recommend_plan_udpdate = True
             return True
@@ -247,7 +247,7 @@ class ActionDecider:
                 action.category = ActCategory.CLEAR
                 action.sub_category = ClearActSubCategory.RUBBLE
             elif current_attacking < desired_attacking:
-                action.category = ActCategory.ATTACK
+                action.category = ActCategory.COMBAT
             self.unit.status.update_action_status(action)
         return action
 
@@ -335,7 +335,7 @@ def should_unit_consider_acting(
     if unit_id in close_enemies:
         unit_act_reasons.append(ShouldActInfo(ActReasons.CLOSE_TO_ENEMY))
     # Attacking needs regular updates
-    if unit.status.current_action.category == ActCategory.ATTACK:
+    if unit.status.current_action.category == ActCategory.COMBAT:
         unit_act_reasons.append(ShouldActInfo(ActReasons.ATTACKING))
         # Check pickup is valid
         unit_act_reasons.append(ShouldActInfo(ActReasons.NEXT_ACTION_PICKUP))

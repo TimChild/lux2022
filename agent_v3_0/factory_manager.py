@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Tuple
 import numpy as np
 
-from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, AttackActSubCategory
+from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, CombatActSubCategory
 from lux.factory import Factory
 
 from config import get_logger
@@ -189,7 +189,7 @@ class FriendlyFactoryManager(FactoryManager):
             attacking={
                 unit.unit_id: unit
                 for unit_id, unit in units.items()
-                if unit.status.current_action.category == ActCategory.ATTACK
+                if unit.status.current_action.category == ActCategory.COMBAT
             },
             waiting={
                 unit.unit_id: unit
