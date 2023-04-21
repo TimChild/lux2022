@@ -287,68 +287,81 @@ class ConsiderActInfo:
     reason: ActReasons = ActReasons.NO_REASON_TO_ACT
 
 
+@dataclass
+class ShouldActInfo:
+    reason: ActReasons
+    requires_action: bool = True
+
+
 def should_unit_consider_acting(
     unit: FriendlyUnitManager,
     upcoming_collisions: Dict[str, AllCollisionsForUnit],
     close_enemies: Dict[str, CloseUnits],
 ) -> ConsiderActInfo:
     unit_id = unit.unit_id
-    # If not enough power to do something meaningful
-    should_act = ConsiderActInfo(unit=unit, should_act=True)
+    unit_act_reasons = unit.status.turn_status.should_act_reasons
 
-    move_valid = unit.valid_moving_actions(unit.master.maps.valid_friendly_move, max_len=1)
+    should_act = True
+
     # Can't be updated
     if unit.power < (unit.unit_config.ACTION_QUEUE_POWER_COST + unit.unit_config.MOVE_COST):
-        should_act.should_act = False
-        should_act.reason = ActReasons.NOT_ENOUGH_POWER
+        # This one is more of a warning, doesn't really require new actions (planned actions should be updated to
+        # account for not enough power to do next actions though)
+        unit_act_reasons.append(ShouldActInfo(ActReasons.NOT_ENOUGH_POWER, requires_action=False))
+        # Todo remove once unused
+        should_act = False
     # Previous action invalid
-    elif unit.status.action_queue_valid_after_step is False:
-        should_act.reason = ActReasons.PREVIOUS_ACTION_INVALID
+    if unit.status.action_queue_valid_after_step is False:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.PREVIOUS_ACTION_INVALID))
     # If no queue
-    elif len(unit.action_queue) == 0:
-        should_act.reason = ActReasons.NO_ACTION_QUEUE
+    if len(unit.action_queue) == 0:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.NO_ACTION_QUEUE))
     # If colliding with enemy
-    elif unit_id in upcoming_collisions and upcoming_collisions[unit_id].num_collisions(friendly=False, enemy=True) > 0:
-        should_act.reason = ActReasons.COLLISION_WITH_ENEMY
+    if unit_id in upcoming_collisions and upcoming_collisions[unit_id].num_collisions(friendly=False, enemy=True) > 0:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.COLLISION_WITH_ENEMY))
     # If colliding with friendly
-    elif unit_id in upcoming_collisions and upcoming_collisions[unit_id].num_collisions(friendly=True, enemy=False) > 0:
-        should_act.reason = ActReasons.COLLISION_WITH_FRIENDLY
+    if unit_id in upcoming_collisions and upcoming_collisions[unit_id].num_collisions(friendly=True, enemy=False) > 0:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.COLLISION_WITH_FRIENDLY))
+
+    move_valid = unit.valid_moving_actions(unit.master.maps.valid_friendly_move, max_len=1)
     # Next move invalid
-    elif move_valid.was_valid is False:
-        should_act.reason = ActReasons.NEXT_ACTION_INVALID_MOVE
+    if move_valid.was_valid is False:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.NEXT_ACTION_INVALID_MOVE))
         logger.debug(
             f"Move from {unit.start_of_turn_pos} was invalid for reason {move_valid.invalid_reasons[0]}, action={unit.action_queue[0]}"
         )
     # If close to enemy
-    elif unit_id in close_enemies:
-        should_act.reason = ActReasons.CLOSE_TO_ENEMY
+    if unit_id in close_enemies:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.CLOSE_TO_ENEMY))
     # Attacking needs regular updates
-    elif unit.status.current_action.category == ActCategory.ATTACK:
-        should_act.reason = ActReasons.ATTACKING
-    # Check pickup is valid
-    elif unit.action_queue[0][util.ACT_TYPE] == util.PICKUP:
-        should_act.reason = ActReasons.NEXT_ACTION_PICKUP
+    if unit.status.current_action.category == ActCategory.ATTACK:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.ATTACKING))
+        # Check pickup is valid
+        unit_act_reasons.append(ShouldActInfo(ActReasons.NEXT_ACTION_PICKUP))
     # Check transfer is valid
-    elif unit.action_queue[0][util.ACT_TYPE] == util.TRANSFER:
-        should_act.reason = ActReasons.NEXT_ACTION_TRANSFER
+    if len(unit.action_queue) > 0 and unit.action_queue[0][util.ACT_TYPE] == util.TRANSFER:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.NEXT_ACTION_TRANSFER))
     # Check dig is valid
-    elif unit.action_queue[0][util.ACT_TYPE] == util.DIG:
-        should_act.reason = ActReasons.NEXT_ACTION_DIG
+    if len(unit.action_queue) > 0 and unit.action_queue[0][util.ACT_TYPE] == util.DIG:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.NEXT_ACTION_DIG))
     # If not doing anything maybe need an update
-    elif unit.status.current_action.category == ActCategory.NOTHING:
-        should_act.reason = ActReasons.CURRENT_STATUS_NOTHING
+    if unit.status.current_action.category == ActCategory.NOTHING:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.CURRENT_STATUS_NOTHING))
     # TODO: Need to think more about how to handle low power (don't want to keep repathing especially at low power...)
     # # If low power (might want to change plans)
     # elif unit.start_of_turn_power < unit.unit_config.BATTERY_CAPACITY*0.15:
     #     should_act.reason = ActReasons.LOW_POWER
     # If action queue is short but more actions planned
-    elif len(unit.start_of_turn_actions) < 2 and len(unit.status.planned_action_queue) >= 2:
-        should_act.reason = ActReasons.NEED_ACTIONS_FROM_PLANNED
+    if len(unit.start_of_turn_actions) < 2 and len(unit.status.planned_action_queue) >= 2:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.NEED_ACTIONS_FROM_PLANNED))
+    if len(unit_act_reasons) == 0:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.NO_REASON_TO_ACT, requires_action=False))
+        # todo remove once unused
+        should_act = False
+    if should_act:
+        logger.info(f"{unit_id} should consider acting -- {unit_act_reasons}")
     else:
-        should_act.should_act = False
-        should_act.reason = ActReasons.NO_REASON_TO_ACT
-    if should_act.should_act:
-        logger.info(f"{unit_id} should consider acting -- {should_act.reason}")
-    else:
-        logger.info(f"{unit_id} should not consider acting -- {should_act.reason}")
-    return should_act
+        logger.info(f"{unit_id} should not consider acting -- {unit_act_reasons}")
+    # todo remove once unused
+    old_act_info = ConsiderActInfo(unit, should_act=should_act, reason=unit_act_reasons[0].reason)
+    return old_act_info

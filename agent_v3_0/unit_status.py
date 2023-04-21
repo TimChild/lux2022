@@ -14,6 +14,7 @@ from config import get_logger
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager, EnemyUnitManager
     from master_state import MasterState, Maps
+    from decide_actions import ActReasons, ShouldActInfo
 
 logger = get_logger(__name__)
 
@@ -176,8 +177,14 @@ def next_dest(path: np.ndarray, maps: Maps, unit_paths: UnitPaths) -> DestStatus
 class TurnStatus:
     """Holding things relevant to calculating actions this turn"""
 
+    #  Some useful things that can be used to help decide if actions need updating
     next_dest: DestStatus = None
+    should_act_reasons: List[ShouldActInfo] = field(default_factory=list)
+
+    # If False, and planned actions are empty at the end of action calculation either error or plan again or something
     action_queue_empty_ok: bool = False
+    # If set True, the units next action calculation loop will be started again (e.g. if switch from Mine decides it
+    # should switch to attack)
     replan_required: bool = False
 
     # I.e. next action not valid, plan should update (might be temporary while I get rid of old Actions)
@@ -185,11 +192,13 @@ class TurnStatus:
 
     def update(self, unit: FriendlyUnitManager, master: MasterState):
         """Beginning of turn update"""
-        self.action_queue_empty_ok = False
-        self.replan_required = False
         self.next_dest = next_dest(
             unit.current_path(max_len=30, planned_actions=True), master.maps, master.pathfinder.unit_paths
         )
+        self.should_act_reasons = []
+        self.action_queue_empty_ok = False
+        self.replan_required = False
+        self.recommend_plan_udpdate = None
 
 
 @dataclass

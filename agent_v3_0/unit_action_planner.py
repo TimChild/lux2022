@@ -618,11 +618,13 @@ class MultipleUnitActionPlanner:
         needs_to_act = {}
         should_not_act = {}
         for unit_id, unit in units.items():
+            # Todo: this actually updates list of should_act_reasons in unit now
             should_act = should_unit_consider_acting(
                 unit,
                 upcoming_collisions=all_unit_collisions,
                 close_enemies=all_unit_close_to_enemy,
             )
+
             if should_act.should_act:
                 needs_to_act[unit_id] = should_act
             else:
