@@ -4,10 +4,10 @@ import numpy as np
 import re
 import abc
 import copy
-from dataclasses import dataclass, field
 
 from luxai_s2.unit import UnitCargo
 
+from unit_status import Status
 from lux.unit import Unit
 from lux.config import UnitConfig
 
@@ -26,90 +26,6 @@ logger = get_logger(__name__)
 def get_index(lst, index, default=None):
     """Get the element at the specified index in the list, or return the default value if the index is out of range."""
     return lst[index] if 0 <= index < len(lst) else default
-
-
-@dataclass
-class Status:
-    current_action: Actions
-    previous_action: Actions
-    last_action_update_step: int
-    last_action_success: bool
-    action_queue_valid_after_step: bool
-    planned_actions: List[np.ndarray] = field(default_factory=list)
-    _last_beginning_of_step_update: int = 0
-
-    def _step_planned_actions(self) -> List[np.ndarray]:
-        new_actions = list(self.planned_actions.copy())
-        if len(new_actions) == 0:
-            return []
-        elif new_actions[0][util.ACT_N] > 1:
-            new_actions[0][util.ACT_N] -= 1
-            return new_actions
-        elif new_actions[0][util.ACT_N] == 1:
-            if new_actions[0][util.ACT_REPEAT] > 0:
-                logger.warning(
-                    f"Not implemented adding repeat actions to back of planned actions (might not make sense)"
-                )
-            new_actions.pop(0)
-            return new_actions
-        else:
-            logger.error(f"failed to update planned actions. First planned action = {new_actions[0]}")
-            raise NotImplementedError(f"failed to update planned actions. planned actions = {new_actions}")
-
-    def step_update_planned_actions(self, unit: FriendlyUnitManager):
-        """Update the planned actions
-        0. if not a real update step return (debugging)
-        1. else update planned actions assuming an action took place
-        2. If no actions and no planned actions no update
-        3. if action_queue and planned actions don't match, replace planned actions and set a flag
-        4. else set flag passed
-        """
-        step = unit.master.step
-        # print(unit.master.step, self._last_beginning_of_step_update)
-        # Check if this is the same step as last update (i.e. running in my debugging env)
-        if step == self._last_beginning_of_step_update:
-            logger.warning(f"{unit.log_prefix}: Trying to update for same step again, not updating")
-            return True
-
-        valid = False
-        new_planned = self._step_planned_actions()
-        if len(unit.start_of_turn_actions) == 0:
-            if len(new_planned) == 0:
-                logger.debug(f"no unit or planned actions, valid")
-                valid = True
-            else:
-                logger.error(f"{unit.log_prefix} unit actions empty, but len planned was {len(new_planned)}")
-                new_planned = []
-                valid = False
-        elif len(unit.start_of_turn_actions) > 0 and len(new_planned) == 0:
-            logger.error(
-                f"{unit.log_prefix}: len(actions) = {len(unit.start_of_turn_actions)} != len(planned) = {len(new_planned)}"
-            )
-            valid = False
-        elif np.all(unit.start_of_turn_actions[0] == new_planned[0]):
-            logger.debug(f"planned_actions still valid")
-            valid = True
-        else:
-            logger.warning(
-                f"{unit.log_prefix} planned actions no longer match q1 = {unit.start_of_turn_actions[0]}, p1 = {new_planned[0]}. updating planned actions"
-            )
-            new_planned = unit.start_of_turn_actions.copy()
-            valid = False
-        self._last_beginning_of_step_update = step
-        self.planned_actions = new_planned
-        self.action_queue_valid_after_step = valid
-        return valid
-
-    def update_status(self, new_action: Actions, success: bool):
-        self.previous_action = self.current_action
-        self.current_action = new_action
-        self.last_action_success = success
-        # Action queue might not actually be getting updated
-        # self.status.last_action_update_step = self.master.step
-
-    def update_planned_actions(self, action_queue: List[np.ndarray]):
-        self.planned_actions = action_queue
-        self.action_queue_valid_after_step = True
 
 
 class UnitManager(abc.ABC):
