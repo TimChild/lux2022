@@ -158,7 +158,7 @@ def next_dest(path: np.ndarray, maps: Maps, unit_paths: UnitPaths) -> DestStatus
         dest.type = DestType.ICE
     elif maps.ore[pos[0], pos[1]] > 0:
         dest.type = DestType.ORE
-    elif maps.factory_maps.all >= 0:
+    elif maps.factory_maps.all[pos[0], pos[1]] >= 0:
         dest.type = DestType.FACTORY
         dest.id_num = maps.factory_maps.all[pos[0], pos[1]]
     elif maps.rubble[pos[0], pos[1]] > 0:
@@ -230,6 +230,7 @@ class Status:
     def update(self, unit: FriendlyUnitManager, master: MasterState):
         """beginning of turn update"""
         self.turn_status.update(unit, master)
+        self._step_update_planned_actions(unit)
 
     def _step_planned_actions(self) -> List[np.ndarray]:
         new_actions = list(self.planned_action_queue.copy())
@@ -249,7 +250,7 @@ class Status:
             logger.error(f"failed to update planned actions. First planned action = {new_actions[0]}")
             raise NotImplementedError(f"failed to update planned actions. planned actions = {new_actions}")
 
-    def step_update_planned_actions(self, unit: FriendlyUnitManager):
+    def _step_update_planned_actions(self, unit: FriendlyUnitManager):
         """Update the planned actions
         0. if not a real update step return (debugging)
         1. else update planned actions assuming an action took place
@@ -290,10 +291,12 @@ class Status:
             valid = False
         self._debug_last_beginning_of_step_update = step
         self.planned_action_queue = new_planned
+
+        # Todo remove old
         self.action_queue_valid_after_step = valid
         return valid
 
-    def update_status(self, new_action: ActStatus, success: bool):
+    def update_action_status(self, new_action: ActStatus, success: bool):
         self.previous_action = self.current_action
         self.current_action = new_action
         self.last_action_success = success
@@ -302,4 +305,6 @@ class Status:
 
     def update_planned_actions(self, action_queue: List[np.ndarray]):
         self.planned_action_queue = action_queue
+
+        # todo remove old (remove this whole function?)
         self.action_queue_valid_after_step = True

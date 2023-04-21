@@ -381,6 +381,7 @@ class SingleUnitActionPlanner:
         # Do or redo the planning for this unit if necessary
         if do_update:
             # Clear queue to build a new one (old is in unit.start_of_...)
+            # TODO: this is old, remove once only working with planned_queue
             unit.action_queue = []
 
             # Build the new action queue
@@ -430,7 +431,8 @@ class ActionImplementer:
         unit_must_move: bool,
     ):
         if desired_action.category == ActCategory.ATTACK:
-            success = self.combat_planner.attack(unit)
+            # success = self.combat_planner.attack(unit)
+            success = self.combat_planner.get_unit_planner(unit).update_planned_actions()
         elif desired_action.category == ActCategory.RUN_AWAY:
             success = self.combat_planner.run_away(unit)
         elif desired_action.category == ActCategory.MINE and desired_action.sub_category == MineActSubCategory.ORE:

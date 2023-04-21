@@ -348,9 +348,9 @@ def should_unit_consider_acting(
     if unit.status.current_action.category == ActCategory.NOTHING:
         unit_act_reasons.append(ShouldActInfo(ActReasons.CURRENT_STATUS_NOTHING))
     # TODO: Need to think more about how to handle low power (don't want to keep repathing especially at low power...)
-    # # If low power (might want to change plans)
-    # elif unit.start_of_turn_power < unit.unit_config.BATTERY_CAPACITY*0.15:
-    #     should_act.reason = ActReasons.LOW_POWER
+    # If low power (might want to change plans)
+    if unit.start_of_turn_power < unit.unit_config.BATTERY_CAPACITY * 0.15:
+        unit_act_reasons.append(ShouldActInfo(ActReasons.LOW_POWER))
     # If action queue is short but more actions planned
     if len(unit.start_of_turn_actions) < 2 and len(unit.status.planned_action_queue) >= 2:
         unit_act_reasons.append(ShouldActInfo(ActReasons.NEED_ACTIONS_FROM_PLANNED))

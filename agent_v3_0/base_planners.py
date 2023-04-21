@@ -12,29 +12,22 @@ if TYPE_CHECKING:
 
 # LocationManagerType= TypeVar("LocationManagerType", bound=LocationManager)
 # BaseUnitPlannerType = TypeVar("BaseUnitPlannerType", bound=BaseUnitPlanner)
+BaseUnitPlannerType = TypeVar("BaseUnitPlannerType", bound="BaseUnitPlanner")
+
 
 class BaseGeneralPlanner(abc.ABC):
     """For generating plans for multiple units for a given action type"""
+
     def __init__(self, master: MasterState):
         self.master = master
-        self.unit_planners: Dict[str, BaseUnitPlanner] = {}
-
-    @property
-    @abc.abstractmethod
-    def locations(self) -> LocationManager:
-        pass
+        self.unit_planners: Dict[str, BaseUnitPlannerType] = {}
 
     @abc.abstractmethod
-    def _init_location_manager(self):
-        """Initialize a new instance of whatever subclass of location manager"""
-        return LocationManager()
-
     def update(self):
         """Beginning of turn update
         Update value maps etc
         """
-        self.update_value_maps()
-        self.update_location_manager()
+        pass
 
     @abc.abstractmethod
     def get_unit_planner(self, unit: FriendlyUnitManager) -> BaseUnitPlanner:
@@ -44,21 +37,11 @@ class BaseGeneralPlanner(abc.ABC):
             self.unit_planners[unit.unit_id] = unit_planner
         return self.unit_planners[unit.unit_id]
 
-    @abc.abstractmethod
-    def update_value_maps(self):
-        """Update value maps at beginning of turn"""
-        pass
-
-    @abc.abstractmethod
-    def update_location_manager(self):
-        """Update location manager (i.e. any dead units should be removed, or any units no longer assigned to current
-        action type)"""
-        pass
-
 
 class BaseUnitPlanner(abc.ABC):
     """For updating plans of a single unit for a certain action type"""
-    def __init__(self, master: MasterState, general_planner: BaseGeneralPlanner, unit: UnitManager):
+
+    def __init__(self, master: MasterState, general_planner: BaseGeneralPlanner, unit: FriendlyUnitManager):
         self.master = master
         self.planner = general_planner
         self.unit = unit
@@ -76,8 +59,8 @@ class BaseUnitPlanner(abc.ABC):
 
 class BaseRouter(abc.ABC):
     """Base class for getting from pos to Location, where Location maybe be a few different things"""
+
     # def get_path_to_location(self, start_pos: util.POS_TYPE, location: LocationManager, start_step: int) -> util.PATH_TYPE:
     #     """Get path to location (including location delay)"""
     #     pass
     pass
-

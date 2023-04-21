@@ -103,6 +103,9 @@ def find_first_equal_pair_index(arr: np.ndarray, direction: str = "forward") -> 
     shifted_arr = np.roll(arr, shift=-1, axis=0)
     equal_pairs = np.all(arr[:-1] == shifted_arr[:-1], axis=1)
 
+    if len(equal_pairs) == 0:
+        return None
+
     if direction == "backward":
         equal_pairs = equal_pairs[::-1]
 

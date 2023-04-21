@@ -185,7 +185,7 @@ class FriendlyUnitManager(UnitManager):
         """Beginning of turn update"""
         super().update(unit)
         self.start_of_turn_actions = copy.copy(unit.action_queue)
-        self.status.step_update_planned_actions(self)
+        self.status.update(self, self.master)
 
     def current_path(self, max_len: int = 10, actions=None, planned_actions=True) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
@@ -195,7 +195,7 @@ class FriendlyUnitManager(UnitManager):
 
     def update_status(self, new_action: ActStatus, success: bool):
         """Update unit status with new action"""
-        self.status.update_status(new_action, success)
+        self.status.update_action_status(new_action, success)
 
     def update_planned_actions_with_queue(self):
         """Update the planned actions with the current action queue (i.e. after building new action queue)"""

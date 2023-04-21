@@ -37,8 +37,7 @@ def check_next_move_will_happen(path, unit: UnitManager, rubble: np.ndarray):
     # Is next action supposed to be move
     if not np.all(path[0] == path[1]):
         move_cost = unit.unit_config.MOVE_COST + unit.unit_config.RUBBLE_MOVEMENT_COST * rubble[path[1][0], path[1][1]]
-        # TODO: Is there any way power can be tranferred to a unit to make this not true?
-        # TODO: Or does the charge cycle have any impact, I think charging happens last, so no?
+
         # Unit isn't really going to move next turn
         if move_cost > unit.start_of_turn_power:
             path = list(path)
@@ -534,6 +533,8 @@ class UnitPaths:
 
         # Get the valid path coords (first value is current position)
         path = util.actions_to_path(unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=self.max_step)
+
+        # Account for low energy or no path to at least get next position correct (assuming no action queue update cost)
         path = sanitize_path_start(path, unit, self.rubble)
 
         # Add that path to the 3D path array
