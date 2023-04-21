@@ -9,6 +9,7 @@ from config import get_logger
 from new_path_finder import Pather
 from master_state import MasterState, Planner
 from actions_util import Recommendation
+from base_planners import BaseGeneralPlanner, BaseUnitPlanner
 import util
 from util import (
     ICE,
@@ -21,6 +22,8 @@ from util import (
     calc_path_to_factory,
     path_to_factory_edge_nearest_pos,
 )
+
+from unit_status import MineValues, MineActSubCategory
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager
@@ -1021,9 +1024,57 @@ class MiningRecommender:
         )
 
 
-class MiningPlanner(Planner):
-    def __init__(self, master_state: MasterState):
-        self.master: MasterState = master_state
+class MiningUnitPlanner(BaseUnitPlanner):
+
+    def update_planned_actions(self):
+        return self.create_new_actions()
+
+    def create_new_actions(self):
+        if self.unit.status.current_action.sub_category == MineActSubCategory.ICE:
+            resource_type = util.ICE
+        elif self.unit.status.current_action.sub_category == MineActSubCategory.ORE:
+            resource_type = util.ORE
+        else:
+            raise ValueError(f'{self.unit.status.current_action} not correct for Mining')
+        rec = self.recommend(self.unit, resource_type, unit_must_move=self.unit.status.turn_status.must_move)
+        return self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
+
+    def recommend(
+            self,
+            unit: FriendlyUnitManager,
+            resource_type: int = ICE,
+            unit_must_move: bool = False,
+    ) -> [None, MiningRecommendation]:
+
+        recommender = MiningRecommender(self.master, self.planner.ice, self.planner.ore)
+        return recommender.recommend(
+            unit, resource_type=resource_type, unit_must_move=unit_must_move
+        )
+
+    def carry_out(
+            self,
+            unit: FriendlyUnitManager,
+            recommendation: MiningRecommendation,
+            unit_must_move: bool,
+    ) -> bool:
+        factory = self.master.factories.friendly[recommendation.factory_id]
+        route_planner = MiningRoutePlanner(
+            pathfinder=self.master.pathfinder,
+            rubble=self.master.maps.rubble,
+            resource_pos=recommendation.resource_pos,
+            resource_type=recommendation.resource_type,
+            factory=factory,
+            unit=unit,
+        )
+        self.planner.store_planners[unit.unit_id] = route_planner
+        success = route_planner.make_route(unit_must_move=unit_must_move)
+        return success
+
+
+class MiningPlanner(BaseGeneralPlanner):
+
+    def __init__(self, master: MasterState):
+        super().__init__(master)
 
         # Make it easier to see what was going on for debugging
         self.store_planners = {}
@@ -1047,32 +1098,10 @@ class MiningPlanner(Planner):
     def update(self):
         self.store_planners = {}
 
-    def recommend(
-        self,
-        unit: FriendlyUnitManager,
-        resource_type: int = ICE,
-        unit_must_move: bool = False,
-    ) -> [None, MiningRecommendation]:
-        recommender = MiningRecommender(self.master, self.ice, self.ore)
-        return recommender.recommend(
-            unit, resource_type=resource_type, unit_must_move=unit_must_move
-        )
-
-    def carry_out(
-        self,
-        unit: FriendlyUnitManager,
-        recommendation: MiningRecommendation,
-        unit_must_move: bool,
-    ) -> bool:
-        factory = self.master.factories.friendly[recommendation.factory_id]
-        route_planner = MiningRoutePlanner(
-            pathfinder=self.master.pathfinder,
-            rubble=self.master.maps.rubble,
-            resource_pos=recommendation.resource_pos,
-            resource_type=recommendation.resource_type,
-            factory=factory,
-            unit=unit,
-        )
-        self.store_planners[unit.unit_id] = route_planner
-        success = route_planner.make_route(unit_must_move=unit_must_move)
-        return success
+    # New
+    def get_unit_planner(self, unit: FriendlyUnitManager) -> MiningUnitPlanner:
+        """Return a subclass of BaseUnitPlanner to actually update or create new actions for a single Unit"""
+        if unit.unit_id not in self.unit_planners:
+            unit_planner = MiningUnitPlanner(self.master, self, unit)
+            self.unit_planners[unit.unit_id] = unit_planner
+        return self.unit_planners[unit.unit_id]

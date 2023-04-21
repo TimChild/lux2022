@@ -170,7 +170,6 @@ class FriendlyUnitManager(UnitManager):
             current_action=ActStatus(),
             previous_action=ActStatus(),
             last_action_update_step=0,
-            last_action_success=True,
             action_queue_valid_after_step=True,
         )
         self.start_of_turn_actions = []
@@ -192,10 +191,6 @@ class FriendlyUnitManager(UnitManager):
         if actions is None:
             actions = self.status.planned_action_queue if planned_actions else self.action_queue
         return super().current_path(max_len=max_len, actions=actions)
-
-    def update_status(self, new_action: ActStatus, success: bool):
-        """Update unit status with new action"""
-        self.status.update_action_status(new_action, success)
 
     def update_planned_actions_with_queue(self):
         """Update the planned actions with the current action queue (i.e. after building new action queue)"""

@@ -353,6 +353,7 @@ class SingleUnitActionPlanner:
 
         # Is current location in existing paths for next step or equal or higher enemy adjacent
         unit_must_move = self._unit_must_move()
+        self.unit.status.turn_status.must_move = unit_must_move
 
         # Decide what action needs to be taken next (may be to continue with current plan)
         desired_action = self.action_decider.decide_action(unit_must_move)
@@ -436,9 +437,11 @@ class ActionImplementer:
         elif desired_action.category == ActCategory.RUN_AWAY:
             success = self.combat_planner.run_away(unit)
         elif desired_action.category == ActCategory.MINE and desired_action.sub_category == MineActSubCategory.ORE:
-            success = self._mine_ore(unit, unit_must_move)
+            success = self.mining_planner.get_unit_planner(unit).update_planned_actions()
+            # success = self._mine_ore(unit, unit_must_move)
         elif desired_action.category == ActCategory.MINE and desired_action.sub_category == MineActSubCategory.ICE:
-            success = self._mine_ice(unit, unit_must_move)
+            success = self.mining_planner.get_unit_planner(unit).update_planned_actions()
+            # success = self._mine_ice(unit, unit_must_move)
         elif desired_action.category == ActCategory.CLEAR and desired_action.sub_category == ClearActSubCategory.RUBBLE:
             success = self._clear_rubble(unit, unit_must_move)
         elif desired_action.category == ActCategory.NOTHING:
@@ -450,7 +453,7 @@ class ActionImplementer:
         if success:
             pass
         else:
-            unit.update_status(new_action=ActStatus(), success=False)
+            unit.status.update_action_status(new_action=ActStatus())
         return success
 
     def _mine_ore(self, unit, unit_must_move) -> bool:

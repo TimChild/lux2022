@@ -181,6 +181,9 @@ class TurnStatus:
     next_dest: DestStatus = None
     should_act_reasons: List[ShouldActInfo] = field(default_factory=list)
 
+    # must move next turn
+    must_move: bool = False
+
     # If False, and planned actions are empty at the end of action calculation either error or plan again or something
     action_queue_empty_ok: bool = False
     # If set True, the units next action calculation loop will be started again (e.g. if switch from Mine decides it
@@ -196,6 +199,7 @@ class TurnStatus:
             unit.current_path(max_len=30, planned_actions=True), master.maps, master.pathfinder.unit_paths
         )
         self.should_act_reasons = []
+        self.must_move = False
         self.action_queue_empty_ok = False
         self.replan_required = False
         self.recommend_plan_udpdate = None
@@ -207,7 +211,6 @@ class Status:
     current_action: ActStatus
     previous_action: ActStatus
     last_action_update_step: int
-    last_action_success: bool
     action_queue_valid_after_step: bool
     planned_action_queue: List[np.ndarray] = field(default_factory=list)
 
@@ -296,10 +299,9 @@ class Status:
         self.action_queue_valid_after_step = valid
         return valid
 
-    def update_action_status(self, new_action: ActStatus, success: bool):
+    def update_action_status(self, new_action: ActStatus):
         self.previous_action = self.current_action
         self.current_action = new_action
-        self.last_action_success = success
         # Action queue might not actually be getting updated
         # self.status.last_action_update_step = self.master.step
 

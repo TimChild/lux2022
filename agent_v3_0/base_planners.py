@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 # LocationManagerType= TypeVar("LocationManagerType", bound=LocationManager)
-# BaseUnitPlannerType = TypeVar("BaseUnitPlannerType", bound=BaseUnitPlanner)
+BasePlannerType = TypeVar("BasePlannerType", bound="BaseGeneralPlanner")
 BaseUnitPlannerType = TypeVar("BaseUnitPlannerType", bound="BaseUnitPlanner")
 
 
@@ -41,7 +41,7 @@ class BaseGeneralPlanner(abc.ABC):
 class BaseUnitPlanner(abc.ABC):
     """For updating plans of a single unit for a certain action type"""
 
-    def __init__(self, master: MasterState, general_planner: BaseGeneralPlanner, unit: FriendlyUnitManager):
+    def __init__(self, master: MasterState, general_planner: BasePlannerType, unit: FriendlyUnitManager):
         self.master = master
         self.planner = general_planner
         self.unit = unit

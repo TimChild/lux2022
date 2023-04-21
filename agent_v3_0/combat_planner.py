@@ -457,6 +457,7 @@ class CombatUnitPlanner(BaseUnitPlanner):
 
 class CombatPlanner(BaseGeneralPlanner):
     def __init__(self, master: MasterState):
+        super().__init__(master)
         self.master = master
 
         # Keep dict of enemy unit_id, friendly unit attacking

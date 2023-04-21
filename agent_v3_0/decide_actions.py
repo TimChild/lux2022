@@ -248,6 +248,7 @@ class ActionDecider:
                 action.sub_category = ClearActSubCategory.RUBBLE
             elif current_attacking < desired_attacking:
                 action.category = ActCategory.ATTACK
+            self.unit.status.update_action_status(action)
         return action
 
     def decide_action(self, unit_must_move: bool) -> Optional[ActStatus]:
