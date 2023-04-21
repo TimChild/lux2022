@@ -38,7 +38,7 @@ from new_path_finder import Pather
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager, UnitManager
     from factory_manager import FriendlyFactoryManager
-    from  master_state import  MasterState
+    from master_state import MasterState
 
 logger = get_logger(__name__)
 
@@ -119,9 +119,7 @@ def timeout_decorator(timeout):
             thread.join(timeout)
 
             if thread.is_alive():
-                raise TimeoutError(
-                    f"Function '{fn.__name__}' timed out after {timeout} seconds"
-                )
+                raise TimeoutError(f"Function '{fn.__name__}' timed out after {timeout} seconds")
             else:
                 return result_container["result"]
 
@@ -203,9 +201,7 @@ class MyEnv:
 
     def step(self) -> bool:
         """Progress a single step"""
-        logger.info(
-            f"Carrying out real step {self.real_env_steps}, env step {self.env_step}"
-        )
+        logger.info(f"Carrying out real step {self.real_env_steps}, env step {self.env_step}")
 
         self._record_state()
 
@@ -252,12 +248,14 @@ class MyEnv:
 
     def show(self) -> go.Figure:
         """Display the current env state"""
-        print(f'Displaying Step: {self.real_env_steps}')
+        print(f"Displaying Step: {self.real_env_steps}")
         return show_env(self.env)
 
 
 class MyReplayEnv(MyEnv):
-    def __init__(self, seed, Agent, replay_json, log_file_path:str, my_player="player_0", collector: CollectInfoFromEnv = None):
+    def __init__(
+        self, seed, Agent, replay_json, log_file_path: str, my_player="player_0", collector: CollectInfoFromEnv = None
+    ):
         self.replay_json = replay_json
         self.player = my_player
         self.other_player = "player_1" if self.player == "player_0" else "player_0"
@@ -270,10 +268,10 @@ class MyReplayEnv(MyEnv):
     def init_agents(self):
         super().init_agents()
         if self.player == "player_0":
-            self.agents = {'player_0': self.agent}
+            self.agents = {"player_0": self.agent}
         else:
             self.agent = self.other_agent
-            self.agents = {'player_1': self.other_agent}
+            self.agents = {"player_1": self.other_agent}
         self.other_agent = None
 
     def get_early_actions(self):
@@ -294,10 +292,7 @@ class MyReplayEnv(MyEnv):
 
     def _all_replay_actions(self):
         if "actions" in self.replay_json:
-            return [
-                self.replay_json["actions"][i][self.other_player]
-                for i in range(len(self.replay_json["actions"]))
-            ]
+            return [self.replay_json["actions"][i][self.other_player] for i in range(len(self.replay_json["actions"]))]
         elif "steps" in self.replay_json:
             return [
                 self.replay_json["steps"][i + 1][int(self.other_player[-1])]["action"]
@@ -313,19 +308,17 @@ class MyReplayEnv(MyEnv):
             cleaned_actions = {}
             for k, acts in actions.items():
                 # If a unit action
-                if isinstance(acts, list) and not k == 'spawn':
+                if isinstance(acts, list) and not k == "spawn":
                     # Only if that unit is still on that team
                     if k in self.env.state.units[self.other_player].keys():
                         cleaned_actions[k] = np.array(acts, dtype=int)
                     else:
-                        logger.warning(f'Removed enemy actions for {k} because no longer on that team')
+                        logger.warning(f"Removed enemy actions for {k} because no longer on that team")
                 # Factory action
                 else:
                     cleaned_actions[k] = acts
             return cleaned_actions
-        logger.info(
-            f"No more replay actions for {self.other_player} stopped at {len(all_step_actions)}"
-        )
+        logger.info(f"No more replay actions for {self.other_player} stopped at {len(all_step_actions)}")
         return {}
 
     def _get_num_lines(self):
@@ -343,7 +336,11 @@ class MyReplayEnv(MyEnv):
                 pbar.n = lines_increased
                 pbar.refresh()
 
-                if success is False or lines_increased >= num_lines or (max_step is not None and self.real_env_steps >= max_step):
+                if (
+                    success is False
+                    or lines_increased >= num_lines
+                    or (max_step is not None and self.real_env_steps >= max_step)
+                ):
                     break
                 time.sleep(0.01)  # Adjust the sleep time if needed
         print(f"Logfile increased by {lines_increased}")
@@ -382,12 +379,12 @@ class CollectInfoFromEnv:
 
         # Create a Plotly Scatter plot
         fig = go.Figure()
-        fig.update_layout(template='plotly_white')
+        fig.update_layout(template="plotly_white")
 
         for unit, values in unit_data.items():
             x_values = [v[0] for v in values]
             y_values = [v[1] for v in values]
-            fig.add_trace(go.Scatter(x=x_values, y=y_values, mode='markers+lines', name=unit))
+            fig.add_trace(go.Scatter(x=x_values, y=y_values, mode="markers+lines", name=unit))
 
         # Set the plot's title and axis labels
         fig.update_layout(
@@ -398,19 +395,16 @@ class CollectInfoFromEnv:
         return fig
 
 
-
-
 ##########################################
 
 
-def nearest_non_zero(
-    array: np.ndarray, pos: Union[np.ndarray, Tuple[int, int]]
-) -> Optional[Tuple[int, int]]:
+def nearest_non_zero(array: np.ndarray, pos: Union[np.ndarray, Tuple[int, int]]) -> Optional[Tuple[int, int]]:
     """Nearest location from pos in array where value is positive"""
     locations = np.argwhere(array > 0)
     if len(locations) == 0:
         return None
     # TODO: For long lists of locations, I could do a manhattan distance kernel thing to find nearest
+    # TODO: Could break if 0 found
     distances = np.array([manhattan(loc, pos) for loc in locations])
     closest = locations[np.argmin(distances)]
     return tuple(closest)
@@ -447,17 +441,10 @@ def power_cost_of_actions(
                 try:
                     rubble_at_target = rubble[pos[0], pos[1]]
                 except IndexError:
-                    logger.error(
-                        f"Index Error invalid position is ({pos}) continuing anyway"
-                    )
+                    logger.error(f"Index Error invalid position is ({pos}) continuing anyway")
                     rubble_at_target = 100
-                cost += math.ceil(
-                    unit_cfg.MOVE_COST
-                    + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_target
-                )
-            elif act_type == TRANSFER or (
-                act_type == PICKUP and action[ACT_RESOURCE] != POWER
-            ):
+                cost += math.ceil(unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_target)
+            elif act_type == TRANSFER or (act_type == PICKUP and action[ACT_RESOURCE] != POWER):
                 pass  # No cost
             elif act_type == PICKUP and action[ACT_RESOURCE] == POWER:
                 cost -= action[ACT_AMOUNT]
@@ -560,9 +547,7 @@ def pad_and_crop(small_arr, large_arr, x1, y1, fill_value=0):
     return padded_arr
 
 
-def connected_array_values_from_pos(
-    arr: np.ndarray, pos: POS_TYPE, connected_value=0
-) -> np.ndarray:
+def connected_array_values_from_pos(arr: np.ndarray, pos: POS_TYPE, connected_value=0) -> np.ndarray:
     """Figure out what area of zeros is connected to factory and return that array"""
     struct = ndimage.generate_binary_structure(rank=2, connectivity=1)
     # Note:
@@ -603,27 +588,19 @@ def append_zeros(arr, side):
         zeros = np.zeros(arr.shape[0])
         return np.hstack((arr, zeros[:, np.newaxis]))
     else:
-        raise ValueError(
-            "Invalid side specified. Must be 'top', 'bottom', 'left', or 'right'."
-        )
+        raise ValueError("Invalid side specified. Must be 'top', 'bottom', 'left', or 'right'.")
 
 
 def create_boundary_array(arr, boundary_num=0):
     """Creates array of boundaries around boundary_num areas where the boundary value is equal to the size of the boundary_num area"""
     arr = np.array(arr)  # Convert input to numpy array if not already
-    boundary_areas = (
-        arr == boundary_num
-    )  # Create a boolean array where True represents boundary_num
+    boundary_areas = arr == boundary_num  # Create a boolean array where True represents boundary_num
 
     # Create a binary structure to label connected zero areas not including diagonal connections
     s = ndimage.generate_binary_structure(2, 1)
-    labeled_array, num_features = ndimage.label(
-        boundary_areas, structure=s
-    )  # Label connected zero areas
+    labeled_array, num_features = ndimage.label(boundary_areas, structure=s)  # Label connected zero areas
 
-    result = np.zeros_like(
-        arr
-    )  # Create a new array with the same shape as the input array, filled with zeros
+    result = np.zeros_like(arr)  # Create a new array with the same shape as the input array, filled with zeros
 
     for label_num in range(1, num_features + 1):
         mask = labeled_array == label_num
@@ -650,9 +627,7 @@ def create_boundary_array(arr, boundary_num=0):
 
 
 class SubsetExtractor:
-    def __init__(
-        self, array: np.ndarray, pos: Tuple[int, int], radius: int, fill_value=0
-    ):
+    def __init__(self, array: np.ndarray, pos: Tuple[int, int], radius: int, fill_value=0):
         """
         For getting a subset of a 2D numpy array based on a given coordinate and radius.
 
@@ -889,9 +864,7 @@ def actions_to_path(
     return np.array(path)
 
 
-def move_to_new_spot_on_factory(
-    pathfinder: Pather, unit: FriendlyUnitManager, factory: FriendlyFactoryManager
-):
+def move_to_new_spot_on_factory(pathfinder: Pather, unit: FriendlyUnitManager, factory: FriendlyFactoryManager):
     """Move to a new spot on factory (i.e. if current spot is going to be occupied by another unit next turn)"""
     success = False
     pos = np.array(unit.pos)
@@ -909,9 +882,7 @@ def move_to_new_spot_on_factory(
                     best_direction = direction
                     best_cost = new_cost
         except IndexError as e:
-            logger.info(
-                f"Index error for ({new_x, new_y}), probably near edge of map, ignoring this position"
-            )
+            logger.info(f"Index error for ({new_x, new_y}), probably near edge of map, ignoring this position")
     # Move unit to best location if available
     if best_direction is not None:
         pathfinder.append_direction_to_actions(unit, best_direction)
@@ -935,19 +906,13 @@ def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManage
                 best_direction = direction
                 best_cost = new_cost
         except IndexError as e:
-            logger.info(
-                f"Index error for ({new_x, new_y}), probably near edge of map, ignoring this position"
-            )
+            logger.info(f"Index error for ({new_x, new_y}), probably near edge of map, ignoring this position")
             continue
     if best_direction is None:
-        logger.error(
-            f"{unit.log_prefix}: No adjacent direction to move, not doing anything"
-        )
+        logger.error(f"{unit.log_prefix}: No adjacent direction to move, not doing anything")
         success = False
     else:
-        logger.info(
-            f"Moved unit to cheapest adjacent space at {pos+best_direction}"
-        )
+        logger.info(f"Moved unit to cheapest adjacent space at {pos+best_direction}")
         pathfinder.append_direction_to_actions(unit, best_direction)
         success = True
     return success
@@ -966,9 +931,7 @@ def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManage
 
 
 def game_state_from_env(env: LuxAI_S2):
-    return obs_to_game_state(
-        env.state.env_steps, env.state.env_cfg, env.state.get_obs()
-    )
+    return obs_to_game_state(env.state.env_steps, env.state.env_cfg, env.state.get_obs())
 
 
 # def run(
@@ -1318,9 +1281,7 @@ def initialize_step_fig(env):
             ],  # Update Layout
         )
     ]
-    sliders = [
-        dict(active=0, currentvalue={"prefix": "Step: "}, pad={"t": 50}, steps=steps)
-    ]
+    sliders = [dict(active=0, currentvalue={"prefix": "Step: "}, pad={"t": 50}, steps=steps)]
     fig.update_layout(sliders=sliders, height=600)
     return fig
 
@@ -1340,9 +1301,7 @@ def _add_env_state(fig, env):
             method="update",
             label=f"{env.env_steps - 5}",
             args=[
-                {
-                    "visible": [False] * datas_before + [True] * new_datas
-                },  # Update Datas
+                {"visible": [False] * datas_before + [True] * new_datas},  # Update Datas
                 {"shapes": shapes},
             ],  # Update Layout
         )
@@ -1437,9 +1396,7 @@ def get_subplot_locations(rows, cols, invert=False):
     return list(product(range(1, rows + 1), range(1, cols + 1)))
 
 
-def figures_to_subplots(
-    figs, title=None, rows=None, cols=None, shared_data=False, **kwargs
-):
+def figures_to_subplots(figs, title=None, rows=None, cols=None, shared_data=False, **kwargs):
     """
     Combine multiple plotly figures into a single figure with subplots where the legend and/or colorbar can be shared between them (only if all 2D or all 1D)
     """
@@ -1488,15 +1445,9 @@ def figures_to_subplots(
         specify_rows=None,  # If only moving a subset of figs
         specify_cols=None,  # If only moving a subset of figs
     ):  # , leave_legend_space=False):
-        rows = (
-            max([l[0] for l in fig_locations]) if specify_rows is None else specify_rows
-        )
-        cols = (
-            max([l[1] for l in fig_locations]) if specify_cols is None else specify_cols
-        )
-        locations_axis_dict = {
-            loc: i + 1 for i, loc in enumerate(get_subplot_locations(rows, cols))
-        }
+        rows = max([l[0] for l in fig_locations]) if specify_rows is None else specify_rows
+        cols = max([l[1] for l in fig_locations]) if specify_cols is None else specify_cols
+        locations_axis_dict = {loc: i + 1 for i, loc in enumerate(get_subplot_locations(rows, cols))}
 
         if not match_colorscale:
             if cols == 1:
@@ -1521,10 +1472,7 @@ def figures_to_subplots(
             else:
                 raise NotImplementedError
             colorbar_locations = {
-                (r, c): loc
-                for (r, c), loc in zip(
-                    product(range(1, rows + 1), range(1, cols + 1)), product(ys, xs)
-                )
+                (r, c): loc for (r, c), loc in zip(product(range(1, rows + 1), range(1, cols + 1)), product(ys, xs))
             }
 
         # move data from each figure to subplots (matching colors)
@@ -1539,9 +1487,7 @@ def figures_to_subplots(
                 dest_fig.add_trace(data, row=row, col=col)
             if not match_colorscale:
                 colorbar_location = colorbar_locations[(row, col)]
-                dest_fig.update_layout(
-                    {f"coloraxis{axis_num}": fig.layout.coloraxis}
-                )  # Copy across most info
+                dest_fig.update_layout({f"coloraxis{axis_num}": fig.layout.coloraxis})  # Copy across most info
                 y, x = colorbar_location
                 dest_fig.update_layout(
                     {f"coloraxis{axis_num}_colorbar": dict(x=x, y=y, len=len_)}
@@ -1563,22 +1509,12 @@ def figures_to_subplots(
         specify_rows=None,
         specify_cols=None,
     ):
-        rows = (
-            max([l[0] for l in fig_locations]) if specify_rows is None else specify_rows
-        )
-        cols = (
-            max([l[1] for l in fig_locations]) if specify_cols is None else specify_cols
-        )
-        locations_axis_dict = {
-            loc: i + 1 for i, loc in enumerate(get_subplot_locations(rows, cols))
-        }
+        rows = max([l[0] for l in fig_locations]) if specify_rows is None else specify_rows
+        cols = max([l[1] for l in fig_locations]) if specify_cols is None else specify_cols
+        locations_axis_dict = {loc: i + 1 for i, loc in enumerate(get_subplot_locations(rows, cols))}
 
         # match the first figures colors if they were specified
-        if (
-            hasattr(source_figs[0].data[0], "line")
-            and source_figs[0].data[0].line.color
-            and match_colors
-        ):
+        if hasattr(source_figs[0].data[0], "line") and source_figs[0].data[0].line.color and match_colors:
             colors = [d.line.color for d in source_figs[0].data]
         else:
             colors = pc.DEFAULT_PLOTLY_COLORS
@@ -1588,9 +1524,7 @@ def figures_to_subplots(
             axis_num = locations_axis_dict[(row, col)]
             showlegend = True if axis_num == 1 and not no_legend else False
             for j, data in enumerate(fig.data):
-                color = colors[
-                    j % len(colors)
-                ]  # % to cycle through colors if more data than colors
+                color = colors[j % len(colors)]  # % to cycle through colors if more data than colors
                 if match_colors:
                     data.update(showlegend=showlegend, legendgroup=j, line_color=color)
                 dest_fig.add_trace(data, row=row, col=col)
@@ -1618,9 +1552,7 @@ def figures_to_subplots(
     def _copy_shapes(dest_fig, source_figs):
         """Copy shapes to dest_fig (updating xref and yref if multiple source figs)"""
         for i, fig in enumerate(source_figs):
-            num_str = (
-                f"{i + 1}" if i > 0 else ""
-            )  # Plotly names axes 'x', 'x2', 'x3' etc.
+            num_str = f"{i + 1}" if i > 0 else ""  # Plotly names axes 'x', 'x2', 'x3' etc.
             shapes = fig.layout.shapes
             for shape in shapes:
                 if shape.xref == "paper" and shape.yref == "paper":
@@ -1658,8 +1590,7 @@ def figures_to_subplots(
             rows=rows,
             cols=cols,
             subplot_titles=[
-                fig.layout.title.text if fig.layout.title.text else f"fig {i}"
-                for i, fig in enumerate(figs)
+                fig.layout.title.text if fig.layout.title.text else f"fig {i}" for i, fig in enumerate(figs)
             ],
             horizontal_spacing=horizontal_spacing,
             **kwargs,
@@ -1675,8 +1606,7 @@ def figures_to_subplots(
             rows=rows,
             cols=cols,
             subplot_titles=[
-                fig.layout.title.text if fig.layout.title.text else f"fig {i}"
-                for i, fig in enumerate(figs)
+                fig.layout.title.text if fig.layout.title.text else f"fig {i}" for i, fig in enumerate(figs)
             ],
             **kwargs,
         )
@@ -1687,9 +1617,7 @@ def figures_to_subplots(
             match_colors=shared_data,
         )
         full_fig.update_layout(
-            legend_title=figs[0].layout.legend.title
-            if figs[0].layout.legend.title
-            else "",
+            legend_title=figs[0].layout.legend.title if figs[0].layout.legend.title else "",
         )
     else:  # Some are 2D some are 1D  (Legends are removed, not easy to deal with...)
         horizontal_spacing = 0.15 if not shared_data else None
@@ -1697,8 +1625,7 @@ def figures_to_subplots(
             rows=rows,
             cols=cols,
             subplot_titles=[
-                fig.layout.title.text if fig.layout.title.text else f"fig {i}"
-                for i, fig in enumerate(figs)
+                fig.layout.title.text if fig.layout.title.text else f"fig {i}" for i, fig in enumerate(figs)
             ],
             horizontal_spacing=horizontal_spacing,
             **kwargs,
@@ -1706,11 +1633,7 @@ def figures_to_subplots(
         _move_2d_data(
             dest_fig=full_fig,
             source_figs=[fig for fig, is_2d in zip(figs, figs_2d) if is_2d is True],
-            fig_locations=[
-                location
-                for location, is_2d in zip(fig_locations, figs_2d)
-                if is_2d is True
-            ],
+            fig_locations=[location for location, is_2d in zip(fig_locations, figs_2d) if is_2d is True],
             match_colorscale=shared_data,
             specify_rows=rows,
             specify_cols=cols,
@@ -1718,11 +1641,7 @@ def figures_to_subplots(
         _move_1d_data(
             dest_fig=full_fig,
             source_figs=[fig for fig, is_2d in zip(figs, figs_2d) if is_2d is False],
-            fig_locations=[
-                location
-                for location, is_2d in zip(fig_locations, figs_2d)
-                if is_2d is False
-            ],
+            fig_locations=[location for location, is_2d in zip(fig_locations, figs_2d) if is_2d is False],
             match_colors=shared_data,
             no_legend=True,
             specify_rows=rows,
@@ -1847,9 +1766,7 @@ def path_to_factory_edge_nearest_pos(
                 return path
         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
 
-    logger.warning(
-        f"No path to edge of factory from {pos} aiming to be near {pos_to_be_near} found without collisions"
-    )
+    logger.warning(f"No path to edge of factory from {pos} aiming to be near {pos_to_be_near} found without collisions")
     return np.array([])
     # if max_delay_by_move_center > 0:
     #     logger.info(f'Adding delay to finding path to edge of factory')
@@ -1893,9 +1810,7 @@ def power_cost_of_path(path: PATH_TYPE, rubble: np.ndarray, unit_type) -> int:
     cost = 0
     for pos in path[1:]:
         rubble_at_pos = rubble[pos[0], pos[1]]
-        cost += math.floor(
-            unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_pos
-        )
+        cost += math.floor(unit_cfg.MOVE_COST + unit_cfg.RUBBLE_MOVEMENT_COST * rubble_at_pos)
     return cost
 
 
@@ -1952,9 +1867,7 @@ def calculate_valid_move_actions(
 
         # Not moving, must be valid in terms of move
         next_n = action[ACT_N]
-        if action[ACT_TYPE] != MOVE or (
-            action[ACT_TYPE] == MOVE and action[ACT_DIRECTION] == CENTER
-        ):
+        if action[ACT_TYPE] != MOVE or (action[ACT_TYPE] == MOVE and action[ACT_DIRECTION] == CENTER):
             # If won't exceed max len
             if step + next_n < max_len:
                 valid_actions.append(action)
