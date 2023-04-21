@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import abc
 from typing import TYPE_CHECKING, Tuple, List
 import numpy as np
 
@@ -28,6 +30,9 @@ from util import (
     MOVE_DIRECTIONS,
 )
 import util
+
+from unit_status import MineValues, MineActSubCategory
+from base_planners import BaseGeneralPlanner, BaseUnitPlanner
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager
@@ -455,22 +460,43 @@ class RubbleClearingRecommendation(Recommendation):
         self.best_coord = best_coord
 
 
-class RubbleClearingPlanner(Planner):
-    def __init__(self, master: MasterState):
-        self.master = master
 
-        self._factory_value_maps = {}
 
-    def __repr__(self):
-        return f"RubbleClearingPlanner[step={self.master.step}]"
+class ClearingPlanner(BaseGeneralPlanner, abc.ABC):
+    pass
 
-    def update_actions_of(self, unit: FriendlyUnitManager, unit_must_move: bool):
-        """Figure out what the next actions for unit should be"""
-        success = False
-        rec = self.recommend(unit)
-        if rec is not None:
-            success = self.carry_out(unit, rec, unit_must_move=unit_must_move)
-        return success
+
+class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
+    pass
+
+
+class LichenUnitPlanner(ClearingUnitPlanner):
+    def update_planned_actions(self):
+        pass
+
+    def create_new_actions(self):
+        pass
+
+
+class LichenPlanner(ClearingPlanner):
+    def update(self):
+        pass
+
+    def get_unit_planner(self, unit: FriendlyUnitManager) -> LichenUnitPlanner:
+        """Return a subclass of BaseUnitPlanner to actually update or create new actions for a single Unit"""
+        if unit.unit_id not in self.unit_planners:
+            unit_planner = LichenUnitPlanner(self.master, self, unit)
+            self.unit_planners[unit.unit_id] = unit_planner
+        return self.unit_planners[unit.unit_id]
+
+
+class RubbleUnitPlanner(ClearingUnitPlanner):
+    def update_planned_actions(self):
+        return self.create_new_actions()
+
+    def create_new_actions(self):
+        rec = self.recommend(self.unit)
+        return self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
 
     def recommend(self, unit: FriendlyUnitManager, *args, **kwargs):
         """
@@ -478,7 +504,7 @@ class RubbleClearingPlanner(Planner):
         """
         unit_factory = unit.factory_id
         if unit_factory is not None:
-            value_map = self._factory_value_maps[unit_factory]
+            value_map = self.planner._factory_value_maps[unit_factory]
             max_coord = np.unravel_index(np.argmax(value_map), value_map.shape)
             return RubbleClearingRecommendation(
                 best_coord=tuple(max_coord),
@@ -486,17 +512,17 @@ class RubbleClearingPlanner(Planner):
         return None
 
     def carry_out(
-        self,
-        unit: FriendlyUnitManager,
-        recommendation: RubbleClearingRecommendation,
-        unit_must_move: bool,
+            self,
+            unit: FriendlyUnitManager,
+            recommendation: RubbleClearingRecommendation,
+            unit_must_move: bool,
     ) -> bool:
         if unit.factory_id is not None:
             factory = self.master.factories.friendly[unit.factory_id]
             route_planner = RubbleRoutePlanner(
                 pathfinder=self.master.pathfinder,
                 rubble=self.master.maps.rubble,
-                rubble_value_map=self._factory_value_maps[factory.factory.unit_id],
+                rubble_value_map=self.planner._factory_value_maps[factory.factory.unit_id],
                 factory=factory,
                 unit=unit,
             )
@@ -505,6 +531,15 @@ class RubbleClearingPlanner(Planner):
         else:
             logger.error(f"in carry out, {unit.unit_id} has no factory_id")
             return False
+
+
+class RubbleClearingPlanner(ClearingPlanner):
+
+    def __init__(self, master: MasterState):
+        super().__init__(master)
+        self.master = master
+
+        self._factory_value_maps = {}
 
     def update(self, *args, **kwargs):
         """Called at beginning of turn, may want to clear caches"""
@@ -529,3 +564,12 @@ class RubbleClearingPlanner(Planner):
                 boundary_kernel_dropoff=0.7,
             )
             self._factory_value_maps[factory_manager.unit_id] = rubble_value.calculate_final_value()
+
+    # new
+    def get_unit_planner(self, unit: FriendlyUnitManager) -> RubbleUnitPlanner:
+        """Return a subclass of BaseUnitPlanner to actually update or create new actions for a single Unit"""
+        if unit.unit_id not in self.unit_planners:
+            unit_planner = RubbleUnitPlanner(self.master, self, unit)
+            self.unit_planners[unit.unit_id] = unit_planner
+        return self.unit_planners[unit.unit_id]
+

@@ -443,7 +443,8 @@ class ActionImplementer:
             success = self.mining_planner.get_unit_planner(unit).update_planned_actions()
             # success = self._mine_ice(unit, unit_must_move)
         elif desired_action.category == ActCategory.CLEAR and desired_action.sub_category == ClearActSubCategory.RUBBLE:
-            success = self._clear_rubble(unit, unit_must_move)
+            success = self.rubble_clearing_planner.get_unit_planner(unit).update_planned_actions()
+            # success = self._clear_rubble(unit, unit_must_move)
         elif desired_action.category == ActCategory.NOTHING:
             success = self._do_nothing(unit, unit_must_move)
         else:
