@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import enum
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Tuple, List, Optional, Union, Deque, TYPE_CHECKING, Dict
+from dataclasses import dataclass, field, InitVar
+from typing import Tuple, List, Optional, Union, Deque, TYPE_CHECKING, Dict, NamedTuple
 import numpy as np
 
 import util
@@ -12,6 +12,7 @@ from config import get_logger
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager, EnemyUnitManager
+    from master_state import MasterState
 
 logger = get_logger(__name__)
 
@@ -37,6 +38,8 @@ class AttackValues:
 
 @dataclass
 class MineValues:
+    ice: np.ndarray
+    ore: np.ndarray
     min_resource_value_cutoff: int = 20
     _resource_locations: List[Tuple[int, int]] = field(default_factory=list)
     _resource_types: List[int] = field(default_factory=list)
@@ -54,18 +57,15 @@ class MineValues:
     def resource_types(self) -> List[int]:
         return self._resource_types
 
-    @resource_types.setter
-    def resource_types(self, new_resource_types: List[int]) -> None:
-        self._resource_types = new_resource_types
-        self._resource_locations = self.calculate_resource_locations(new_resource_types)
-
     def calculate_resource_types(self, resource_locations: List[Tuple[int, int]]) -> List[int]:
         # Implement the logic to calculate resource types based on resource locations
-        pass
-
-    def calculate_resource_locations(self, resource_types: List[int]) -> List[Tuple[int, int]]:
-        # Implement the logic to calculate resource locations based on resource types
-        pass
+        r_types = []
+        for pos in resource_locations:
+            if self.ice[pos[0], pos[1]] > 0:
+                r_types.append(DestType.ICE)
+            elif self.ore[pos[0], pos[1]] > 0:
+                r_types.append(DestType.ORE)
+        return r_types
 
 
 @dataclass
@@ -83,11 +83,11 @@ class LichenValues:
     suicide_after: bool = False
 
 
-class DestType(enum.Enum):
-    FACTORY = 'factory'
-    ICE = 'ice'
-    ORE = 'ore'
-    ENEMY = 'enemy'
+class DestType(NamedTuple):
+    FACTORY: str = 'factory'
+    ICE: int = util.ICE
+    ORE: int = util.ORE
+    ENEMY: str = 'enemy'
 
 
 @dataclass
@@ -99,6 +99,7 @@ class TravelLocation:
 
 @dataclass
 class Status:
+    master: InitVar[MasterState]
     current_action: Actions
     previous_action: Actions
     last_action_update_step: int
@@ -114,10 +115,13 @@ class Status:
     action_queue_empty_ok: bool = False
     replan_required: bool = False
 
+    mine_values: MineValues = field(init=False)
     attack_values: AttackValues = field(default_factory=AttackValues)
-    mine_values: MineValues = field(default_factory=MineValues)
     rubble_values: RubbleValues = field(default_factory=RubbleValues)
     lichen_values: LichenValues = field(default_factory=LichenValues)
+
+    def __post_init__(self, master: MasterState):
+        self.mine_values: MineValues = MineValues(ice=master.maps.ice, ore=master.maps.ore)
 
 
     def _step_planned_actions(self) -> List[np.ndarray]:

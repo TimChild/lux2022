@@ -167,6 +167,7 @@ class FriendlyUnitManager(UnitManager):
         self.factory_id = factory_id
         self.master: MasterState = master_state
         self.status: Status = Status(
+            master=self.master,
             current_action=Actions.NOTHING,
             previous_action=Actions.NOTHING,
             last_action_update_step=0,
