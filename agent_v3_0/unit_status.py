@@ -3,18 +3,20 @@ from __future__ import annotations
 import enum
 from collections import deque
 from dataclasses import dataclass, field, InitVar
-from typing import Tuple, List, Optional, Union, Deque, TYPE_CHECKING, Dict, NamedTuple
+from typing import Tuple, List, Optional, Union, Deque, TYPE_CHECKING, Dict, NamedTuple, Any
 import numpy as np
 
 import util
-from actions_util import Actions
+import actions_util
+from collisions import UnitPaths
 from config import get_logger
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager, EnemyUnitManager
-    from master_state import MasterState
+    from master_state import MasterState, Maps
 
 logger = get_logger(__name__)
+
 
 @dataclass
 class AttackValues:
@@ -79,53 +81,149 @@ class RubbleValues:
 class LichenValues:
     target_position: Tuple[int, int] = None
     clear_radius: int = 7
-    clear_direction: str = 'out'
+    clear_direction: str = "out"
     suicide_after: bool = False
 
 
 class DestType(NamedTuple):
-    FACTORY: str = 'factory'
+    FACTORY: str = "factory"
     ICE: int = util.ICE
     ORE: int = util.ORE
-    ENEMY: str = 'enemy'
+    RUBBLE: str = "rubble"
+    LICHEN: str = "lichen"
+    UNIT: str = "unit"
 
 
 @dataclass
-class TravelLocation:
-    pos: Tuple[int, int] = None
-    dest_type: DestType = None
+class DestStatus:
+    pos: Tuple[int, int]
+    # Manhattan dist to dest
+    dist: int
+    # step of arrival where 0 is now
+    step: int
+    # What type of thing is there
+    type: DestType = None
+    # e.g. rubble, lichen
     amount: int = 0
+    # If  a unit or factory there
+    id_num: int = -1
+
+
+class ActCategory(enum.Enum):
+    """Which planner should be sent to"""
+
+    ATTACK = "attack"
+    MINE = "mine"
+    CLEAR = "clear"
+    RUN_AWAY = "runaway"
+    WAITING = "waiting"  # Waiting outside factory
+    NOTHING = "nothing"  # Nothing but could be anywhere
+
+
+class ActSubCategory(enum.Enum):
+    pass
+
+
+class MineActSubCategory(ActSubCategory):
+    ORE = "ore"
+    ICE = "ice"
+
+
+class ClearActSubCategory(ActSubCategory):
+    RUBBLE = "rubble"
+    LICHEN = "lichen"
+
+
+class AttackActSubCategory(ActSubCategory):
+    RETREAT_HOLD = "retreat hold"
+    ATTACK_HOLD = "attack hold"
+    TEMPORARY = "temporary"
+    CONSERVE = "conserve"
+
+
+@dataclass
+class ActStatus:
+    category: ActCategory = ActCategory.NOTHING
+    sub_category: Optional[ActSubCategory] = None
+
+
+def next_dest(path: np.ndarray, maps: Maps, unit_paths: UnitPaths) -> DestStatus:
+    """Find the next destination of this unit and return DestInfo"""
+    dest_step = actions_util.find_dest_step_from_step(path, 0, direction="forward")
+    pos = path[dest_step]
+    dist = util.manhattan(path[0], pos)
+    dest = DestStatus(pos, dist, dest_step)
+    if maps.ice[pos[0], pos[1]] > 0:
+        dest.type = DestType.ICE
+    elif maps.ore[pos[0], pos[1]] > 0:
+        dest.type = DestType.ORE
+    elif maps.factory_maps.all >= 0:
+        dest.type = DestType.FACTORY
+        dest.id_num = maps.factory_maps.all[pos[0], pos[1]]
+    elif maps.rubble[pos[0], pos[1]] > 0:
+        dest.type = DestType.RUBBLE
+        dest.amount = maps.rubble[pos[0], pos[1]]
+    elif maps.lichen[pos[0], pos[1]] > 0:
+        dest.type = DestType.LICHEN
+        dest.amount = maps.lichen[pos[0], pos[1]]
+    elif unit_paths.all[dest_step, pos[0], pos[1]] >= 0:
+        dest.type = DestType.UNIT
+        dest.id_num = unit_paths.all[dest_step, pos[0], pos[1]]
+    return dest
+
+
+@dataclass
+class TurnStatus:
+    """Holding things relevant to calculating actions this turn"""
+
+    next_dest: DestStatus = None
+    action_queue_empty_ok: bool = False
+    replan_required: bool = False
+
+    # I.e. next action not valid, plan should update (might be temporary while I get rid of old Actions)
+    recommend_plan_udpdate: Optional[bool] = None
+
+    def update(self, unit: FriendlyUnitManager, master: MasterState):
+        """Beginning of turn update"""
+        self.action_queue_empty_ok = False
+        self.replan_required = False
+        self.next_dest = next_dest(
+            unit.current_path(max_len=30, planned_actions=True), master.maps, master.pathfinder.unit_paths
+        )
 
 
 @dataclass
 class Status:
     master: InitVar[MasterState]
-    current_action: Actions
-    previous_action: Actions
+    current_action: ActStatus
+    previous_action: ActStatus
     last_action_update_step: int
     last_action_success: bool
     action_queue_valid_after_step: bool
-    planned_actions: List[np.ndarray] = field(default_factory=list)
-    _last_beginning_of_step_update: int = 0
+    planned_action_queue: List[np.ndarray] = field(default_factory=list)
 
-    next_dest: TravelLocation = None
+    # Storing things about processing of turn for unit (reset at beginning of turn)
+    turn_status: TurnStatus = field(default_factory=TurnStatus)
 
-    previous_locations: Deque[TravelLocation] = field(default_factory=deque)
-
-    action_queue_empty_ok: bool = False
-    replan_required: bool = False
+    previous_locations: Deque[DestStatus] = field(default_factory=deque)
 
     mine_values: MineValues = field(init=False)
     attack_values: AttackValues = field(default_factory=AttackValues)
     rubble_values: RubbleValues = field(default_factory=RubbleValues)
     lichen_values: LichenValues = field(default_factory=LichenValues)
 
+    # For debug use only
+    _debug_last_beginning_of_step_update: int = 0
+
     def __post_init__(self, master: MasterState):
         self.mine_values: MineValues = MineValues(ice=master.maps.ice, ore=master.maps.ore)
 
+    def update(self, unit: FriendlyUnitManager, master: MasterState):
+        """beginning of turn update"""
+        self.turn_status.update(unit, master)
 
     def _step_planned_actions(self) -> List[np.ndarray]:
-        new_actions = list(self.planned_actions.copy())
+        new_actions = list(self.planned_action_queue.copy())
         if len(new_actions) == 0:
             return []
         elif new_actions[0][util.ACT_N] > 1:
@@ -153,7 +251,7 @@ class Status:
         step = unit.master.step
         # print(unit.master.step, self._last_beginning_of_step_update)
         # Check if this is the same step as last update (i.e. running in my debugging env)
-        if step == self._last_beginning_of_step_update:
+        if step == self._debug_last_beginning_of_step_update:
             logger.warning(f"{unit.log_prefix}: Trying to update for same step again, not updating")
             return True
 
@@ -181,12 +279,12 @@ class Status:
             )
             new_planned = unit.start_of_turn_actions.copy()
             valid = False
-        self._last_beginning_of_step_update = step
-        self.planned_actions = new_planned
+        self._debug_last_beginning_of_step_update = step
+        self.planned_action_queue = new_planned
         self.action_queue_valid_after_step = valid
         return valid
 
-    def update_status(self, new_action: Actions, success: bool):
+    def update_status(self, new_action: ActStatus, success: bool):
         self.previous_action = self.current_action
         self.current_action = new_action
         self.last_action_success = success
@@ -194,5 +292,5 @@ class Status:
         # self.status.last_action_update_step = self.master.step
 
     def update_planned_actions(self, action_queue: List[np.ndarray]):
-        self.planned_actions = action_queue
+        self.planned_action_queue = action_queue
         self.action_queue_valid_after_step = True

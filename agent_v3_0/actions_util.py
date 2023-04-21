@@ -13,17 +13,17 @@ if TYPE_CHECKING:
     from factory_manager import FactoryManager
 
 
-class Actions(Enum):
-    MINE_ICE = "mine_ice"
-    MINE_ORE = "mine_ore"
-    CLEAR_RUBBLE = "clear_rubble"
-    ATTACK = "attack"
-    RUN_AWAY = "run_away"
-    NOTHING = "do_nothing"
-    CONTINUE_NO_CHANGE = "continue previous action no change"
-    CONTINUE_UPDATE = "continue previous action but update"
-    CONTINUE_RESOLVED = "continue the should act has been resolved"
-
+# class Actions(Enum):
+#     MINE_ICE = "mine_ice"
+#     MINE_ORE = "mine_ore"
+#     CLEAR_RUBBLE = "clear_rubble"
+#     ATTACK = "attack"
+#     RUN_AWAY = "run_away"
+#     NOTHING = "do_nothing"
+#     CONTINUE_NO_CHANGE = "continue previous action no change"
+#     CONTINUE_UPDATE = "continue previous action but update"
+#     CONTINUE_RESOLVED = "continue the should act has been resolved"
+#
 
 ###################### OLD stuff that is still minimally used
 
@@ -85,9 +85,7 @@ def split_actions_at_two_steps(actions, split_step1, split_step2):
     if split_step1 > split_step2:
         raise ValueError(f"{split_step1} > {split_step2}")
     before_split1, remaining = split_actions_at_step(actions, split_step1)
-    between_split1_and_split2, after_split2 = split_actions_at_step(
-        remaining, split_step2 - split_step1
-    )
+    between_split1_and_split2, after_split2 = split_actions_at_step(remaining, split_step2 - split_step1)
     return before_split1, between_split1_and_split2, after_split2
 
 
@@ -95,16 +93,12 @@ def replace_actions(existing_actions, start_step, end_step, new_actions):
     """Replace the actions between start step and end step with new actions
     Note: Does not replace the action at start step or end step, only between!
     Note: New actions may have different length"""
-    before, middle, after = split_actions_at_two_steps(
-        existing_actions, start_step, end_step
-    )
+    before, middle, after = split_actions_at_two_steps(existing_actions, start_step, end_step)
     new = before + new_actions + after
     return new
 
 
-def find_first_equal_pair_index(
-    arr: np.ndarray, direction: str = "forward"
-) -> Optional[int]:
+def find_first_equal_pair_index(arr: np.ndarray, direction: str = "forward") -> Optional[int]:
     """Find index of first value of consecutive pair, or index of last value of last consecutive pair"""
     shifted_arr = np.roll(arr, shift=-1, axis=0)
     equal_pairs = np.all(arr[:-1] == shifted_arr[:-1], axis=1)
@@ -168,11 +162,7 @@ def was_unit_moving_at_step(actions, step) -> bool:
         # logger.warning(f"Can't know if unit was moving to get to current step 0, first action is whether moving at step 1")
         return False
     act = action_at_step(actions, step)
-    if (
-        act is not None
-        and act[util.ACT_TYPE] == util.MOVE
-        and act[util.ACT_DIRECTION] != util.CENTER
-    ):
+    if act is not None and act[util.ACT_TYPE] == util.MOVE and act[util.ACT_DIRECTION] != util.CENTER:
         return True
     return False
 

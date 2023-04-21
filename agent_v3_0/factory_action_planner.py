@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from typing import Tuple, Dict, TYPE_CHECKING
 import copy
 
+from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory
 from lux.kit import GameState
 from lux.factory import Factory
 
 from factory_manager import FriendlyFactoryManager
-from actions_util import Actions
 
 from master_state import MasterState
 import util
@@ -47,10 +47,12 @@ class FactoryInfo:
     light_mining_ore: int
     light_mining_ice: int
     light_clearing_rubble: int
+    light_clearing_lichen: int
     light_attacking: int
     heavy_mining_ice: int
     heavy_mining_ore: int
     heavy_clearing_rubble: int
+    heavy_clearing_lichen: int
     heavy_attacking: int
 
     @classmethod
@@ -99,10 +101,12 @@ class FactoryInfo:
             light_mining_ore=len(current_light_actions.mining_ore),
             light_mining_ice=len(current_light_actions.mining_ice),
             light_clearing_rubble=len(current_light_actions.clearing_rubble),
+            light_clearing_lichen=len(current_light_actions.clearing_lichen),
             light_attacking=len(current_light_actions.attacking),
             heavy_mining_ice=len(current_heavy_actions.mining_ice),
             heavy_mining_ore=len(current_heavy_actions.mining_ore),
             heavy_clearing_rubble=len(current_heavy_actions.clearing_rubble),
+            heavy_clearing_lichen=len(current_heavy_actions.clearing_lichen),
             heavy_attacking=len(current_heavy_actions.attacking),
         )
 
@@ -132,19 +136,51 @@ class FactoryInfo:
             f"Removing {unit.unit_id} assignment of {unit.status.current_action} from factory_info count ({self.factory_id})"
         )
         if unit.unit_type == "HEAVY":
-            if unit.status.current_action == Actions.MINE_ICE:
+            if (
+                unit.status.current_action.category == ActCategory.MINE
+                and unit.status.current_action.sub_category == MineActSubCategory.ICE
+            ):
                 self.heavy_mining_ice -= 1
-            elif unit.status.current_action == Actions.MINE_ORE:
+            elif (
+                unit.status.current_action.category == ActCategory.MINE
+                and unit.status.current_action.sub_category == MineActSubCategory.ORE
+            ):
                 self.heavy_mining_ore -= 1
-            elif unit.status.current_action == Actions.ATTACK:
+            elif unit.status.current_action.category == ActCategory.ATTACK:
                 self.heavy_attacking -= 1
+            elif (
+                unit.status.current_action.category == ActCategory.CLEAR
+                and unit.status.current_action.sub_category == ClearActSubCategory.RUBBLE
+            ):
+                self.heavy_clearing_rubble -= 1
+            elif (
+                unit.status.current_action.category == ActCategory.CLEAR
+                and unit.status.current_action.sub_category == ClearActSubCategory.LICHEN
+            ):
+                self.heavy_clearing_lichen -= 1
         else:
-            if unit.status.current_action == Actions.MINE_ORE:
+            if (
+                unit.status.current_action.category == ActCategory.MINE
+                and unit.status.current_action.sub_category == MineActSubCategory.ICE
+            ):
+                self.light_mining_ice -= 1
+            elif (
+                unit.status.current_action.category == ActCategory.MINE
+                and unit.status.current_action.sub_category == MineActSubCategory.ORE
+            ):
                 self.light_mining_ore -= 1
-            elif unit.status.current_action == Actions.CLEAR_RUBBLE:
-                self.light_clearing_rubble -= 1
-            elif unit.status.current_action == Actions.ATTACK:
+            elif unit.status.current_action.category == ActCategory.ATTACK:
                 self.light_attacking -= 1
+            elif (
+                unit.status.current_action.category == ActCategory.CLEAR
+                and unit.status.current_action.sub_category == ClearActSubCategory.RUBBLE
+            ):
+                self.light_clearing_rubble -= 1
+            elif (
+                unit.status.current_action.category == ActCategory.CLEAR
+                and unit.status.current_action.sub_category == ClearActSubCategory.LICHEN
+            ):
+                self.light_clearing_lichen -= 1
 
     @staticmethod
     def _get_connected_zeros(rubble: np.ndarray, factory_pos: util.POS_TYPE):

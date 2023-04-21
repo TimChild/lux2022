@@ -6,18 +6,17 @@ from typing import Iterable, Dict, Tuple, Union, List, Optional, TYPE_CHECKING
 
 import numpy as np
 
-import actions_util, util
-from actions_util import Actions
+import actions_util
+import util
 from master_state import Maps, AllUnits
 from new_path_finder import Pather
 
-from unit_manager import UnitManager, FriendlyUnitManager, EnemyUnitManager
 from config import get_logger
 
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    pass
+    from unit_manager import UnitManager, FriendlyUnitManager, EnemyUnitManager
 
 
 def ensure_path_includes_at_least_next_step(path):
@@ -120,7 +119,7 @@ class CollisionResolver:
         self.max_step = max_step
 
         # Calculate some things
-        self.unit_actions = unit.status.planned_actions
+        self.unit_actions = unit.status.planned_action_queue
         self.unit_path = self.unit.current_path(max_len=max_step, planned_actions=True)
 
     def _collision_while_travelling(self, collision: Collision) -> bool:
@@ -206,8 +205,14 @@ class CollisionResolver:
             )
         return new_path
 
-    def _resolve_travel_collision(self, collision: Collision) -> Actions:
-        """Repath to later point on path (ideally destination)"""
+    def _resolve_travel_collision(self, collision: Collision) -> bool:
+        """Repath to later point on path (ideally destination)
+
+        Note: Might want to replace this after planners are working better
+
+        Returns:
+            bool: whether unit.status.turn_status.recommend_plan_update has been updated
+        """
         last_step, next_dest_or_last_step = self._next_dest_or_last_step(collision.step)
         first_step, prev_dest_or_first_step = self._previous_dest_or_start_step(collision.step)
         logger.debug(f"repathing from {prev_dest_or_first_step} to {next_dest_or_last_step}")
@@ -215,21 +220,31 @@ class CollisionResolver:
             logger.error(
                 f"first or last dest was same as collision pos next={next_dest_or_last_step} prev={prev_dest_or_first_step} collision step={collision.step}"
             )
-            return Actions.CONTINUE_UPDATE
+            self.unit.status.turn_status.recommend_plan_udpdate = True
+            return True
         new_path = self._make_path(first_step, prev_dest_or_first_step, next_dest_or_last_step)
 
         if len(new_path) == 0:
             logger.warning(
                 f"failed to find new path from {prev_dest_or_first_step} to {next_dest_or_last_step} starting step {first_step}"
             )
-            return Actions.CONTINUE_UPDATE
+            self.unit.status.turn_status.recommend_plan_udpdate = True
+            return True
 
         new_actions = util.path_to_actions(new_path)
         self._replace_unit_actions(first_step, last_step, new_actions)
-        return Actions.CONTINUE_RESOLVED
+        self.unit.status.turn_status.recommend_plan_udpdate = False
+        return True
 
-    def _resolve_factory_collision(self, collision: Collision) -> Actions:
-        """Repath to new spot on factory if possible"""
+    def _resolve_factory_collision(self, collision: Collision) -> bool:
+        """Repath to new spot on factory if possible
+
+        Note: Might want to replace this after planners are working better
+
+        Returns:
+            bool: whether unit.status.turn_status.recommend_plan_update has been updated
+        """
+
         first_step, prev_dest_or_first_step = self._previous_dest_or_start_step(collision.step)
         factory_num = self.maps.factory_maps.all[collision.pos[0], collision.pos[1]]
         if factory_num < 0:
@@ -243,22 +258,30 @@ class CollisionResolver:
             logger.warning(
                 f"failed to find new path from {prev_dest_or_first_step} to factory_{factory_num} starting step {first_step}"
             )
-            return Actions.CONTINUE_UPDATE
+            self.unit.status.turn_status.recommend_plan_udpdate = True
+            return True
 
         new_actions = util.path_to_actions(new_path)
         self._replace_unit_actions(first_step, collision.step + 1, new_actions)
-        return Actions.CONTINUE_RESOLVED
+        self.unit.status.turn_status.recommend_plan_udpdate = False
+        return True
 
-    def _resolve_destination_collision(self, collision: Collision) -> Actions:
+    def _resolve_destination_collision(self, collision: Collision) -> bool:
         """Ideally repath to new nearby resource or something"""
         logger.info(f"resolving conflict at destination required but not implemented")
-        return Actions.CONTINUE_UPDATE
+        self.unit.status.turn_status.recommend_plan_udpdate = True
+        return True
 
-    def resolve(self) -> Actions:
+    def resolve(self) -> bool:
         """If there is a collision with a friendly or enemy coming up, re-path just the part that avoids the collision
         1. Moving from a-b
         2. Collision on factory
         3. Collision on destination (resource/rubble)
+
+        Note: Might want to remove this once planners are working
+
+        Returns:
+            bool: Has unit.status.turn_status been updated
         """
         # Note: Can only resolve 1 collision at the moment, because the change to the action queue will screw up the
         # collision.step etc... So just solving  the nearest collision (if there are multiple, this can get called a
@@ -274,25 +297,28 @@ class CollisionResolver:
 
         if nearest_collision is None:
             logger.error(f"No collisions to solve in {self.max_step} step")
-            return Actions.CONTINUE_UPDATE
+            self.unit.status.turn_status.recommend_plan_udpdate = True
+            return True
 
         logger.info(
             f"resolving collision between {self.unit.unit_id} and {nearest_collision.unit_id} at {nearest_collision.pos} at step {nearest_collision.step}"
         )
-        suggested_action = Actions.CONTINUE_UPDATE
         if self._collision_while_travelling(nearest_collision):
-            suggested_action = self._resolve_travel_collision(nearest_collision)
+            status_updated = self._resolve_travel_collision(nearest_collision)
         elif self._collision_on_factory(nearest_collision):
-            suggested_action = self._resolve_factory_collision(nearest_collision)
+            status_updated = self._resolve_factory_collision(nearest_collision)
         elif self._collision_at_destination(nearest_collision):
-            suggested_action = self._resolve_destination_collision(nearest_collision)
+            status_updated = self._resolve_destination_collision(nearest_collision)
         else:
-            suggested_action = Actions.CONTINUE_UPDATE
-        if suggested_action != Actions.CONTINUE_RESOLVED:
+            self.unit.status.turn_status.recommend_plan_udpdate = True
+            status_updated = True
+        if status_updated is False:
             logger.info(f"Failed to solve collision {nearest_collision}, route still needs updating")
-            return Actions.CONTINUE_UPDATE
+            self.unit.status.turn_status.recommend_plan_udpdate = True
+            return True
         logger.info(f"Nearest collisions solved, can continue")
-        return Actions.CONTINUE_RESOLVED
+        self.unit.status.turn_status.recommend_plan_udpdate = False
+        return True
 
 
 @dataclass

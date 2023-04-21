@@ -3,8 +3,8 @@ from typing import TYPE_CHECKING, Dict
 
 import numpy as np
 
+from unit_status import ActCategory
 from config import get_logger
-from actions_util import Actions
 import actions_util
 import util
 
@@ -49,16 +49,11 @@ class ActionDecider:
             logger.debug(f"low power ({self.unit.power}) returning to factory")
             return "factory"
         else:
-            logger.debug(
-                "No good intercept, but enough power to stay out, won't do anything"
-            )
+            logger.debug("No good intercept, but enough power to stay out, won't do anything")
             return "nothing"
 
     def decide_action_with_enemy(self) -> str:
-        if (
-            self.best_power_back_to_factory
-            < -self.unit.unit_config.BATTERY_CAPACITY * 0.2
-        ):
+        if self.best_power_back_to_factory < -self.unit.unit_config.BATTERY_CAPACITY * 0.2:
             return self.decide_action_insufficient_power()
         else:
             return self.decide_action_attack()
@@ -116,17 +111,17 @@ class ActionExecutor:
         # Probably we have more power if near max capacity, then can ignore enemies in pathing
         avoid_other_light = (
             False
-            if self.unit.unit_type == "HEAVY"
-            or self.unit.power > 0.8 * self.unit.unit_config.BATTERY_CAPACITY
+            if self.unit.unit_type == "HEAVY" or self.unit.power > 0.8 * self.unit.unit_config.BATTERY_CAPACITY
             else True
         )
         avoid_other_heavy = (
             False
-            if self.unit.unit_type == "HEAVY"
-            and self.unit.power > 0.8 * self.unit.unit_config.BATTERY_CAPACITY
+            if self.unit.unit_type == "HEAVY" and self.unit.power > 0.8 * self.unit.unit_config.BATTERY_CAPACITY
             else True
         )
-        logger.debug(f'avoid_light = {avoid_other_light}, avoid_heavy = {avoid_other_heavy}, ignoring {self.best_enemy_unit.unit_id}')
+        logger.debug(
+            f"avoid_light = {avoid_other_light}, avoid_heavy = {avoid_other_heavy}, ignoring {self.best_enemy_unit.unit_id}"
+        )
         cm = self.master.pathfinder.generate_costmap(
             self.unit,
             ignore_id_nums=[self.best_enemy_unit.id_num],
@@ -136,9 +131,7 @@ class ActionExecutor:
             enemy_nearby_start_cost=0,
         )
         #  Path to enemy  (with larger margin to allow for navigating around things better)
-        path_to_enemy = self.master.pathfinder.fast_path(
-            self.unit.pos, self.best_intercept, costmap=cm, margin=5
-        )
+        path_to_enemy = self.master.pathfinder.fast_path(self.unit.pos, self.best_intercept, costmap=cm, margin=5)
         # if self.unit.unit_id == "unit_27":
         #     fig = util.show_map_array(cm)
         #     if len(path_to_enemy) > 0:
@@ -176,16 +169,12 @@ class ActionExecutor:
 
         if len(path_to_factory) > 0:
             self.master.pathfinder.append_path_to_actions(self.unit, path_to_factory)
-            power_required = (
-                self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
-            )
+            power_required = self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
             if util.num_turns_of_actions(self.unit.action_queue) < 2:
                 if self.unit.factory.short_term_power < power_required:
-                    logger.info(f'Probably not enough power at factory, skipping adding power pickup')
+                    logger.info(f"Probably not enough power at factory, skipping adding power pickup")
                     return True
-            logger.debug(
-                f"Adding power pickup back at factory. Aiming to pickup {power_required}"
-            )
+            logger.debug(f"Adding power pickup back at factory. Aiming to pickup {power_required}")
             self.unit.action_queue.append(self.unit.pickup(util.POWER, power_required))
             return True
         else:
@@ -219,21 +208,15 @@ class BestEnemyUnit:
 
     def calculate_power_at_enemy_and_factory(self, path_to_enemy, path_to_factory):
         power_now = self.unit.power_remaining(self.master.maps.rubble)
-        cost_to_enemy = util.power_cost_of_path(
-            path_to_enemy, self.master.maps.rubble, self.unit.unit_type
-        )
-        cost_to_factory = util.power_cost_of_path(
-            path_to_factory, self.master.maps.rubble, self.unit.unit_type
-        )
+        cost_to_enemy = util.power_cost_of_path(path_to_enemy, self.master.maps.rubble, self.unit.unit_type)
+        cost_to_factory = util.power_cost_of_path(path_to_factory, self.master.maps.rubble, self.unit.unit_type)
         power_at_enemy = power_now - cost_to_enemy
         power_back_to_factory = power_at_enemy - cost_to_factory
 
         return power_at_enemy, power_back_to_factory
 
     def likely_enemy_power(self, enemy_unit: EnemyUnitManager, path_to_enemy) -> int:
-        actions_to_step = actions_util.split_actions_at_step(
-            enemy_unit.action_queue, len(path_to_enemy)
-        )[0]
+        actions_to_step = actions_util.split_actions_at_step(enemy_unit.action_queue, len(path_to_enemy))[0]
         turns_of_actions = util.num_turns_of_actions(actions_to_step)
         action_cost = util.power_cost_of_actions(
             enemy_unit.start_of_turn_pos,
@@ -246,9 +229,7 @@ class BestEnemyUnit:
             action_cost += extra_turns * enemy_unit.unit_config.MOVE_COST
         return enemy_unit.power - action_cost
 
-    def update_best_enemy_unit(
-        self, enemy_unit, intercept, power_at_enemy, power_back_to_factory
-    ):
+    def update_best_enemy_unit(self, enemy_unit, intercept, power_at_enemy, power_back_to_factory):
         self.best_enemy_unit = enemy_unit
         self.best_intercept = intercept
         self.best_power_at_enemy = power_at_enemy
@@ -279,20 +260,13 @@ class BestEnemyUnit:
                     logger.info(f"{self.unit.log_prefix} No intercepts with enemy")
                 break
 
-            enemy_num = self.enemy_location_ids[
-                nearest_intercept[0], nearest_intercept[1]
-            ]
+            enemy_num = self.enemy_location_ids[nearest_intercept[0], nearest_intercept[1]]
             enemy_id = f"unit_{enemy_num}"
             enemy_unit = self.master.units.enemy.get_unit(enemy_id)
             if enemy_unit is None:
-                logger.error(
-                    f"{self.unit.log_prefix}: Found {enemy_id} as nearest enemy, but not in enemy units"
-                )
+                logger.error(f"{self.unit.log_prefix}: Found {enemy_id} as nearest enemy, but not in enemy units")
                 break
-            elif (
-                enemy_id in self.targeted_enemies
-                and self.targeted_enemies[enemy_id].unit_id != self.unit.unit_id
-            ):
+            elif enemy_id in self.targeted_enemies and self.targeted_enemies[enemy_id].unit_id != self.unit.unit_id:
                 logger.debug(
                     f"{self.unit.unit_id} not targetting {enemy_id} because its already targeted by {self.targeted_enemies[enemy_id].unit_id}"
                 )
@@ -300,9 +274,7 @@ class BestEnemyUnit:
                 continue
             enemy_unit: EnemyUnitManager
 
-            path_to_enemy = self.master.pathfinder.fast_path(
-                self.unit.pos, nearest_intercept, costmap=cm
-            )
+            path_to_enemy = self.master.pathfinder.fast_path(self.unit.pos, nearest_intercept, costmap=cm)
             if len(path_to_enemy) == 0:
                 logger.debug(f"No path to {enemy_id}")
                 self.remove_current_enemy(enemy_num)
@@ -320,17 +292,13 @@ class BestEnemyUnit:
             (
                 power_at_enemy,
                 power_back_to_factory,
-            ) = self.calculate_power_at_enemy_and_factory(
-                path_to_enemy, path_to_factory
-            )
+            ) = self.calculate_power_at_enemy_and_factory(path_to_enemy, path_to_factory)
 
             # Is this a good enemy to attack
             likely_enemy_power = self.likely_enemy_power(enemy_unit, path_to_enemy)
             if likely_enemy_power < power_at_enemy:
                 if power_back_to_factory > 0:
-                    logger.info(
-                        f"Found good enemy unit to intercept {enemy_unit.unit_id}, doing that"
-                    )
+                    logger.info(f"Found good enemy unit to intercept {enemy_unit.unit_id}, doing that")
                     self.update_best_enemy_unit(
                         enemy_unit,
                         nearest_intercept,
@@ -339,9 +307,7 @@ class BestEnemyUnit:
                     )
                     break
                 else:
-                    logger.debug(
-                        f"Found possible enemy unit to intercept {enemy_unit.unit_id}, looking for better"
-                    )
+                    logger.debug(f"Found possible enemy unit to intercept {enemy_unit.unit_id}, looking for better")
                     self.update_best_enemy_unit(
                         enemy_unit,
                         nearest_intercept,
@@ -354,13 +320,9 @@ class BestEnemyUnit:
             # Remove that unit from intercepts and try again
             self.remove_current_enemy(enemy_num)
         else:
-            logger.warning(
-                f"{self.unit.log_prefix} Checked 20 enemy units, breaking loop now"
-            )
+            logger.warning(f"{self.unit.log_prefix} Checked 20 enemy units, breaking loop now")
         if self.best_enemy_unit is None:
-            logger.info(
-                f"failed to find a good unit to attack for {self.unit.unit_id} from {self.unit.pos}"
-            )
+            logger.info(f"failed to find a good unit to attack for {self.unit.unit_id} from {self.unit.pos}")
 
 
 class Attack:
@@ -373,9 +335,7 @@ class Attack:
         self.unit = unit
         self.master = master
         self.targeted_enemies = targeted_enemies
-        self.targeted_enemies_reversed = {
-            unit.unit_id: enemy_id for enemy_id, unit in targeted_enemies.items()
-        }
+        self.targeted_enemies_reversed = {unit.unit_id: enemy_id for enemy_id, unit in targeted_enemies.items()}
 
         self.enemy_location_ids = None
         self.best_enemy_unit = None
@@ -405,18 +365,14 @@ class Attack:
 
     def find_best_enemy_unit(self):
         # Instantiate BestEnemyUnit class and call find_best_enemy_unit method
-        best_enemy_unit_finder = BestEnemyUnit(
-            self.master, self.unit, self.enemy_location_ids, self.targeted_enemies
-        )
+        best_enemy_unit_finder = BestEnemyUnit(self.master, self.unit, self.enemy_location_ids, self.targeted_enemies)
         best_enemy_unit_finder.find_best_enemy_unit()
 
         # Update the Attack class attributes with the results
         self.best_enemy_unit = best_enemy_unit_finder.best_enemy_unit
         self.best_intercept = best_enemy_unit_finder.best_intercept
         self.best_power_at_enemy = best_enemy_unit_finder.best_power_at_enemy
-        self.best_power_back_to_factory = (
-            best_enemy_unit_finder.best_power_back_to_factory
-        )
+        self.best_power_back_to_factory = best_enemy_unit_finder.best_power_back_to_factory
 
     def decide_action(self) -> str:
         action_decider = ActionDecider(
@@ -430,9 +386,7 @@ class Attack:
         return action_decider.decide_action()
 
     def execute_action(self, what_do: str) -> bool:
-        action_executor = ActionExecutor(
-            self.unit, self.master, what_do, self.best_enemy_unit, self.best_intercept
-        )
+        action_executor = ActionExecutor(self.unit, self.master, what_do, self.best_enemy_unit, self.best_intercept)
         return action_executor.execute_action()
 
     def continue_attack(self) -> bool:
@@ -446,18 +400,11 @@ class Attack:
         self.best_enemy_unit = enemy
         self.find_interceptable_enemy_locations(specific_id_num=enemy.id_num)
         enemy_map = (self.enemy_location_ids >= 0).astype(int)
-        nearest_intercept = util.nearest_non_zero(
-            enemy_map, self.unit.start_of_turn_pos
-        )
+        nearest_intercept = util.nearest_non_zero(enemy_map, self.unit.start_of_turn_pos)
 
         # If new intercept, maybe can get there better
         if nearest_intercept is not None:
-            intercept_valid = (
-                self.master.maps.valid_friendly_move[
-                    nearest_intercept[0], nearest_intercept[1]
-                ]
-                > 0
-            )
+            intercept_valid = self.master.maps.valid_friendly_move[nearest_intercept[0], nearest_intercept[1]] > 0
             if not intercept_valid:
                 # probably on own factory
                 return False
@@ -467,10 +414,10 @@ class Attack:
                 )
                 self.best_intercept = nearest_intercept
                 return self.execute_action("attack")
-        elif len(self.unit.status.planned_actions) > 0:
+        elif len(self.unit.status.planned_action_queue) > 0:
             logger.info(f"didn't find new intercept for enemy, continuing with previous path")
             # Carry on, enemy will probably pop up again
-            self.unit.action_queue = self.unit.status.planned_actions.copy()
+            self.unit.action_queue = self.unit.status.planned_action_queue.copy()
             return True
         else:
             logger.info(f"no intercept with enemy, and no planned actions, lost enemy, returning false")
@@ -506,27 +453,19 @@ class CombatPlanner:
     def update(self):
         keys_to_pop = []
         for enemy_id, friendly_unit in self.targeted_enemies.items():
-            if friendly_unit.status.current_action != Actions.ATTACK:
+            act_status = friendly_unit.status.current_action
+            if act_status.category != ActCategory.ATTACK:
                 keys_to_pop.append(enemy_id)
-                logger.info(
-                    f"{self.targeted_enemies[enemy_id].unit_id} no longer targeting {enemy_id}"
-                )
+                logger.info(f"{self.targeted_enemies[enemy_id].unit_id} no longer targeting {enemy_id}")
         for k in keys_to_pop:
             self.targeted_enemies.pop(k)
 
     def attack(self, unit: FriendlyUnitManager) -> bool:
         attack_instance = Attack(unit, self.master, self.targeted_enemies)
         success = attack_instance.perform_attack()
-        if (
-            success
-            and attack_instance.best_enemy_unit is not None
-            and attack_instance.action_executed == "attack"
-        ):
+        if success and attack_instance.best_enemy_unit is not None and attack_instance.action_executed == "attack":
             enemy_id = attack_instance.best_enemy_unit.unit_id
-            if (
-                enemy_id in self.targeted_enemies
-                and self.targeted_enemies[enemy_id].unit_id != unit.unit_id
-            ):
+            if enemy_id in self.targeted_enemies and self.targeted_enemies[enemy_id].unit_id != unit.unit_id:
                 logger.warning(
                     f"{enemy_id} already targeted by {self.targeted_enemies[enemy_id].unit_id}, now {unit.unit_id} is targeting too"
                 )
@@ -722,9 +661,7 @@ class CombatPlanner:
             self.master.pathfinder.append_path_to_actions(unit, path_to_factory)
             return True
         else:
-            cm = self.master.pathfinder.generate_costmap(
-                unit, enemy_light=False, enemy_heavy=False
-            )
+            cm = self.master.pathfinder.generate_costmap(unit, enemy_light=False, enemy_heavy=False)
             path_to_factory = util.calc_path_to_factory(
                 self.master.pathfinder,
                 costmap=cm,
@@ -732,9 +669,7 @@ class CombatPlanner:
                 factory_loc=self.master.factories.friendly[unit.factory_id].factory_loc,
             )
             if len(path_to_factory) > 0:
-                logger.warning(
-                    f"{unit.log_prefix}: Path to factory only after allowing collisions with enemy"
-                )
+                logger.warning(f"{unit.log_prefix}: Path to factory only after allowing collisions with enemy")
                 self.master.pathfinder.append_path_to_actions(unit, path_to_factory)
                 return True
             logger.error(f"{unit.log_prefix}: No path to factory")

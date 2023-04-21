@@ -492,7 +492,7 @@ def count_connected_values(arr: np.ndarray, value: int = 0) -> np.ndarray:
     return count_arr
 
 
-@functools.lru_cache(maxsize=128)
+@functools.lru_cache(maxsize=500)
 def manhattan_kernel(max_dist: int) -> np.ndarray:
     """
     Make a kernel with manhattan distance weightings

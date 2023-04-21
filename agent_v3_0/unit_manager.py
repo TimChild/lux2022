@@ -7,12 +7,11 @@ import copy
 
 from luxai_s2.unit import UnitCargo
 
-from unit_status import Status
+from unit_status import Status, ActStatus
 from lux.unit import Unit
 from lux.config import UnitConfig
 
 import util
-from actions_util import Actions
 
 from config import get_logger
 from master_state import MasterState
@@ -168,8 +167,8 @@ class FriendlyUnitManager(UnitManager):
         self.master: MasterState = master_state
         self.status: Status = Status(
             master=self.master,
-            current_action=Actions.NOTHING,
-            previous_action=Actions.NOTHING,
+            current_action=ActStatus(),
+            previous_action=ActStatus(),
             last_action_update_step=0,
             last_action_success=True,
             action_queue_valid_after_step=True,
@@ -179,7 +178,7 @@ class FriendlyUnitManager(UnitManager):
     @property
     def log_prefix(self) -> str:
         log_prefix = super().log_prefix
-        log_prefix += f"({self.status.current_action}):\n\t\t\t"
+        log_prefix += f"({self.status.current_action.category}:{self.status.current_action.sub_category}):\n\t\t\t"
         return log_prefix
 
     def update(self, unit: Unit):
@@ -191,10 +190,10 @@ class FriendlyUnitManager(UnitManager):
     def current_path(self, max_len: int = 10, actions=None, planned_actions=True) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
         if actions is None:
-            actions = self.status.planned_actions if planned_actions else self.action_queue
+            actions = self.status.planned_action_queue if planned_actions else self.action_queue
         return super().current_path(max_len=max_len, actions=actions)
 
-    def update_status(self, new_action, success: bool):
+    def update_status(self, new_action: ActStatus, success: bool):
         """Update unit status with new action"""
         self.status.update_status(new_action, success)
 
@@ -207,7 +206,7 @@ class FriendlyUnitManager(UnitManager):
     ) -> util.ValidActionsMoving:
         """Calculate the moving actions based on the planned actions queue"""
         if planned_actions:
-            actions = self.status.planned_actions
+            actions = self.status.planned_action_queue
         else:
             actions = self.action_queue
         return self._valid_moving_actions(costmap, self.start_of_turn_pos, actions, max_len, ignore_repeat)

@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 
 import util
-from actions_util import Actions
 from collisions import CollisionResolver, AllCollisionsForUnit, UnitPaths, calculate_collisions
 from decide_actions import ActionDecider, ActReasons, ConsiderActInfo, should_unit_consider_acting
 from config import get_logger
@@ -21,6 +20,8 @@ from rubble_clearing_planner import RubbleClearingPlanner
 from combat_planner import CombatPlanner
 from unit_manager import FriendlyUnitManager, UnitManager
 from action_validation import ValidActionCalculator, valid_action_space
+from decide_actions import ActStatus
+from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, AttackActSubCategory
 
 logger = get_logger(__name__)
 
@@ -298,7 +299,13 @@ class SingleUnitActionPlanner:
                         unit_must_move = True
         return unit_must_move
 
-    def _resolve_continue_actions(self) -> Actions:
+    def _attempt_resolve_continue_actions(self) -> bool:
+        """
+        Note: probably remove this once action planners are working
+
+        Returns:
+            bool: unti.status.turn_status updated
+        """
         if self.unit_info.act_info.reason == ActReasons.COLLISION_WITH_FRIENDLY:
             collision_resolver = CollisionResolver(
                 self.unit,
@@ -308,10 +315,11 @@ class SingleUnitActionPlanner:
                 collisions=self.collision_info,
                 max_step=self.collision_resolve_max_step,
             )
-            resolve_action_status = collision_resolver.resolve()
-            return resolve_action_status
+            status_updated = collision_resolver.resolve()
+            return status_updated
         logger.info(f"Don't know how to resolve {self.unit_info.act_info.reason} without calling the planner again")
-        return Actions.CONTINUE_UPDATE
+        self.unit.status.turn_status.recommend_plan_udpdate = True
+        return True
 
     def _force_moving_if_necessary(self, unit_must_move: bool) -> bool:
         success = True
@@ -340,7 +348,7 @@ class SingleUnitActionPlanner:
         unit = self.unit
 
         logger.info(
-            f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, current_action = {unit.status.current_action}"
+            f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, current_action = {unit.status.current_action.category}:{unit.status.current_action.sub_category}"
         )
 
         # Is current location in existing paths for next step or equal or higher enemy adjacent
@@ -352,22 +360,23 @@ class SingleUnitActionPlanner:
         success = False
         do_update = True
 
+        # TODO: Replace this chunk once planners are able to handle this stuff
         # If no update required, return now (queue not updated, so no changes will happen)
-        if desired_action in [Actions.CONTINUE_NO_CHANGE]:
+        if desired_action is None and unit.status.turn_status.recommend_plan_udpdate is False:
             if not unit_must_move or unit_must_move and unit.next_action_is_move():
                 logger.info(f"No update of actions necessary")
                 do_update = False
             else:
                 logger.info(f"action change required to move on next step")
-                desired_action = unit.status.current_action
+                unit.status.turn_status.recommend_plan_udpdate = True
                 do_update = True
-        elif desired_action == Actions.CONTINUE_UPDATE:
-            resolve_action_status = self._resolve_continue_actions()
-            desired_action = unit.status.current_action
-            if resolve_action_status == Actions.CONTINUE_UPDATE:
-                do_update = True
-            elif resolve_action_status == Actions.CONTINUE_RESOLVED:
+        elif desired_action is None and unit.status.turn_status.recommend_plan_udpdate is True:
+            status_updated = self._attempt_resolve_continue_actions()
+            if unit.status.turn_status.recommend_plan_udpdate is False:
                 do_update = False
+            else:
+                do_update = True
+            desired_action = unit.status.current_action
 
         # Do or redo the planning for this unit if necessary
         if do_update:
@@ -417,29 +426,29 @@ class ActionImplementer:
     def implement_desired_action(
         self,
         unit: FriendlyUnitManager,
-        desired_action: Actions,
+        desired_action: ActStatus,
         unit_must_move: bool,
     ):
-        if desired_action == Actions.ATTACK:
+        if desired_action.category == ActCategory.ATTACK:
             success = self.combat_planner.attack(unit)
-        elif desired_action == Actions.RUN_AWAY:
+        elif desired_action.category == ActCategory.RUN_AWAY:
             success = self.combat_planner.run_away(unit)
-        elif desired_action == Actions.MINE_ORE:
+        elif desired_action.category == ActCategory.MINE and desired_action.sub_category == MineActSubCategory.ORE:
             success = self._mine_ore(unit, unit_must_move)
-        elif desired_action == Actions.MINE_ICE:
+        elif desired_action.category == ActCategory.MINE and desired_action.sub_category == MineActSubCategory.ICE:
             success = self._mine_ice(unit, unit_must_move)
-        elif desired_action == Actions.CLEAR_RUBBLE:
+        elif desired_action.category == ActCategory.CLEAR and desired_action.sub_category == ClearActSubCategory.RUBBLE:
             success = self._clear_rubble(unit, unit_must_move)
-        elif desired_action == Actions.NOTHING:
+        elif desired_action.category == ActCategory.NOTHING:
             success = self._do_nothing(unit, unit_must_move)
         else:
-            logger.error(f"{desired_action} not understood as an action")
+            logger.error(f"{desired_action.category} not understood as an action")
             success = False
 
         if success:
-            unit.update_status(new_action=desired_action, success=success)
+            pass
         else:
-            unit.update_status(new_action=Actions.NOTHING, success=False)
+            unit.update_status(new_action=ActStatus(), success=False)
         return success
 
     def _mine_ore(self, unit, unit_must_move) -> bool:
@@ -464,12 +473,12 @@ class ActionImplementer:
         return success
 
     def _do_nothing(self, unit, unit_must_move) -> bool:
-        logger.debug(f"Setting action queue to empty to do action {Actions.NOTHING}")
+        logger.debug(f"Setting action queue to empty to do action {ActCategory.NOTHING}")
         unit.action_queue = []
         success = True
         if unit_must_move:
             if not unit.factory_id:
-                logger.error(f"Unit must move, but has action {Actions.NOTHING} and no factory assigned")
+                logger.error(f"Unit must move, but has action {ActCategory.NOTHING} and no factory assigned")
             else:
                 success = self._handle_nothing_with_must_move(unit)
         return success
@@ -718,7 +727,7 @@ class MultipleUnitActionPlanner:
 
     def _should_real_actions_update(self, unit: FriendlyUnitManager, unit_info: UnitInfo, units_to_act: UnitsToAct):
         current_unit_actions = unit.start_of_turn_actions
-        planned_actions = unit.status.planned_actions
+        planned_actions = unit.status.planned_action_queue
 
         # If first X actions are the same, don't update (unnecessary cost for unit)
         if np.all(
@@ -737,10 +746,10 @@ class MultipleUnitActionPlanner:
             logger.info(
                 f"{unit.log_prefix} has updated actions "
                 f"(last updated {last_updated} ago),"
-                f"was {unit.status.previous_action}, now {unit.status.current_action}"
+                f"was {unit.status.previous_action.category}:{unit.status.previous_action.sub_category}, now {unit.status.current_action.category}:{unit.status.current_action.sub_category}"
                 f" first few new actions are {planned_actions[:3]}, first few old actions were {unit.start_of_turn_actions[:3]}"
             )
-            if last_updated < 3 or last_updated > 30 and unit.status.previous_action != Actions.NOTHING:
+            if last_updated < 3 or last_updated > 30 and unit.status.previous_action != ActCategory.NOTHING:
                 logger.info(
                     f"{unit.log_prefix} updated {last_updated} ago <<< This is just a note to see how things are going"
                 )

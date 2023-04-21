@@ -5,13 +5,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Tuple
 import numpy as np
 
+from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, AttackActSubCategory
 from lux.factory import Factory
 
 from config import get_logger
 from master_state import MasterState
 import util
 
-from actions_util import Actions
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager
@@ -26,7 +26,9 @@ class UnitActions:
     mining_ice: Dict[str, FriendlyUnitManager]
     mining_ore: Dict[str, FriendlyUnitManager]
     clearing_rubble: Dict[str, FriendlyUnitManager]
+    clearing_lichen: Dict[str, FriendlyUnitManager]
     attacking: Dict[str, FriendlyUnitManager]
+    waiting: Dict[str, FriendlyUnitManager]
     nothing: Dict[str, FriendlyUnitManager]
 
 
@@ -119,7 +121,7 @@ class FriendlyFactoryManager(FactoryManager):
         short_power = self.power
         for unit_id, unit in dict(**self.light_units, **self.heavy_units).items():
             unit: FriendlyUnitManager
-            actions = unit.status.planned_actions
+            actions = unit.status.planned_action_queue
             for action in actions[:2]:
                 if action[util.ACT_TYPE] == util.PICKUP and action[util.ACT_RESOURCE] == util.POWER:
                     short_power -= action[util.ACT_AMOUNT]
@@ -161,20 +163,42 @@ class FriendlyFactoryManager(FactoryManager):
     def _get_actions(self, units: Dict[str, FriendlyUnitManager]) -> UnitActions:
         return UnitActions(
             mining_ice={
-                unit.unit_id: unit for unit_id, unit in units.items() if unit.status.current_action == Actions.MINE_ICE
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action.category == ActCategory.MINE
+                and unit.status.current_action.sub_category == MineActSubCategory.ICE
             },
             mining_ore={
-                unit.unit_id: unit for unit_id, unit in units.items() if unit.status.current_action == Actions.MINE_ORE
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action.category == ActCategory.MINE
+                and unit.status.current_action.sub_category == MineActSubCategory.ORE
             },
             clearing_rubble={
                 unit.unit_id: unit
                 for unit_id, unit in units.items()
-                if unit.status.current_action == Actions.CLEAR_RUBBLE
+                if unit.status.current_action.category == ActCategory.CLEAR
+                and unit.status.current_action.sub_category == ClearActSubCategory.RUBBLE
+            },
+            clearing_lichen={
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action.category == ActCategory.CLEAR
+                and unit.status.current_action.sub_category == ClearActSubCategory.LICHEN
             },
             attacking={
-                unit.unit_id: unit for unit_id, unit in units.items() if unit.status.current_action == Actions.ATTACK
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action.category == ActCategory.ATTACK
+            },
+            waiting={
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action.category == ActCategory.WAITING
             },
             nothing={
-                unit.unit_id: unit for unit_id, unit in units.items() if unit.status.current_action == Actions.NOTHING
+                unit.unit_id: unit
+                for unit_id, unit in units.items()
+                if unit.status.current_action.category == ActCategory.NOTHING
             },
         )

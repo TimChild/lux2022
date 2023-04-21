@@ -21,7 +21,7 @@ if TYPE_CHECKING:
         FriendlyFactoryManager,
         EnemyFactoryManager,
     )
-    from actions import Recommendation
+    from actions_util import Recommendation
 
 
 logger = get_logger(__name__)
