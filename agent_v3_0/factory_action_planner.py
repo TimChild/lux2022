@@ -361,8 +361,34 @@ class FactoryActionPlanner:
         logger.debug(
             f"Desires before HeavyIce={desires.heavy_mining_ice}, LightRubble={desires.light_clearing_rubble}, LightOre={desires.light_mining_ore}, LightAttack={desires.light_attacking}, HeavyAttack={desires.heavy_attacking}"
         )
-        # Early game
-        if step < 200:
+        #  TODO: Debug testing
+        if step < 90:
+            desires.update_desires(
+                info=info,
+                light_energy_consideration=300,
+                light_rubble_min_tiles=20,
+                light_rubble_max_tiles=40,
+                light_rubble_max_num=0,
+                light_metal_min=50,
+                light_metal_max=200,
+                light_metal_max_num=0,
+                light_water_min=20,
+                light_water_max=100,
+                light_water_max_num=0,
+                light_attack_max_num=10,
+                heavy_energy_consideration=1000,
+                heavy_rubble_min_tiles=30,
+                heavy_rubble_max_tiles=50,
+                heavy_rubble_max_num=0,
+                heavy_metal_min=100,
+                heavy_metal_max=300,
+                heavy_metal_max_num=1,
+                heavy_water_min=200,
+                heavy_water_max=500,
+                heavy_water_max_num=1,
+                heavy_attack_max_num=0,
+            )
+        elif step < 200:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=300,
