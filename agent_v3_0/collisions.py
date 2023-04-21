@@ -658,7 +658,7 @@ class UnitPaths:
             # Place that in correct spot
             index_array = util.pad_and_crop(
                 kernel,
-                self.friendly_valid_move_map,
+                self.friendly_valid_move_map.shape,
                 pos[0],
                 pos[1],
                 fill_value=self.max_step - start_step,

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Dict, Tuple
 import numpy as np
 
 from lux.factory import Factory
@@ -30,9 +31,14 @@ class UnitActions:
 
 
 class FactoryManager:
-    def __init__(self, factory: Factory):
+    def __init__(self, factory: Factory, map_shape: Tuple):
         self.unit_id = factory.unit_id
         self.factory = factory
+
+        # Distance from factory
+        self.dist_array: np.ndarray = util.pad_and_crop(
+            util.stretch_middle_of_factory_array(util.manhattan_kernel(47)), map_shape, self.pos[0], self.pos[1]
+        )
 
     def update(self, factory: Factory):
         self.factory = factory
@@ -48,12 +54,14 @@ class EnemyFactoryManager(FactoryManager):
 
 
 class FriendlyFactoryManager(FactoryManager):
-    def __init__(self, factory: Factory, master_state: MasterState):
-        super().__init__(factory)
-        self.master = master_state
+    def __init__(self, factory: Factory, master: MasterState):
+        super().__init__(factory, master.maps.rubble.shape)
+        self.master = master
 
         self.light_units: Dict[str, FriendlyUnitManager] = {}
         self.heavy_units: Dict[str, FriendlyUnitManager] = {}
+
+        self.waiting_area: np.ndarray = self._generate_waiting_area()
 
         # Keep track of some values that will change during planning
         self._power = 0
@@ -62,6 +70,20 @@ class FriendlyFactoryManager(FactoryManager):
         # caching
         self._light_actions = None
         self._heavy_actions = None
+
+    def generate_circle_array(self, center: util.POS_TYPE, radius: int, num: int):
+        return util.generate_circle_coordinates_array(center, num, radius, self.master.maps.rubble.shape[0])
+
+    def _generate_waiting_area(self) -> np.ndarray:
+        arr = functools.reduce(
+            np.logical_or,
+            [
+                self.generate_circle_array(self.pos, radius=r, num=n)
+                for r, n in zip([3, 4, 5, 6, 7], [8, 8, 14, 16, 14])
+            ],
+        ).astype(int)
+
+        return arr
 
     @property
     def power(self):
@@ -103,7 +125,6 @@ class FriendlyFactoryManager(FactoryManager):
                     short_power -= action[util.ACT_AMOUNT]
         return short_power
 
-
     def assign_unit(self, unit: FriendlyUnitManager):
         logger.debug(f"Assigning {unit.log_prefix} to {self.factory.unit_id}")
         if unit.unit_type == "LIGHT":
@@ -140,14 +161,10 @@ class FriendlyFactoryManager(FactoryManager):
     def _get_actions(self, units: Dict[str, FriendlyUnitManager]) -> UnitActions:
         return UnitActions(
             mining_ice={
-                unit.unit_id: unit
-                for unit_id, unit in units.items()
-                if unit.status.current_action == Actions.MINE_ICE
+                unit.unit_id: unit for unit_id, unit in units.items() if unit.status.current_action == Actions.MINE_ICE
             },
             mining_ore={
-                unit.unit_id: unit
-                for unit_id, unit in units.items()
-                if unit.status.current_action == Actions.MINE_ORE
+                unit.unit_id: unit for unit_id, unit in units.items() if unit.status.current_action == Actions.MINE_ORE
             },
             clearing_rubble={
                 unit.unit_id: unit
@@ -155,13 +172,9 @@ class FriendlyFactoryManager(FactoryManager):
                 if unit.status.current_action == Actions.CLEAR_RUBBLE
             },
             attacking={
-                unit.unit_id: unit
-                for unit_id, unit in units.items()
-                if unit.status.current_action == Actions.ATTACK
+                unit.unit_id: unit for unit_id, unit in units.items() if unit.status.current_action == Actions.ATTACK
             },
             nothing={
-                unit.unit_id: unit
-                for unit_id, unit in units.items()
-                if unit.status.current_action == Actions.NOTHING
+                unit.unit_id: unit for unit_id, unit in units.items() if unit.status.current_action == Actions.NOTHING
             },
         )

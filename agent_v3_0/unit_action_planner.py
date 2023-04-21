@@ -211,10 +211,9 @@ class AllCloseUnits:
 
     @staticmethod
     def unit_distance_map(unit: UnitManager, map_shape):
-        large_array = np.zeros(map_shape)
         unit_distance_map = util.pad_and_crop(
             util.manhattan_kernel(30),
-            large_arr=large_array,
+            large_arr_shape=map_shape,
             x1=unit.start_of_turn_pos[0],
             y1=unit.start_of_turn_pos[1],
             fill_value=35,

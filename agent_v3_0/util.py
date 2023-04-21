@@ -398,6 +398,26 @@ class CollectInfoFromEnv:
 ##########################################
 
 
+def generate_circle_coordinates_array(center: Tuple[int, int], N: int, radius: float, max_coord: int) -> np.ndarray:
+    x, y = center
+    angles = np.linspace(0, 2 * np.pi, N + 1)[:-1]  # Exclude the last angle (2 * pi) to avoid overlap
+
+    # Initialize an empty numpy array
+    coord_array = np.zeros((max_coord, max_coord))
+
+    for angle in angles:
+        # Check if the angle is in one of the cardinal direction gaps
+        angle_deg = np.degrees(angle) % 360
+        new_x = round(x + radius * np.cos(angle))
+        new_y = round(y + radius * np.sin(angle))
+
+        # Check if the coordinates are within the specified range
+        if 0 < new_x < max_coord and 0 < new_y < max_coord:
+            coord_array[new_y, new_x] = 1  # Set the value at the coordinate to 1
+
+    return coord_array
+
+
 def nearest_non_zero(array: np.ndarray, pos: Union[np.ndarray, Tuple[int, int]]) -> Optional[Tuple[int, int]]:
     """Nearest location from pos in array where value is positive"""
     locations = np.argwhere(array > 0)
@@ -513,7 +533,7 @@ def convolve_array_kernel(arr, kernel, fill=0):
     return convolved
 
 
-def pad_and_crop(small_arr, large_arr, x1, y1, fill_value=0):
+def pad_and_crop(small_arr, large_arr_shape, x1, y1, fill_value=0):
     """
     Pads the edges of small_arr with zeros so that the middle of the small_arr ends up at
     the coordinate (x1, y1) of large_arr. The small_arr will be cropped to fit inside the
@@ -521,7 +541,7 @@ def pad_and_crop(small_arr, large_arr, x1, y1, fill_value=0):
 
     Args:
         small_arr: a 2D numpy array
-        large_arr: a 2D numpy array
+        large_arr_shape: shape of large array to pad small array for
         x1: the x-coordinate of the center of small_arr in large_arr
         y1: the y-coordinate of the center of small_arr in large_arr
         fill_value: Value to fill the padded areas with
@@ -533,12 +553,12 @@ def pad_and_crop(small_arr, large_arr, x1, y1, fill_value=0):
 
     x_start = max(0, x1 - x_size // 2)
     y_start = max(0, y1 - y_size // 2)
-    x_end = min(large_arr.shape[0], x1 + x_size // 2 + 1 - (x_size % 2 == 0))
-    y_end = min(large_arr.shape[1], y1 + y_size // 2 + 1 - (y_size % 2 == 0))
+    x_end = min(large_arr_shape[0], x1 + x_size // 2 + 1 - (x_size % 2 == 0))
+    y_end = min(large_arr_shape[1], y1 + y_size // 2 + 1 - (y_size % 2 == 0))
 
     small_arr_start_x = x_start - x1 + x_size // 2
     small_arr_start_y = y_start - y1 + y_size // 2
-    padded_arr = np.full(large_arr.shape, fill_value=fill_value, dtype=small_arr.dtype)
+    padded_arr = np.full(large_arr_shape, fill_value=fill_value, dtype=small_arr.dtype)
     padded_arr[x_start:x_end, y_start:y_end] = small_arr[
         small_arr_start_x : small_arr_start_x + (x_end - x_start),
         small_arr_start_y : small_arr_start_y + (y_end - y_start),

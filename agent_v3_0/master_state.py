@@ -110,9 +110,7 @@ class FactoryMaps:
             factory_maps = cls(all=factory_map, friendly=friendly, enemy=enemy)
             return factory_maps
         else:
-            logger.debug(
-                f"No factories to update with (game_state.teams = {game_state.teams})"
-            )
+            logger.debug(f"No factories to update with (game_state.teams = {game_state.teams})")
             empty_map = np.full_like(game_state.board.rubble, -1, dtype=int)
             return cls(all=empty_map, friendly=empty_map, enemy=empty_map)
 
@@ -163,9 +161,7 @@ class AllUnits:
         if unit is None:
             raise KeyError(f"{unit_id} does not exist in friendly or enemy units")
 
-    def nearest_unit(
-        self, pos: tuple[int, int], friendly=True, enemy=True, light=True, heavy=True
-    ) -> tuple[str, int]:
+    def nearest_unit(self, pos: tuple[int, int], friendly=True, enemy=True, light=True, heavy=True) -> tuple[str, int]:
         """Get unit_id, dist of nearest unit to pos
         Note: Returns '', 999 if no unit found
         """
@@ -204,17 +200,13 @@ class Units(abc.ABC):
             logger.error(
                 f"Requesting unit at {pos} before initializing unit_positions",
             )
-            raise RuntimeError(
-                f"self.unit_positions is None. Must be initialized first"
-            )
+            raise RuntimeError(f"self.unit_positions is None. Must be initialized first")
         return self.unit_positions.unit_at_position(pos)
 
     def replace_unit(self, unit_id: str, unit: UnitManager):
         """Replace existing saved unit with an update of itself (i.e. should be the same unit, but with possibly new info)"""
         if unit_id != unit.unit_id:
-            raise RuntimeError(
-                f"{unit_id} != {unit.unit_id}. When replacing unit in master, it must be the same unit!"
-            )
+            raise RuntimeError(f"{unit_id} != {unit.unit_id}. When replacing unit in master, it must be the same unit!")
         if unit_id in self.light:
             self.light[unit_id] = unit
         elif unit_id in self.heavy:
@@ -222,9 +214,7 @@ class Units(abc.ABC):
         else:
             raise KeyError(f"{unit_id} does not exist in Units, can't replace")
 
-    def nearest_unit(
-        self, pos: tuple[int, int], light=True, heavy=True
-    ) -> tuple[str, int]:
+    def nearest_unit(self, pos: tuple[int, int], light=True, heavy=True) -> tuple[str, int]:
         """Return the nearest unit and distance from the given position
         Note: Returns '', 999 if no unit found
         """
@@ -236,10 +226,7 @@ class Units(abc.ABC):
             for unit_id, unit in self.heavy.items():
                 unit_positions[unit_id] = unit.pos
 
-        distances = {
-            unit_id: manhattan(pos, other_pos)
-            for unit_id, other_pos in unit_positions.items()
-        }
+        distances = {unit_id: manhattan(pos, other_pos) for unit_id, other_pos in unit_positions.items()}
         if not distances:
             return "", 999
         nearest_id = min(distances, key=distances.get)
@@ -327,9 +314,7 @@ class FriendlyUnits(Units):
             # Add new unit
             else:
                 # Which factory produced this unit
-                factory_id_num = self.master.maps.factory_maps.all[
-                    unit.pos[0], unit.pos[1]
-                ]
+                factory_id_num = self.master.maps.factory_maps.all[unit.pos[0], unit.pos[1]]
 
                 # Convert to factory_id
                 if factory_id_num >= 0:
@@ -343,17 +328,13 @@ class FriendlyUnits(Units):
                     factory_id = None
 
                 # Create and save new UnitManager
-                new_unit = FriendlyUnitManager(
-                    unit, master_state=self.master, factory_id=factory_id
-                )
+                new_unit = FriendlyUnitManager(unit, master_state=self.master, factory_id=factory_id)
                 u_dict[unit_id] = new_unit
 
                 # Add this unit to the factory list of units (light_units or heavy_units depending on unit_type
                 factory = self.master.factories.friendly.get(factory_id, None)
                 if factory is not None:
-                    getattr(factory, f"{unit.unit_type.lower()}_units")[
-                        unit_id
-                    ] = new_unit
+                    getattr(factory, f"{unit.unit_type.lower()}_units")[unit_id] = new_unit
                 else:
                     logger.error(f"No factory exists for {factory_id}")
 
@@ -382,9 +363,7 @@ class Factories:
                 f_dict[factory_id].update(factory)
             # Add new
             else:
-                f_dict[factory_id] = FriendlyFactoryManager(
-                    factory, master_state=self.master
-                )
+                f_dict[factory_id] = FriendlyFactoryManager(factory, master=self.master)
         # Remove dead
         for k in set(f_dict.keys()) - set(factories.keys()):
             dead_factory = f_dict.pop(k)
@@ -400,7 +379,7 @@ class Factories:
                 f_dict[factory_id].update(factory)
             # Add new
             else:
-                f_dict[factory_id] = EnemyFactoryManager(factory)
+                f_dict[factory_id] = EnemyFactoryManager(factory, self.master.maps.rubble.shape)
         # Remove dead
         for k in set(f_dict.keys()) - set(factories.keys()):
             dead_factory = f_dict.pop(k)
@@ -501,9 +480,7 @@ class Maps:
         self.rubble = board.rubble.copy()
         self.lichen = board.lichen.copy()
         self.lichen_strains = board.lichen_strains.copy()
-        self.factory_maps = FactoryMaps.from_game_state(
-            game_state=game_state, player=player
-        )
+        self.factory_maps = FactoryMaps.from_game_state(game_state=game_state, player=player)
         # Create valid move maps
         valid = np.ones_like(self.factory_maps.enemy)
         valid[self.factory_maps.enemy >= 0] = 0
@@ -540,9 +517,7 @@ class MasterState:
         # This gets set at the beginning of each unit action
         self.pathfinder: Pather = None
 
-        self.units = AllUnits(
-            friendly=FriendlyUnits(master=self), enemy=EnemyUnits(), master=self
-        )
+        self.units = AllUnits(friendly=FriendlyUnits(master=self), enemy=EnemyUnits(), master=self)
         self.factories = Factories(friendly={}, enemy={}, master=self)
         # self.allocations = Allocations()
         self.maps = Maps()

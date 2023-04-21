@@ -84,9 +84,7 @@ class RubbleDigValue:
 
             if self.full_factory_map is not None:
                 rubble[self.full_factory_map >= 0] = 100
-            subsetter = SubsetExtractor(
-                rubble, self.factory_pos, radius=self.factory_dist, fill_value=100
-            )
+            subsetter = SubsetExtractor(rubble, self.factory_pos, radius=self.factory_dist, fill_value=100)
             self._rubble_subset = subsetter.get_subset()
             self._new_factory_pos = subsetter.convert_coordinate(self.factory_pos)
         return self._rubble_subset, self._new_factory_pos
@@ -94,13 +92,9 @@ class RubbleDigValue:
     def _get_factory_weighting(self):
         """Make factory weighting (decreasing value away from factory)"""
         if self._factory_weighting is None:
-            factory_weighting = self.factory_dist_dropoff ** manhattan_kernel(
-                self.factory_dist
-            )
+            factory_weighting = self.factory_dist_dropoff ** manhattan_kernel(self.factory_dist)
             # Stretch the middle to be 3x3
-            factory_weighting = stretch_middle_of_factory_array(factory_weighting)[
-                1:-1, 1:-1
-            ]
+            factory_weighting = stretch_middle_of_factory_array(factory_weighting)[1:-1, 1:-1]
             self._factory_weighting = factory_weighting
         return self._factory_weighting
 
@@ -114,17 +108,11 @@ class RubbleDigValue:
                 self.factory_dist - 1 : self.factory_dist + 2,
                 self.factory_dist - 1 : self.factory_dist + 2,
             ] = 0
-            factory_zeroes = connected_array_values_from_pos(
-                rubble_subset, new_factory_pos
-            )
+            factory_zeroes = connected_array_values_from_pos(rubble_subset, new_factory_pos)
             rubble_factory_non_zero[factory_zeroes == 1] = 999  # Anything non-zero
-            manhattan_dist_to_zeros = manhattan_distance_between_values(
-                rubble_factory_non_zero
-            )
+            manhattan_dist_to_zeros = manhattan_distance_between_values(rubble_factory_non_zero)
             # Invert so that value is higher for lower distance
-            manhattan_dist_to_zeros = np.abs(
-                manhattan_dist_to_zeros - np.max(manhattan_dist_to_zeros)
-            )
+            manhattan_dist_to_zeros = np.abs(manhattan_dist_to_zeros - np.max(manhattan_dist_to_zeros))
             self._manhattan_dist_to_zeros = manhattan_dist_to_zeros
         return self._manhattan_dist_to_zeros
 
@@ -142,8 +130,7 @@ class RubbleDigValue:
             boundary_array = self._get_boundary_array()
             conv_boundary_array = convolve_array_kernel(
                 boundary_array,
-                self.boundary_kernel_dropoff
-                ** manhattan_kernel(self.boundary_kernel_size),
+                self.boundary_kernel_dropoff ** manhattan_kernel(self.boundary_kernel_size),
             )
             self._conv_boundary_array = conv_boundary_array
         return self._conv_boundary_array
@@ -152,9 +139,7 @@ class RubbleDigValue:
         """Calculate value of low rubble areas"""
         if self._low_rubble_value is None:
             rubble_subset, _ = self._get_rubble_subset()
-            low_rubble_value = np.ceil(
-                np.abs(rubble_subset - 100) / 2
-            )  # Over 2 because light can dig 2 at a time
+            low_rubble_value = np.ceil(np.abs(rubble_subset - 100) / 2)  # Over 2 because light can dig 2 at a time
             self._low_rubble_value = low_rubble_value
         return self._low_rubble_value
 
@@ -173,17 +158,10 @@ class RubbleDigValue:
         rubble_subset, _ = self._get_rubble_subset()
 
         # Make a final map
-        final_value = (
-            conv_boundary_array
-            * low_rubble_value
-            * manhattan_dist_to_zeroes
-            * factory_weighting
-        )
+        final_value = conv_boundary_array * low_rubble_value * manhattan_dist_to_zeroes * factory_weighting
         final_value[rubble_subset == 0] = 0
 
-        final_value = pad_and_crop(
-            final_value, self.rubble, self.factory_pos[0], self.factory_pos[1]
-        )
+        final_value = pad_and_crop(final_value, self.rubble.shape, self.factory_pos[0], self.factory_pos[1])
         return final_value / np.nanmax(final_value)
 
 
@@ -198,9 +176,7 @@ def calc_value_to_move(
     return 0, pos
 
 
-def calc_best_direction(
-    pos: Tuple[int, int], value_array: np.ndarray, costmap: np.ndarray
-) -> int:
+def calc_best_direction(pos: Tuple[int, int], value_array: np.ndarray, costmap: np.ndarray) -> int:
     """Return direction to highest allowed adjacent value"""
     # (0 = center, 1 = up, 2 = right, 3 = down, 4 = left)
     move_deltas = MOVE_DELTAS[1:]  # Exclude center
@@ -256,22 +232,16 @@ class RubbleRoutePlanner:
 
     def make_route(self, unit_must_move: bool) -> bool:
         if unit_must_move:
-            logger.info(
-                f"Acknowledged must move, setting rubble to zero under unit at pos {self.unit.pos}"
-            )
+            logger.info(f"Acknowledged must move, setting rubble to zero under unit at pos {self.unit.pos}")
             # Don't count rubble under current position (will ensure move from this location)
             self._future_rubble[self.unit.pos_slice] = 0
             # If on factory, move to new spot first
             if self._unit_starting_on_factory():
                 logger.debug(f"Also moving on factory to get out of the way")
                 #  TODO: make the move toward the best area to rubble clear instead of just anywhere on factory
-                success = move_to_new_spot_on_factory(
-                    self.pathfinder, self.unit, self.factory
-                )
+                success = move_to_new_spot_on_factory(self.pathfinder, self.unit, self.factory)
                 if not success:
-                    logger.warning(
-                        f"Need to move, but no other location on factory to move to"
-                    )
+                    logger.warning(f"Need to move, but no other location on factory to move to")
                     return False
 
         # Calculate actions from factory (pickup power and move to good starting location)
@@ -309,7 +279,7 @@ class RubbleRoutePlanner:
                 # Get values to clear nearby (allowed movements only)
                 unit_multiplier = pad_and_crop(
                     kernel,
-                    self._future_value,
+                    self._future_value.shape,
                     self.unit.pos[0],
                     self.unit.pos[1],
                     fill_value=0,
@@ -323,17 +293,10 @@ class RubbleRoutePlanner:
                 )
 
                 # Decide what to do based on values
-                if (
-                    power_remaining
-                    > self.unit.unit_config.DIG_COST * 3
-                    + self.unit.unit_config.MOVE_COST
-                    * self.rubble[new_pos[0], new_pos[1]]
-                    * self.unit.unit_config.RUBBLE_MOVEMENT_COST
-                    and (value_at_pos > 0 or value_to_move > 0)
-                ):
-                    logger.debug(
-                        f"Enough power to add another action. power_remaining = {power_remaining}"
-                    )
+                if power_remaining > self.unit.unit_config.DIG_COST * 3 + self.unit.unit_config.MOVE_COST * self.rubble[
+                    new_pos[0], new_pos[1]
+                ] * self.unit.unit_config.RUBBLE_MOVEMENT_COST and (value_at_pos > 0 or value_to_move > 0):
+                    logger.debug(f"Enough power to add another action. power_remaining = {power_remaining}")
                     # If enough power, get next action
                     success = self._calculate_next_action(
                         power_remaining=power_remaining,
@@ -350,23 +313,16 @@ class RubbleRoutePlanner:
                     )
                     # Otherwise path to factory and break out of loop (done)
                     if len(path_to_factory) > 0:
-                        self.pathfinder.append_path_to_actions(
-                            self.unit, path_to_factory
-                        )
+                        self.pathfinder.append_path_to_actions(self.unit, path_to_factory)
                     else:
-                        logger.warning(
-                            f"{self.unit.log_prefix} No path back to factory"
-                        )
+                        logger.warning(f"{self.unit.log_prefix} No path back to factory")
                     break
         else:
             logger.error(f"Got stuck in loop, breaking out now")
         return True
 
     def _unit_starting_on_factory(self) -> bool:
-        if (
-            self.factory.factory_loc[self.unit_start_pos[0], self.unit_start_pos[1]]
-            == 1
-        ):
+        if self.factory.factory_loc[self.unit_start_pos[0], self.unit_start_pos[1]] == 1:
             return True
         return False
 
@@ -381,28 +337,20 @@ class RubbleRoutePlanner:
         logger.info(f"Value at pos={value_at_pos}, value to move={value_to_move}")
         if value_at_pos >= value_to_move and value_at_pos > 0:
             pos_rubble = self._future_rubble[self.unit.pos[0], self.unit.pos[1]]
-            digs_required = np.ceil(
-                pos_rubble / self.unit.unit_config.DIG_RUBBLE_REMOVED
-            ).astype(int)
+            digs_required = np.ceil(pos_rubble / self.unit.unit_config.DIG_RUBBLE_REMOVED).astype(int)
             n = min(
                 digs_required,
                 np.floor(power_remaining / self.unit.unit_config.DIG_COST).astype(int),
             )
-            rubble_after = int(
-                max(0, pos_rubble - n * self.unit.unit_config.DIG_RUBBLE_REMOVED)
-            )
+            rubble_after = int(max(0, pos_rubble - n * self.unit.unit_config.DIG_RUBBLE_REMOVED))
             if n <= 0:
-                logger.error(
-                    f"digs_required={digs_required}, digs planned (n)={n}, << MUST BE POSITIVE"
-                )
+                logger.error(f"digs_required={digs_required}, digs planned (n)={n}, << MUST BE POSITIVE")
                 return False
             logger.info(f"digs_required={digs_required}, digs planned (n)={n}")
             self.unit.action_queue.append(self.unit.dig(n=n))
             self._future_rubble[self.unit.pos[0], self.unit.pos[1]] = rubble_after
             if rubble_after == 0:
-                self._future_value[
-                    self.unit.pos[0], self.unit.pos[1]
-                ] = 0  # No more value there
+                self._future_value[self.unit.pos[0], self.unit.pos[1]] = 0  # No more value there
 
         # Otherwise move to next best spot
         elif value_to_move > 0:
@@ -413,9 +361,7 @@ class RubbleRoutePlanner:
             if len(path) > 0:
                 self.pathfinder.append_path_to_actions(self.unit, path)
             else:
-                logger.error(
-                    f"{self.unit.log_prefix} No path from {self.unit.pos} to {new_pos}"
-                )
+                logger.error(f"{self.unit.log_prefix} No path from {self.unit.pos} to {new_pos}")
                 return False
 
         # Not near any high value, shouldn't get here
@@ -433,12 +379,8 @@ class RubbleRoutePlanner:
         # Only top up if need a significant amount of power
         min_power = self.unit.unit_config.BATTERY_CAPACITY * 0.85
         if self.unit.power_remaining() < min_power:
-            power_to_pickup = (
-                self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
-            )
-            logger.debug(
-                f"topping up power from {self.unit.power} with {power_to_pickup}"
-            )
+            power_to_pickup = self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining()
+            logger.debug(f"topping up power from {self.unit.power} with {power_to_pickup}")
             if self.factory.short_term_power < power_to_pickup:
                 logger.warning(
                     f"{self.unit.unit_id} would like to pickup {power_to_pickup} but factory has short term power {self.factory.short_term_power}. Not doing rubble clearing this turn"
@@ -452,9 +394,7 @@ class RubbleRoutePlanner:
         cm = self.pathfinder.generate_costmap(self.unit)
         for i in range(5):
             boundary_values = self._get_boundary_values()
-            max_value_coord = np.unravel_index(
-                np.argmax(boundary_values), boundary_values.shape
-            )
+            max_value_coord = np.unravel_index(np.argmax(boundary_values), boundary_values.shape)
             path = self.pathfinder.fast_path(
                 self.unit.pos,
                 end_pos=max_value_coord,
@@ -481,9 +421,7 @@ class RubbleRoutePlanner:
         """
 
         # Get array of 1s where rubble is zero connected to factory
-        factory_zeros = connected_array_values_from_pos(
-            self._future_rubble, self.factory.factory.pos
-        )
+        factory_zeros = connected_array_values_from_pos(self._future_rubble, self.factory.factory.pos)
         # Get only the boundary of that area
         boundary = create_boundary_array(factory_zeros, boundary_num=1)
         boundary[boundary != 0] = 1
@@ -494,9 +432,7 @@ class RubbleRoutePlanner:
         # TODO: could this use future_rubble? Problem is that rubble may not yet be cleared
         if rubble is None:
             rubble = self.rubble
-        return power_cost_of_actions(
-            self.unit.start_of_turn_pos, rubble, self.unit, actions
-        )
+        return power_cost_of_actions(self.unit.start_of_turn_pos, rubble, self.unit, actions)
 
     def _path_to_factory(self, costmap: np.ndarray = None) -> np.ndarray:
         if costmap is None:
@@ -592,6 +528,4 @@ class RubbleClearingPlanner(Planner):
                 boundary_kernel_size=3,
                 boundary_kernel_dropoff=0.7,
             )
-            self._factory_value_maps[
-                factory_manager.unit_id
-            ] = rubble_value.calculate_final_value()
+            self._factory_value_maps[factory_manager.unit_id] = rubble_value.calculate_final_value()
