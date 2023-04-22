@@ -256,7 +256,7 @@ class FactoryDesires:
 
         # Attack
         if info.num_light == self.total_light():
-            self.light_attacking = max(light_attack_max_num, info.light_attacking + 1)
+            self.light_attacking = min(light_attack_max_num, info.light_attacking + 1)
         elif info.num_light < self.total_heavy():
             self.light_attacking = max(0, info.light_attacking - 1)
 
@@ -375,7 +375,7 @@ class FactoryActionPlanner:
                 light_water_min=20,
                 light_water_max=100,
                 light_water_max_num=0,
-                light_attack_max_num=10,
+                light_attack_max_num=4,
                 heavy_energy_consideration=1000,
                 heavy_rubble_min_tiles=30,
                 heavy_rubble_max_tiles=50,

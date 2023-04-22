@@ -89,6 +89,11 @@ class BaseUnitPlanner(abc.ABC):
 
     def add_path_to_factory_queue(self, avoid_collision_only=False) -> bool:
         path = self.get_path_to_factory_queue(avoid_collision_only=avoid_collision_only)
+        # if len(path) > 1:
+        #     print(path.shape)
+        #     print(f'For unit {self.unit.unit_id} at {self.unit.pos}, path {path[0]} to {path[1]}, len {len(path)}')
+        # else:
+        #     print(f'len path {len(path)}')
         return self.add_path_to_action_queue(path)
 
     def get_path_to_factory_queue(self, avoid_collision_only=False) -> np.ndarray:
@@ -101,6 +106,11 @@ class BaseUnitPlanner(abc.ABC):
             near_pos=self.unit.factory.pos,
             max_attempts=50,
         )
+        # if self.unit.unit_id == 'unit_17':
+        #     # print(self.unit.pos, self.unit.factory.pos, self.unit.start_of_turn_pos, self.unit.current_path()[0], self.unit.current_path()[-1])
+        #     fig = util.show_map_array(cm)
+        #     util.plotly_plot_path(fig, path_to_factory)
+        #     fig.show()
         return path_to_factory
 
     def abort(self, delay_abort_to_end_of_queue: bool = False) -> bool:

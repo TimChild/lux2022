@@ -957,6 +957,7 @@ class MiningUnitPlanner(BaseUnitPlanner):
         return self.add_new_actions()
 
     def add_new_actions(self):
+        # print(self.unit.status.current_action.sub_category)
         if self.unit.status.current_action.sub_category == MineActSubCategory.ICE:
             resource_type = util.ICE
         elif self.unit.status.current_action.sub_category == MineActSubCategory.ORE:
@@ -964,7 +965,9 @@ class MiningUnitPlanner(BaseUnitPlanner):
         else:
             raise ValueError(f"{self.unit.status.current_action} not correct for Mining")
         rec = self.recommend(self.unit, resource_type, unit_must_move=self.unit.status.turn_status.must_move)
-        return self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
+        success = self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
+        self.unit.status.planned_action_queue = self.unit.action_queue.copy()
+        return success
 
     def recommend(
         self,

@@ -413,7 +413,7 @@ def generate_circle_coordinates_array(center: Tuple[int, int], N: int, radius: f
 
         # Check if the coordinates are within the specified range
         if 0 < new_x < max_coord and 0 < new_y < max_coord:
-            coord_array[new_y, new_x] = 1  # Set the value at the coordinate to 1
+            coord_array[new_x, new_y] = 1  # Set the value at the coordinate to 1
 
     return coord_array
 

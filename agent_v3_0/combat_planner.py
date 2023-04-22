@@ -476,6 +476,7 @@ class CombatUnitPlanner(BaseUnitPlanner):
         # TESTING:
         if not isinstance(self.unit.status.current_action.sub_category, CombatActSubCategory):
             self.unit.status.current_action.sub_category = CombatActSubCategory.RUN_AWAY
+            logger.debug(f'Setting status to runaway')
 
 
         if len(self.unit.status.planned_action_queue) == 0:
@@ -485,7 +486,10 @@ class CombatUnitPlanner(BaseUnitPlanner):
 
     def add_new_actions(self):
         """Add new actions to end of planned action queue"""
+        # Make sure current queue is up to date with planned actions
         self.unit.action_queue = self.unit.status.planned_action_queue.copy()
+        self.unit.pos = self.unit.current_path(planned_actions=True)[-1]
+
         action_subtype = self.unit.status.current_action.sub_category
         if action_subtype == CombatActSubCategory.RETREAT_HOLD:
             self._add_retreat_hold()
@@ -499,6 +503,8 @@ class CombatUnitPlanner(BaseUnitPlanner):
             self._add_runaway()
         else:
             raise NotImplementedError(f'{action_subtype} not implemented')
+        self.unit.status.planned_action_queue = self.unit.action_queue.copy()
+
         return True
 
     def _get_hold_pos(self) -> Tuple[int, int]:
@@ -545,8 +551,11 @@ class CombatUnitPlanner(BaseUnitPlanner):
     def _add_runaway(self):
         success = self.add_path_to_factory_queue()
         if not success:
+            logger.warning(f'{self.unit.log_prefix} Failed to path to factory queue with default pathing, trying again only avoiding collisions')
             success = self.add_path_to_factory_queue(avoid_collision_only=True)
             if not success:
+                logger.error(
+                    f'{self.unit.log_prefix} Failed to path to factory queue even only avoiding collisions')
                 return self.abort()
         return success
 

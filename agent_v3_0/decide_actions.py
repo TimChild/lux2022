@@ -95,14 +95,14 @@ class ActionDecider:
                         logger.info(
                             f"Next action dig, but not enough power to get back to factory, recommending update"
                         )
-                        self.unit.status.turn_status.recommend_plan_udpdate = True
+                        self.unit.status.turn_status.recommend_plan_update = True
                         return True
                 logger.debug("Next pickup, transfer, dig is valid, do not update")
-                self.unit.status.turn_status.recommend_plan_udpdate = False
+                self.unit.status.turn_status.recommend_plan_update = False
                 return True
             else:
                 logger.debug("Next pickup, transfer, dig not valid, continue but update plan")
-                self.unit.status.turn_status.recommend_plan_udpdate = True
+                self.unit.status.turn_status.recommend_plan_update = True
                 return True
 
         # Avoid collision with friendly
@@ -110,13 +110,13 @@ class ActionDecider:
             ActReasons.COLLISION_WITH_FRIENDLY,
         ]:
             logger.debug("Need to avoid collision with friendly")
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             return True
 
         # Close enemies don't matter if running away (as long as not colliding)
         if self.unit.status.current_action.category == ActCategory.RUN_AWAY and act_reason == ActReasons.CLOSE_TO_ENEMY:
             logger.debug("Already running away, no change necessary")
-            self.unit.status.turn_status.recommend_plan_udpdate = False
+            self.unit.status.turn_status.recommend_plan_update = False
             return True
 
         # Heavy doesn't care about enemy light
@@ -126,13 +126,13 @@ class ActionDecider:
             and all([t == "LIGHT" for t in self.close_units.other_unit_types])
         ):
             logger.debug("Heavy doesn't care about light enemies, continuing path")
-            self.unit.status.turn_status.recommend_plan_udpdate = False
+            self.unit.status.turn_status.recommend_plan_update = False
             return True
 
         # Previous action invalid can probably just update plan with current action
         if act_reason == ActReasons.PREVIOUS_ACTION_INVALID:
             logger.debug("Previous action was invalid, may need to update plan of current role")
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             return True
 
         # If already attacking, just update in case new path to enemy
@@ -140,12 +140,12 @@ class ActionDecider:
             act_reason in [ActReasons.CLOSE_TO_ENEMY, ActReasons.COLLISION_WITH_ENEMY]
             and self.unit.status.current_action.category == ActCategory.COMBAT
         ):
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             return True
 
         # Just need update from planned
         if act_reason == ActReasons.NEED_ACTIONS_FROM_PLANNED:
-            self.unit.status.turn_status.recommend_plan_udpdate = False
+            self.unit.status.turn_status.recommend_plan_update = False
             return True
 
         # Check if action is still invalid (might not be now that other units have had a chance to move etc)
@@ -157,18 +157,18 @@ class ActionDecider:
             condition = self.unit.next_action_is_move() if unit_must_move else True
             if self.action_validator.next_action_valid(self.unit) and condition:
                 logger.debug("Next action passed validation, suggesting no action update")
-                self.unit.status.turn_status.recommend_plan_udpdate = False
+                self.unit.status.turn_status.recommend_plan_update = False
                 return True
             else:
                 logger.debug("Next action not valid, suggesting keep role but update")
-                self.unit.status.turn_status.recommend_plan_udpdate = True
+                self.unit.status.turn_status.recommend_plan_update = True
                 return True
 
         # If low power, continue with same action but update path in case a difference decision should be made now
         if act_reason == ActReasons.LOW_POWER:
             # TODO: Not sure about this one... I don't want units that are nearly back at factory to continuously repath
             logger.debug("Unit has low power, should consider changing plans")
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             return True
         return False
 
@@ -227,16 +227,15 @@ class ActionDecider:
             not self.unit_info.unit.on_own_factory()
             and self.unit_info.unit.status.current_action.category != ActCategory.NOTHING
         ):
-            action = self.unit_info.unit.status.current_action.category
-            sub_category = self.unit_info.unit.status.current_action.sub_category
+            action = self.unit.status.current_action
             logger.debug(
-                f"Unit NOT on factory and currently assigned, should continue same job ({action}: {sub_category})"
+                f"Unit NOT on factory and currently assigned, should continue same job ({self.unit.status.current_action.category}: {self.unit.status.current_action.sub_category})"
             )
         else:
             logger.debug(f"Unit on factory, can decide a new type of action depending on factory needs")
 
             self.factory_info.remove_unit_from_current_count(self.unit_info.unit)
-            action = ActStatus(category=ActCategory.NOTHING)
+            action = ActStatus()
             if current_mining_ice < desired_mining_ice:
                 action.category = ActCategory.MINE
                 action.sub_category = MineActSubCategory.ICE

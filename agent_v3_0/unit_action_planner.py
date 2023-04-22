@@ -318,13 +318,14 @@ class SingleUnitActionPlanner:
             status_updated = collision_resolver.resolve()
             return status_updated
         logger.info(f"Don't know how to resolve {self.unit_info.act_info.reason} without calling the planner again")
-        self.unit.status.turn_status.recommend_plan_udpdate = True
+        self.unit.status.turn_status.recommend_plan_update = True
         return True
 
     def _force_moving_if_necessary(self, unit_must_move: bool) -> bool:
         success = True
         if unit_must_move:
-            q = self.unit.action_queue
+            logger.debug(f'{self.unit.unit_id} checking this unit is moving first turn')
+            q = self.unit.status.planned_action_queue
             if len(q) == 0 or q[0][util.ACT_TYPE] != util.MOVE or q[0][util.ACT_DIRECTION] == util.CENTER:
                 logger.warning(
                     f"{self.unit.log_prefix} was required to move first turn, but actions are {q}, trying to move unit"
@@ -334,6 +335,7 @@ class SingleUnitActionPlanner:
                 move_success = util.move_to_cheapest_adjacent_space(
                     self.master.pathfinder, self.unit, collision_only=True
                 )
+                self.unit.status.planned_action_queue = self.unit.action_queue.copy()
                 if move_success:
                     logger.warning(f"successfully forced move out of the way")
                 else:
@@ -357,26 +359,27 @@ class SingleUnitActionPlanner:
 
         # Decide what action needs to be taken next (may be to continue with current plan)
         new_action_info = self.action_decider.decide_action(unit_must_move)
-
         success = False
         do_update = True
 
         # TODO: Replace this chunk once planners are able to handle this stuff
         # If no update required, return now (queue not updated, so no changes will happen)
-        if new_action_info is None and unit.status.turn_status.recommend_plan_udpdate is False:
+        if new_action_info is None and unit.status.turn_status.recommend_plan_update is False:
             if not unit_must_move or unit_must_move and unit.next_action_is_move():
                 logger.info(f"No update of actions necessary")
                 do_update = False
             else:
                 logger.info(f"action change required to move on next step")
-                unit.status.turn_status.recommend_plan_udpdate = True
+                unit.status.turn_status.recommend_plan_update = True
                 do_update = True
-        elif new_action_info is None and unit.status.turn_status.recommend_plan_udpdate is True:
+        elif new_action_info is None and unit.status.turn_status.recommend_plan_update is True:
             status_updated = self._attempt_resolve_continue_actions()
-            if unit.status.turn_status.recommend_plan_udpdate is False:
+            if unit.status.turn_status.recommend_plan_update is False:
                 do_update = False
             else:
                 do_update = True
+            # if not isinstance(unit.status.current_action, ActStatus):
+            #     raise TypeError
             new_action_info = unit.status.current_action
 
         # Do or redo the planning for this unit if necessary

@@ -10,8 +10,6 @@ import actions_util
 import util
 from master_state import Maps, AllUnits
 from new_path_finder import Pather
-from unit_manager import FriendlyUnitManager
-
 from config import get_logger
 
 logger = get_logger(__name__)
@@ -179,6 +177,11 @@ class CollisionResolver:
     def _make_path(self, start_step: int, start_pos: util.POS_TYPE, end_pos: util.POS_TYPE):
         cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step)
         new_path = self.pathfinder.fast_path(start_pos, end_pos, costmap=cm)
+        # if self.unit.unit_id == 'unit_6':
+        #     print(start_pos, end_pos, start_step)
+        #     fig=util.show_map_array(cm)
+        #     util.plotly_plot_path(fig, new_path)
+        #     fig.show()
         if len(new_path) == 0:
             logger.info(f"Default pathing failed, Attempting to resolve path avoiding collisions only")
             cm = self.pathfinder.generate_costmap(self.unit, override_step=start_step, collision_only=True)
@@ -216,12 +219,12 @@ class CollisionResolver:
         """
         last_step, next_dest_or_last_step = self._next_dest_or_last_step(collision.step)
         first_step, prev_dest_or_first_step = self._previous_dest_or_start_step(collision.step)
-        logger.debug(f"repathing from {prev_dest_or_first_step} to {next_dest_or_last_step}")
+        logger.debug(f"repathing from {prev_dest_or_first_step} to {next_dest_or_last_step} (starting step {first_step})")
         if np.all(next_dest_or_last_step == collision.pos) or np.all(prev_dest_or_first_step == collision.step):
             logger.error(
                 f"first or last dest was same as collision pos next={next_dest_or_last_step} prev={prev_dest_or_first_step} collision step={collision.step}"
             )
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             return True
         new_path = self._make_path(first_step, prev_dest_or_first_step, next_dest_or_last_step)
 
@@ -229,12 +232,12 @@ class CollisionResolver:
             logger.warning(
                 f"failed to find new path from {prev_dest_or_first_step} to {next_dest_or_last_step} starting step {first_step}"
             )
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             return True
 
         new_actions = util.path_to_actions(new_path)
         self._replace_unit_actions(first_step, last_step, new_actions)
-        self.unit.status.turn_status.recommend_plan_udpdate = False
+        self.unit.status.turn_status.recommend_plan_update = False
         return True
 
     def _resolve_factory_collision(self, collision: Collision) -> bool:
@@ -259,18 +262,18 @@ class CollisionResolver:
             logger.warning(
                 f"failed to find new path from {prev_dest_or_first_step} to factory_{factory_num} starting step {first_step}"
             )
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             return True
 
         new_actions = util.path_to_actions(new_path)
         self._replace_unit_actions(first_step, collision.step + 1, new_actions)
-        self.unit.status.turn_status.recommend_plan_udpdate = False
+        self.unit.status.turn_status.recommend_plan_update = False
         return True
 
     def _resolve_destination_collision(self, collision: Collision) -> bool:
         """Ideally repath to new nearby resource or something"""
         logger.info(f"resolving conflict at destination required but not implemented")
-        self.unit.status.turn_status.recommend_plan_udpdate = True
+        self.unit.status.turn_status.recommend_plan_update = True
         return True
 
     def resolve(self) -> bool:
@@ -298,7 +301,7 @@ class CollisionResolver:
 
         if nearest_collision is None:
             logger.error(f"No collisions to solve in {self.max_step} step")
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             return True
 
         logger.info(
@@ -311,14 +314,14 @@ class CollisionResolver:
         elif self._collision_at_destination(nearest_collision):
             status_updated = self._resolve_destination_collision(nearest_collision)
         else:
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             status_updated = True
         if status_updated is False:
             logger.info(f"Failed to solve collision {nearest_collision}, route still needs updating")
-            self.unit.status.turn_status.recommend_plan_udpdate = True
+            self.unit.status.turn_status.recommend_plan_update = True
             return True
         logger.info(f"Nearest collisions solved, can continue")
-        self.unit.status.turn_status.recommend_plan_udpdate = False
+        self.unit.status.turn_status.recommend_plan_update = False
         return True
 
 
@@ -531,10 +534,8 @@ class UnitPaths:
         # Calculate the valid path (i.e. can't walk of edge of map or through enemy factory)
         # NOTE: does NOT include power considerations (i.e. if enough power to do first move)
         # Especially important for enemy units... Don't want to deal with invalid paths later
-        if isinstance(unit, FriendlyUnitManager):
-            valid_path = unit.valid_moving_actions(costmap=move_map, max_len=self.max_step, planned_actions=True)
-        else:
-            valid_path = unit.valid_moving_actions(costmap=move_map, max_len=self.max_step)
+        # NOTE: Friendly uses planned_actions by default
+        valid_path = unit.valid_moving_actions(costmap=move_map, max_len=self.max_step)
 
         # Get the valid path coords (first value is current position)
         path = util.actions_to_path(unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=self.max_step)

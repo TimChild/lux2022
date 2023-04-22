@@ -167,9 +167,6 @@ class FriendlyUnitManager(UnitManager):
         self.master: MasterState = master_state
         self.status: Status = Status(
             master=self.master,
-            current_action=ActStatus(),
-            previous_action=ActStatus(),
-            last_action_update_step=0,
         )
         self.start_of_turn_actions = []
 

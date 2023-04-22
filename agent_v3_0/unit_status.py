@@ -199,7 +199,7 @@ class TurnStatus:
     replan_required: bool = False
 
     # I.e. next action not valid, plan should update (might be temporary while I get rid of old Actions)
-    recommend_plan_udpdate: Optional[bool] = None
+    recommend_plan_update: Optional[bool] = None
 
     def update(self, unit: FriendlyUnitManager, master: MasterState):
         """Beginning of turn update"""
@@ -210,15 +210,16 @@ class TurnStatus:
         self.must_move = False
         self.action_queue_empty_ok = False
         self.replan_required = False
-        self.recommend_plan_udpdate = None
+        self.recommend_plan_update = None
 
 
 @dataclass
 class Status:
     master: InitVar[MasterState]
-    current_action: ActStatus
-    previous_action: ActStatus
-    last_action_update_step: int
+    # _current_action: ActStatus = ActStatus()
+    current_action: ActStatus = ActStatus()
+    previous_action: ActStatus = ActStatus()
+    last_action_update_step: int = 0
     planned_action_queue: List[np.ndarray] = field(default_factory=list)
 
     # Storing things about processing of turn for unit (reset at beginning of turn)
@@ -233,6 +234,16 @@ class Status:
 
     # For debug use only
     _debug_last_beginning_of_step_update: int = 0
+
+    # @property
+    # def current_action(self):
+    #     return self._current_action
+    #
+    # @current_action.setter
+    # def current_action(self, value: ActStatus):
+    #     if not isinstance(value, ActStatus):
+    #         raise TypeError(f'must be ActStatus got type {value}')
+    #     self._current_action = value
 
     def __post_init__(self, master: MasterState):
         self.mine_values: MineValues = MineValues(ice=master.maps.ice, ore=master.maps.ore)
@@ -311,5 +322,3 @@ class Status:
         # Action queue might not actually be getting updated
         # self.status.last_action_update_step = self.master.step
 
-    def update_planned_actions(self, action_queue: List[np.ndarray]):
-        self.planned_action_queue = action_queue
