@@ -395,8 +395,6 @@ class SingleUnitActionPlanner:
         # Check again if unit must move
         mm_success = self._force_moving_if_necessary(unit_must_move)
 
-        # Update the planned actions
-        self.unit.update_planned_actions_with_queue()
         return success and mm_success
 
 
@@ -728,7 +726,7 @@ class MultipleUnitActionPlanner:
                 f"was {unit.status.previous_action.category}:{unit.status.previous_action.sub_category}, now {unit.status.current_action.category}:{unit.status.current_action.sub_category}"
                 f" first few new actions are {planned_actions[:3]}, first few old actions were {unit.start_of_turn_actions[:3]}"
             )
-            if last_updated < 3 or last_updated > 30 and unit.status.previous_action != ActCategory.NOTHING:
+            if last_updated < 3 or last_updated > 30 and unit.status.previous_action.category != ActCategory.NOTHING:
                 logger.info(
                     f"{unit.log_prefix} updated {last_updated} ago <<< This is just a note to see how things are going"
                 )
@@ -788,6 +786,8 @@ class MultipleUnitActionPlanner:
             unit = unit_info.unit
             self._assign_new_factory_if_necessary(unit, factory_infos)
             unit_info = unit_infos.infos[unit_id]
+
+            # Leaves any updates in unit.status.planned_actions
             unit_action_planner = SingleUnitActionPlanner(
                 unit=unit,
                 master=self.master,
@@ -807,16 +807,19 @@ class MultipleUnitActionPlanner:
             unit_action_planner.calculate_actions_for_unit()
             self.debug_single_action_planners[unit_id] = unit_action_planner
 
-            # Check if planned actions differ from existing actions on next turn
+            # Check if planned actions differ from existing actions on next turn (if so, marked for updating real
+            # actions)
             # TODO: Currently checks whole action (i.e. does n match), can instead check next step only
             self._should_real_actions_update(unit, unit_info, units_to_act)
 
-            # Make sure the next action is taken into account for next validation
+            # Make sure the next action is taken into account for next validation (e.g. if this unit is taking power)
             action_validator.add_next_action(unit)
             # And for next pathing
             existing_paths.add_unit(unit, is_enemy=False)
 
+        # Collect the actions send back to env
         unit_actions = self._collect_changed_actions(units_to_act)
+        # Make sure they are at least valid against the action space
         unit_actions = self._validate_changed_actions_against_action_space(unit_actions)
         self.debug_actions_returned = unit_actions
         logger.info(f"Updating actions of {list(unit_actions.keys())}")

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager, EnemyUnitManager
     from master_state import MasterState, Maps
     from decide_actions import ActReasons, ShouldActInfo
+    from combat_planner import TargetInfo
 
 logger = get_logger(__name__)
 
@@ -24,11 +25,15 @@ class AttackValues:
     position: Tuple[int, int] = (0, 0)
     chase_radius: int = 15
     eliminate_threshold: int = 2
+    heavy_attack_light: bool = False
+    target: Optional[TargetInfo] = None
 
     @dataclass
     class Hold:
-        distance: int = 10
-        radius: int = 5
+        # How close to hold position is allowed (i.e. allow collision avoidance and not have to move back)
+        pos_buffer: int = 2
+        attack_dist: int = 10
+        search_radius: int = 5
 
     hold: Hold = field(default_factory=Hold)
 
@@ -181,6 +186,8 @@ class TurnStatus:
     #  Some useful things that can be used to help decide if actions need updating
     next_dest: DestStatus = None
     should_act_reasons: List[ShouldActInfo] = field(default_factory=list)
+    # Whether planned actions are valid after stepping (i.e. do they match the next action in real action queue)
+    planned_actions_valid: bool = True
 
     # must move next turn
     must_move: bool = False
@@ -212,7 +219,6 @@ class Status:
     current_action: ActStatus
     previous_action: ActStatus
     last_action_update_step: int
-    action_queue_valid_after_step: bool
     planned_action_queue: List[np.ndarray] = field(default_factory=list)
 
     # Storing things about processing of turn for unit (reset at beginning of turn)
@@ -296,8 +302,7 @@ class Status:
         self._debug_last_beginning_of_step_update = step
         self.planned_action_queue = new_planned
 
-        # Todo remove old
-        self.action_queue_valid_after_step = valid
+        self.turn_status.planned_actions_valid = valid
         return valid
 
     def update_action_status(self, new_action: ActStatus):
@@ -308,6 +313,3 @@ class Status:
 
     def update_planned_actions(self, action_queue: List[np.ndarray]):
         self.planned_action_queue = action_queue
-
-        # todo remove old (remove this whole function?)
-        self.action_queue_valid_after_step = True

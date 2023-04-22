@@ -10,10 +10,12 @@ import actions_util
 import util
 from master_state import Maps, AllUnits
 from new_path_finder import Pather
+from unit_manager import FriendlyUnitManager
 
 from config import get_logger
 
 logger = get_logger(__name__)
+
 
 if TYPE_CHECKING:
     from unit_manager import UnitManager, FriendlyUnitManager, EnemyUnitManager
@@ -529,7 +531,10 @@ class UnitPaths:
         # Calculate the valid path (i.e. can't walk of edge of map or through enemy factory)
         # NOTE: does NOT include power considerations (i.e. if enough power to do first move)
         # Especially important for enemy units... Don't want to deal with invalid paths later
-        valid_path = unit.valid_moving_actions(costmap=move_map, max_len=self.max_step)
+        if isinstance(unit, FriendlyUnitManager):
+            valid_path = unit.valid_moving_actions(costmap=move_map, max_len=self.max_step, planned_actions=True)
+        else:
+            valid_path = unit.valid_moving_actions(costmap=move_map, max_len=self.max_step)
 
         # Get the valid path coords (first value is current position)
         path = util.actions_to_path(unit.start_of_turn_pos, actions=valid_path.valid_actions, max_len=self.max_step)

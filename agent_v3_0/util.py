@@ -429,6 +429,10 @@ def nearest_non_zero(array: np.ndarray, pos: Union[np.ndarray, Tuple[int, int]])
     closest = locations[np.argmin(distances)]
     return tuple(closest)
 
+def non_zero_coords(arr: np.ndarray) -> List[Tuple[int, int]]:
+    non_zero_indices = np.nonzero(arr)
+    coordinates = list(zip(non_zero_indices[0], non_zero_indices[1]))
+    return coordinates
 
 def num_turns_of_actions(actions: Union[np.ndarray, List[np.ndarray]]) -> int:
     """Calculate how many turns the actions will take including their n values, does not include repeat (and should not)"""
@@ -1676,6 +1680,45 @@ def figures_to_subplots(figs, title=None, rows=None, cols=None, shared_data=Fals
     )
     return full_fig
 
+def calc_path_to_available_nearest_pos(
+        pathfinder: Pather,
+        costmap: np.ndarray,
+        from_pos: Tuple[int, int],
+        target_array: np.ndarray,
+        near_pos: Tuple[int, int],
+        max_attempts = 20,
+        margin=2,
+) -> np.ndarray:
+    """Calculate path from pos to the nearest non-zero of array that will be unoccupied on arrival (closest to near_pos)
+    Args:
+        pathfinder: Usually agents pathfinding instance
+        costmap: np.ndarray
+        from_pos: Position to path from
+        target_array: non-zero array where aiming for
+        near_pos: Pos to aim nearest
+        margin: How far outside the bounding box of pos/factory to search for best path (higher => slower)
+    """
+    array = target_array.copy()
+    attempts = 0
+    # Try path to the nearest factory tile that will be unoccupied at arrival
+    while attempts < max_attempts:
+        attempts += 1
+        coord = nearest_non_zero(array, near_pos)
+        # If already there
+        if tuple(coord) == tuple(from_pos):
+            return np.array([from_pos])  # Path is list of positions
+        if coord is not None:
+            path = pathfinder.fast_path(
+                from_pos,
+                coord,
+                costmap=costmap,
+                margin=margin,
+
+            )
+            if len(path) > 0:
+                return path
+            array[coord[0], coord[1]] = 0
+    return np.array([])
 
 def calc_path_to_factory(
     pathfinder: Pather,
@@ -1696,25 +1739,28 @@ def calc_path_to_factory(
     factory_loc = factory_loc.copy()
     original_nearest_location = nearest_non_zero(factory_loc, pos)
 
-    attempts = 0
-    # Try path to the nearest factory tile that will be unoccupied at arrival
-    while attempts < 9:
-        attempts += 1
-        nearest_factory = nearest_non_zero(factory_loc, pos)
-        if tuple(nearest_factory) == tuple(pos):
-            return np.array([pos])  # Path is list of positions
-        if nearest_factory is not None:
-            path = pathfinder.fast_path(
-                pos,
-                nearest_factory,
-                costmap=costmap,
-                margin=margin,
-            )
-            if len(path) > 0:
-                return path
-            factory_loc[nearest_factory[0], nearest_factory[1]] = 0
+    path = calc_path_to_available_nearest_pos(pathfinder, costmap, pos, factory_loc, pos, max_attempts=9, margin=margin)
+    #
+    # attempts = 0
+    # # Try path to the nearest factory tile that will be unoccupied at arrival
+    # while attempts < 9:
+    #     attempts += 1
+    #     nearest_factory = nearest_non_zero(factory_loc, pos)
+    #     if tuple(nearest_factory) == tuple(pos):
+    #         return np.array([pos])  # Path is list of positions
+    #     if nearest_factory is not None:
+    #         path = pathfinder.fast_path(
+    #             pos,
+    #             nearest_factory,
+    #             costmap=costmap,
+    #             margin=margin,
+    #         )
+    #         if len(path) > 0:
+    #             return path
+    #         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
     # Path to the nearest tile anyway
-    else:
+    if len(path) == 0:
+    # else:
         logger.warning(
             f"No path to any factory tile without collisions from {pos}  (best factory loc would be {original_nearest_location}), returning path without considering collisions"
         )
@@ -1724,7 +1770,7 @@ def calc_path_to_factory(
             costmap=pathfinder.base_costmap,
             margin=margin,
         )
-        return path
+    return path
 
 
 def set_middle_of_factory_loc_zero(factory_loc: np.ndarray):

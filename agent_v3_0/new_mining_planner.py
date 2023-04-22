@@ -42,8 +42,5 @@ class UnitMiningPlanner(BaseUnitPlanner):
     def update_planned_actions(self):
         pass
 
-    def create_new_actions(self):
+    def add_new_actions(self):
         pass
-
-
-

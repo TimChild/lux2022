@@ -460,8 +460,6 @@ class RubbleClearingRecommendation(Recommendation):
         self.best_coord = best_coord
 
 
-
-
 class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
     pass
 
@@ -470,14 +468,15 @@ class LichenUnitPlanner(ClearingUnitPlanner):
     def update_planned_actions(self):
         pass
 
-    def create_new_actions(self):
+    def add_new_actions(self):
         pass
+
 
 class RubbleUnitPlanner(ClearingUnitPlanner):
     def update_planned_actions(self):
-        return self.create_new_actions()
+        return self.add_new_actions()
 
-    def create_new_actions(self):
+    def add_new_actions(self):
         rec = self.recommend(self.unit)
         return self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
 
@@ -495,10 +494,10 @@ class RubbleUnitPlanner(ClearingUnitPlanner):
         return None
 
     def carry_out(
-            self,
-            unit: FriendlyUnitManager,
-            recommendation: RubbleClearingRecommendation,
-            unit_must_move: bool,
+        self,
+        unit: FriendlyUnitManager,
+        recommendation: RubbleClearingRecommendation,
+        unit_must_move: bool,
     ) -> bool:
         if unit.factory_id is not None:
             factory = self.master.factories.friendly[unit.factory_id]
@@ -517,7 +516,6 @@ class RubbleUnitPlanner(ClearingUnitPlanner):
 
 
 class ClearingPlanner(BaseGeneralPlanner):
-
     def __init__(self, master: MasterState):
         super().__init__(master)
         self.master = master
@@ -555,4 +553,3 @@ class ClearingPlanner(BaseGeneralPlanner):
             unit_planner = RubbleUnitPlanner(self.master, self, unit)
             self.unit_planners[unit.unit_id] = unit_planner
         return self.unit_planners[unit.unit_id]
-

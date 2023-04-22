@@ -63,7 +63,7 @@ class FriendlyFactoryManager(FactoryManager):
         self.light_units: Dict[str, FriendlyUnitManager] = {}
         self.heavy_units: Dict[str, FriendlyUnitManager] = {}
 
-        self.waiting_area: np.ndarray = self._generate_waiting_area()
+        self.queue_array: np.ndarray = self._generate_waiting_area()
 
         # Keep track of some values that will change during planning
         self._power = 0

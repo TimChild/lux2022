@@ -1,10 +1,13 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Dict
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import numpy as np
 
 from base_planners import BaseUnitPlanner, BaseGeneralPlanner
 from unit_status import ActCategory, CombatActSubCategory
+from decide_actions import ActReasons
 from config import get_logger
 import actions_util
 import util
@@ -444,57 +447,266 @@ class Attack:
         return success
 
 
+@dataclass
+class TargetInfo:
+    unit: EnemyUnitManager
+    pos: Tuple[int, int]
+    dist: int
+    value: int
+
+
 class CombatUnitPlanner(BaseUnitPlanner):
     def update_planned_actions(self):
+        """Update existing actions
+        I.e. Handle should_act reasons here, then only call add_new_actions when needing to add new actions
+
+        If need to add more to path, call self.add_new_actions(...)
+        """
+        should_acts = self.unit.status.turn_status.should_act_reasons
+        if self.unit.status.turn_status.must_move:
+            # This also handles enemy heavy near friendly light (just move out of the way)
+            pass
+        if ActReasons.LOW_POWER in should_acts:
+            pass
+        if ActReasons.COLLISION_WITH_ENEMY in should_acts:
+            pass
+        if ActReasons.COLLISION_WITH_FRIENDLY in should_acts:
+            pass
+
+        # TESTING:
+        if not isinstance(self.unit.status.current_action.sub_category, CombatActSubCategory):
+            self.unit.status.current_action.sub_category = CombatActSubCategory.RUN_AWAY
+
+
         if len(self.unit.status.planned_action_queue) == 0:
-            return self.create_new_actions()
+            return self.add_new_actions()
         else:
-            return self.create_new_actions()
+            return self.add_new_actions()
 
-    def create_new_actions(self):
-        return self.attack(self.unit)
+    def add_new_actions(self):
+        """Add new actions to end of planned action queue"""
+        self.unit.action_queue = self.unit.status.planned_action_queue.copy()
+        action_subtype = self.unit.status.current_action.sub_category
+        if action_subtype == CombatActSubCategory.RETREAT_HOLD:
+            self._add_retreat_hold()
+        elif action_subtype == CombatActSubCategory.ATTACK_HOLD:
+            self._add_attack_hold()
+        elif action_subtype == CombatActSubCategory.TEMPORARY:
+            self._add_attack_temporary()
+        elif action_subtype == CombatActSubCategory.CONSERVE:
+            self._add_attack_conserve()
+        elif action_subtype == CombatActSubCategory.RUN_AWAY:
+            self._add_runaway()
+        else:
+            raise NotImplementedError(f'{action_subtype} not implemented')
+        return True
 
-    def attack(self, unit: FriendlyUnitManager) -> bool:
-        attack_instance = Attack(unit, self.master, self.planner.targeted_enemies)
-        success = attack_instance.perform_attack()
-        if success and attack_instance.best_enemy_unit is not None and attack_instance.action_executed == "attack":
-            enemy_id = attack_instance.best_enemy_unit.unit_id
-            if (
-                enemy_id in self.planner.targeted_enemies
-                and self.planner.targeted_enemies[enemy_id].unit_id != unit.unit_id
-            ):
-                logger.warning(
-                    f"{enemy_id} already targeted by {self.planner.targeted_enemies[enemy_id].unit_id}, now {unit.unit_id} is targeting too"
-                )
-            self.planner.targeted_enemies[enemy_id] = unit
+    def _get_hold_pos(self) -> Tuple[int, int]:
+        hold_pos = tuple(self.unit.status.attack_values.position)
+        if hold_pos is None:
+            hold_pos = self.unit.pos
+            self.unit.status.attack_values.position = hold_pos
+        return hold_pos
+
+    def _add_retreat_hold(self) -> bool:
+        # Figure out where we are supposed to be holding position
+        hold_pos = self._get_hold_pos()
+
+        # If not at location, path there (ignoring enemies while retreating)
+        within_dist = util.manhattan(hold_pos, self.unit.pos) < self.unit.status.attack_values.hold.pos_buffer
+        if not within_dist:
+            success = self.add_path_to_pos(hold_pos)
+            if not success:
+                self.abort()
+                return False
+        # If at hold location
+        else:
+            # If enemies nearby switch mode
+            if self._enemies_in_radius(self.unit.status.attack_values.hold.search_radius):
+                self.unit.status.current_action.sub_category = CombatActSubCategory.ATTACK_HOLD
+                return self._add_attack_hold()
+
+        # Otherwise do nothing, and that's OK
+        self.unit.status.turn_status.action_queue_empty_ok = True
+        return True
+
+    def _add_attack_hold(self) -> bool:
+        # Are we close enough to hold pos
+        hold_pos = self._get_hold_pos()
+        enemies = self._enemies_in_radius(self.unit.status.attack_values.hold.attack_dist, pos=hold_pos)
+
+        if enemies:
+            self._attack_best_enemy(enemies)
+        else:
+            self.unit.status.current_action.sub_category = CombatActSubCategory.RETREAT_HOLD
+            return self._add_retreat_hold()
+        return True
+
+    def _add_runaway(self):
+        success = self.add_path_to_factory_queue()
+        if not success:
+            success = self.add_path_to_factory_queue(avoid_collision_only=True)
+            if not success:
+                return self.abort()
         return success
 
-    def run_away(self, unit: FriendlyUnitManager):
-        logger.info(f"Running away to factory")
-        cm = self.master.pathfinder.generate_costmap(unit)
-        path_to_factory = util.calc_path_to_factory(
-            self.master.pathfinder,
-            costmap=cm,
-            pos=unit.pos,
-            factory_loc=self.master.factories.friendly[unit.factory_id].factory_loc,
-        )
-        if len(path_to_factory) > 0:
-            self.master.pathfinder.append_path_to_actions(unit, path_to_factory)
-            return True
-        else:
-            cm = self.master.pathfinder.generate_costmap(unit, enemy_light=False, enemy_heavy=False)
-            path_to_factory = util.calc_path_to_factory(
-                self.master.pathfinder,
-                costmap=cm,
-                pos=unit.pos,
-                factory_loc=self.master.factories.friendly[unit.factory_id].factory_loc,
-            )
-            if len(path_to_factory) > 0:
-                logger.warning(f"{unit.log_prefix}: Path to factory only after allowing collisions with enemy")
-                self.master.pathfinder.append_path_to_actions(unit, path_to_factory)
-                return True
-            logger.error(f"{unit.log_prefix}: No path to factory")
+    def _attack_best_enemy(self, enemies: List[TargetInfo]) -> bool:
+        if len(enemies) == 0:
+            logger.error(f'{self.unit.log_prefix}: attacking best enemies but enemies list empty')
+            raise ValueError
             return False
+
+        enemies = list(reversed(sorted(enemies, key=lambda x: x.value)))
+        best = enemies[0]
+        return self._attack(best)
+
+    def _enemies_in_radius(self, radius: int, pos = None) -> List[TargetInfo]:
+        """Are there enemies within the hold radius of unit"""
+        self.planner: CombatPlanner
+        if pos is None:
+            pos = self.unit.pos
+
+        dist_array = util.pad_and_crop(util.manhattan_kernel(30), self.master.maps.map_shape, pos[0], pos[1])
+
+        enemy_values = np.zeros(self.master.maps.map_shape)
+        if self.unit.unit_type == 'LIGHT' or self.unit.status.attack_values.heavy_attack_light:
+            enemy_values += self.planner.light_enemy_value_map
+        if self.unit.unit_type == 'HEAVY':
+            enemy_values += self.planner.heavy_enemy_value_map
+
+        dists = (dist_array * (enemy_values > 0).astype(int))
+        dists[dists > radius] = 0
+
+        coords = util.non_zero_coords(dists)
+
+        enemies = []
+        for coord in coords:
+            value = enemy_values[coord[0], coord[1]]
+            dist = dists[coord[0], coord[1]]
+            enemy = self.master.units.unit_at_position(coord)
+            enemies.append(TargetInfo(enemy, coord, dist, value))
+
+        return enemies
+
+    def _attack(self, enemy: TargetInfo) -> bool:
+        if enemy.dist > self.unit.status.attack_values.eliminate_threshold:
+            # Move 1 short of best intercept (set enemy as target)
+            self.add_path_to_intercept(enemy, dist_from_true_intercept=1)
+            self.unit.status.attack_values.target = enemy
+        else:
+            if enemy.dist == 1 or (enemy.dist == 2 and self.unit.power > enemy.unit.power) or enemy.dist > 3:
+                # path directly toward enemy
+                success = self.add_path_to_enemy(enemy, collision_only=True)
+            # Should avoid direct collision if they are moving
+            else:
+                # Assume if their path is short they are targeting me
+                if util.num_turns_of_actions(enemy.unit.action_queue) < 2:
+                    success = self.add_step_away_from_enemy(enemy)
+                # Assume they are standing still and go for them
+                else:
+                    success = self.add_path_to_enemy(enemy, collision_only=True)
+        return success
+
+    def add_path_to_intercept(self, enemy: TargetInfo, dist_from_true_intercept: int = 0) -> bool:
+        intercept = self.get_best_intercept(enemy)
+        path = self.get_path_to_pos(intercept, ignore=[enemy.unit.id_num])
+        # Don't quite path to intercept
+        if dist_from_true_intercept > 0 and len(path) > 1+dist_from_true_intercept:
+            path = path[:-dist_from_true_intercept]
+        return self.add_path_to_action_queue(path)
+
+    def get_best_intercept(self, enemy: TargetInfo) -> Tuple[int, int]:
+        enemy_location_ids = self.master.pathfinder.unit_paths.calculate_likely_unit_collisions(
+            self.unit.pos,
+            start_step=util.num_turns_of_actions(self.unit.action_queue),
+            exclude_id_nums=[self.unit.id_num],
+            friendly_light=False,
+            friendly_heavy=False,
+            # Only hunt down same type of unit
+            enemy_light=True if self.unit.unit_type == "LIGHT" or self.unit.status.attack_values.heavy_attack_light else False,
+            enemy_heavy=True if self.unit.unit_type == "HEAVY" else False,
+        )
+        coord = None
+        # Note: Only asking for one anyway, so will always be first in dict
+        for location_ids in enemy_location_ids.values():
+            location_ids[location_ids != enemy.unit.id_num] = -1
+            location_ids += 1
+            coord = util.nearest_non_zero(location_ids, self.unit.pos)
+            if coord is not None:
+                break
+
+        if coord is None:
+            logger.info(f'Failed to find intercept, returning current location')
+            coord = enemy.pos
+        return tuple(coord)
+
+    def add_step_away_from_enemy(self, enemy: TargetInfo) -> bool:
+        target = 2 * (enemy.pos - self.unit.pos)
+        path = self.get_path_to_pos(target)
+        success = self.add_path_to_action_queue(path[:2])
+        return success
+
+    def add_path_to_enemy(self, enemy: TargetInfo, pos=None, collision_only=True) -> bool:
+        path = self.get_path_to_enemy(enemy, pos, collision_only=collision_only)
+        return self.add_path_to_action_queue(path)
+
+    def get_path_to_enemy(self, enemy: TargetInfo, pos=None, collision_only=True) -> np.ndarray:
+        pos = pos if pos is not None else enemy.pos
+        cm = self.master.pathfinder.generate_costmap(
+            self.unit,
+            ignore_id_nums=[enemy.unit.id_num],
+            # enemy_light=avoid_enemy_light,
+            # enemy_heavy=avoid_enemy_heavy,
+            collision_only=collision_only,
+            enemy_nearby_start_cost=0,
+        )
+        #  Path to enemy  (with larger margin to allow for navigating around things better)
+        path_to_enemy = self.master.pathfinder.fast_path(self.unit.pos, pos, costmap=cm, margin=5)
+        return path_to_enemy
+
+
+    #
+    # def old_attack(self, unit: FriendlyUnitManager) -> bool:
+    #     attack_instance = Attack(unit, self.master, self.planner.targeted_enemies)
+    #     success = attack_instance.perform_attack()
+    #     if success and attack_instance.best_enemy_unit is not None and attack_instance.action_executed == "attack":
+    #         enemy_id = attack_instance.best_enemy_unit.unit_id
+    #         if (
+    #             enemy_id in self.planner.targeted_enemies
+    #             and self.planner.targeted_enemies[enemy_id].unit_id != unit.unit_id
+    #         ):
+    #             logger.warning(
+    #                 f"{enemy_id} already targeted by {self.planner.targeted_enemies[enemy_id].unit_id}, now {unit.unit_id} is targeting too"
+    #             )
+    #         self.planner.targeted_enemies[enemy_id] = unit
+    #     return success
+    #
+    # def old_run_away(self, unit: FriendlyUnitManager):
+    #     logger.info(f"Running away to factory")
+    #     cm = self.master.pathfinder.generate_costmap(unit)
+    #     path_to_factory = util.calc_path_to_factory(
+    #         self.master.pathfinder,
+    #         costmap=cm,
+    #         pos=unit.pos,
+    #         factory_loc=self.master.factories.friendly[unit.factory_id].factory_loc,
+    #     )
+    #     if len(path_to_factory) > 0:
+    #         self.master.pathfinder.append_path_to_actions(unit, path_to_factory)
+    #         return True
+    #     else:
+    #         cm = self.master.pathfinder.generate_costmap(unit, enemy_light=False, enemy_heavy=False)
+    #         path_to_factory = util.calc_path_to_factory(
+    #             self.master.pathfinder,
+    #             costmap=cm,
+    #             pos=unit.pos,
+    #             factory_loc=self.master.factories.friendly[unit.factory_id].factory_loc,
+    #         )
+    #         if len(path_to_factory) > 0:
+    #             logger.warning(f"{unit.log_prefix}: Path to factory only after allowing collisions with enemy")
+    #             self.master.pathfinder.append_path_to_actions(unit, path_to_factory)
+    #             return True
+    #         logger.error(f"{unit.log_prefix}: No path to factory")
+    #         return False
 
 
 class CombatPlanner(BaseGeneralPlanner):

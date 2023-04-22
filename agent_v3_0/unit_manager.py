@@ -110,7 +110,7 @@ class UnitManager(abc.ABC):
     def pos(self, value):
         if value is None or len(value) != 2:
             raise ValueError(f"got {value} with type {type(value)} for pos")
-        self.unit.pos = value
+        self.unit.pos = tuple(value)
 
     @property
     def pos_slice(self):
@@ -170,9 +170,16 @@ class FriendlyUnitManager(UnitManager):
             current_action=ActStatus(),
             previous_action=ActStatus(),
             last_action_update_step=0,
-            action_queue_valid_after_step=True,
         )
         self.start_of_turn_actions = []
+
+        # Calculated per turn
+    def dist_array(self, start_of_turn=True) -> np.ndarray:
+        if start_of_turn:
+            pos = self.start_of_turn_pos
+        else:
+            pos = self.pos
+        return util.pad_and_crop(util.manhattan_kernel(30), self.master.maps.map_shape, pos[0], pos[1])
 
     @property
     def log_prefix(self) -> str:
@@ -191,10 +198,6 @@ class FriendlyUnitManager(UnitManager):
         if actions is None:
             actions = self.status.planned_action_queue if planned_actions else self.action_queue
         return super().current_path(max_len=max_len, actions=actions)
-
-    def update_planned_actions_with_queue(self):
-        """Update the planned actions with the current action queue (i.e. after building new action queue)"""
-        self.status.update_planned_actions(self.action_queue)
 
     def valid_moving_actions(
         self, costmap, max_len=20, ignore_repeat=False, planned_actions=True

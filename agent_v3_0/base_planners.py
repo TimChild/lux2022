@@ -1,6 +1,10 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, TypeVar, Dict
+import numpy as np
+from typing import TYPE_CHECKING, TypeVar, Dict, List, Optional
 import abc
+
+from unit_status import ActStatus, ActCategory
+from config import get_logger
 
 import util
 
@@ -9,6 +13,8 @@ if TYPE_CHECKING:
     from master_state import MasterState
     from locations import LocationManager
 
+
+logger = get_logger(__name__)
 
 # LocationManagerType= TypeVar("LocationManagerType", bound=LocationManager)
 BasePlannerType = TypeVar("BasePlannerType", bound="BaseGeneralPlanner")
@@ -43,7 +49,8 @@ class BaseUnitPlanner(abc.ABC):
 
     def __init__(self, master: MasterState, general_planner: BasePlannerType, unit: FriendlyUnitManager):
         self.master = master
-        self.planner = general_planner
+        self.pathfinder = master.pathfinder
+        self.planner: BasePlannerType = general_planner
         self.unit = unit
 
     @abc.abstractmethod
@@ -52,9 +59,61 @@ class BaseUnitPlanner(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def create_new_actions(self):
-        """Replan the actions of the unit from scratch (i.e. assuming newly assigned, starting from end of current planned actions)"""
+    def add_new_actions(self):
+        """Add new actions to the end of the currently planned action queue
+        While planning/modifying use the unit.action_queue, then at the end copy to planned_actions
+        """
+        # This is usually good start so that start modifying from where previous planned actions end
+        self.unit.action_queue = self.unit.status.planned_action_queue.copy()
         pass
+
+    def add_path_to_action_queue(self, path: np.ndarray) -> bool:
+        """Add the path to action queue and update unit pos"""
+        if len(path) > 0:
+            self.pathfinder.append_path_to_actions(self.unit, path)
+            return True
+        return False
+
+    def add_path_to_pos(self, dest_pos: util.POS_TYPE, ignore: Optional[List[int]]=None, collision_only=False) -> bool:
+        path = self.get_path_to_pos(dest_pos, ignore=ignore, collision_only=collision_only)
+        return self.add_path_to_action_queue(path)
+
+    def get_path_to_pos(self, dest_pos: util.POS_TYPE, ignore: Optional[List[int]]=None, collision_only=False) -> np.ndarray:
+        cm = self.master.pathfinder.generate_costmap(
+            self.unit,
+            ignore_id_nums=ignore,
+            collision_only=collision_only,
+        )
+        path = self.master.pathfinder.fast_path(self.unit.pos, dest_pos, costmap=cm, margin=3)
+        return path
+
+    def add_path_to_factory_queue(self, avoid_collision_only=False) -> bool:
+        path = self.get_path_to_factory_queue(avoid_collision_only=avoid_collision_only)
+        return self.add_path_to_action_queue(path)
+
+    def get_path_to_factory_queue(self, avoid_collision_only=False) -> np.ndarray:
+        cm = self.master.pathfinder.generate_costmap(self.unit, collision_only=avoid_collision_only)
+        path_to_factory = util.calc_path_to_available_nearest_pos(
+            self.master.pathfinder,
+            costmap=cm,
+            from_pos=self.unit.pos,
+            target_array=self.unit.factory.queue_array,
+            near_pos=self.unit.factory.pos,
+            max_attempts=50,
+        )
+        return path_to_factory
+
+    def abort(self, delay_abort_to_end_of_queue: bool = False) -> bool:
+        """Retreat to factory waiting area and clear ActionStatus"""
+        logger.error(
+            f"{self.unit.log_prefix}: Aborting current action. Retreating to factory queue and setting status Waiting"
+        )
+        if not delay_abort_to_end_of_queue:
+            self.unit.action_queue = []
+        self.unit.status.update_action_status(ActStatus(category=ActCategory.WAITING))
+        self.add_path_to_factory_queue(avoid_collision_only=True)
+        self.unit.status.planned_action_queue = self.unit.action_queue
+        return False
 
 
 class BaseRouter(abc.ABC):

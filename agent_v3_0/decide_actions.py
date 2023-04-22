@@ -312,7 +312,7 @@ def should_unit_consider_acting(
         # Todo remove once unused
         should_act = False
     # Previous action invalid
-    if unit.status.action_queue_valid_after_step is False:
+    if unit.status.turn_status.planned_actions_valid is False:
         unit_act_reasons.append(ShouldActInfo(ActReasons.PREVIOUS_ACTION_INVALID))
     # If no queue
     if len(unit.action_queue) == 0:
