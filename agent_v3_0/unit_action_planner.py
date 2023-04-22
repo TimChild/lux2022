@@ -9,8 +9,15 @@ import numpy as np
 import pandas as pd
 
 import util
-from collisions import CollisionResolver, AllCollisionsForUnit, UnitPaths, calculate_collisions
-from decide_actions import ActionDecider, ActReasons, ConsiderActInfo, should_unit_consider_acting
+from collisions import (
+    CollisionResolver,
+    AllCollisionsForUnit,
+    UnitPaths,
+    calculate_collisions,
+    CollisionsForUnit,
+    find_collisions,
+)
+from decide_actions import ActionDecider, ActReasons, ConsiderActInfo, should_unit_consider_acting, ShouldActInfo
 from config import get_logger
 from factory_action_planner import FactoryDesires, FactoryInfo
 from master_state import MasterState, AllUnits
@@ -324,7 +331,7 @@ class SingleUnitActionPlanner:
     def _force_moving_if_necessary(self, unit_must_move: bool) -> bool:
         success = True
         if unit_must_move:
-            logger.debug(f'{self.unit.unit_id} checking this unit is moving first turn')
+            logger.debug(f"{self.unit.unit_id} checking this unit is moving first turn")
             q = self.unit.status.planned_action_queue
             if len(q) == 0 or q[0][util.ACT_TYPE] != util.MOVE or q[0][util.ACT_DIRECTION] == util.CENTER:
                 logger.warning(
@@ -738,6 +745,20 @@ class MultipleUnitActionPlanner:
             unit.status.last_action_update_step = self.master.step
             units_to_act.has_updated_actions[unit.unit_id] = unit_info.act_info
 
+    def _check_additional_collisions(self, unit: FriendlyUnitManager, units_to_act: UnitsToAct):
+        collisions = find_collisions(
+            unit,
+            [info.unit for info in units_to_act.has_updated_actions.values()],
+            max_step=self.check_friendly_collision_steps,
+            other_is_enemy=False,
+            rubble=self.master.maps.rubble,
+        )
+        if len(collisions) > 0:
+            unit.status.turn_status.should_act_reasons.append(
+                ShouldActInfo(reason=ActReasons.COLLISION_WITH_FRIENDLY, requires_action=True)
+            )
+        return collisions
+
     def decide_unit_actions(
         self,
         mining_planner: MiningPlanner,
@@ -789,6 +810,9 @@ class MultipleUnitActionPlanner:
             unit = unit_info.unit
             self._assign_new_factory_if_necessary(unit, factory_infos)
             unit_info = unit_infos.infos[unit_id]
+
+            # Check any additional collisions with units that have updated actions (Adds ShouldActInfo)
+            friendly_collisions = self._check_additional_collisions(unit, units_to_act)
 
             # Leaves any updates in unit.status.planned_actions
             unit_action_planner = SingleUnitActionPlanner(

@@ -806,6 +806,7 @@ def calculate_collisions(
     return all_unit_collisions
 
 
+
 def _decide_collision_avoidance(
     unit, other_unit, is_enemy, power_threshold_low, power_threshold_high
 ) -> Tuple[float, bool]:
