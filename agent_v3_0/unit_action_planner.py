@@ -12,7 +12,7 @@ import actions_util
 import util
 from general_planner import GeneralPlanner
 import collisions
-from decide_actions import ActionDecider, ActReasons, ConsiderActInfo, should_unit_consider_acting, ShouldActInfo
+from decide_actions import ActionDecider, ActReasons, ConsiderActInfo, ShouldActInfo
 from config import get_logger
 from factory_action_planner import FactoryDesires
 from factory_manager import FactoryInfo

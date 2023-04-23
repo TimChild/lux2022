@@ -216,6 +216,8 @@ class TurnStatus:
 
     # If False, and planned actions are empty at the end of action calculation either error or plan again or something
     action_queue_empty_ok: bool = False
+    # Whether the unit.action_queue should be updated to planned_actions at end of planner
+    planned_actions_require_update: bool = False
     # If set True, the units next action calculation loop will be started again (e.g. if switch from Mine decides it
     # should switch to attack)
     replan_required: bool = False
@@ -245,7 +247,10 @@ class TurnStatus:
 class Status:
     master: InitVar[MasterState]
     # _current_action: ActStatus = ActStatus()
+    # Act status during planning (i.e. changes during planning)
     current_action: ActStatus = ActStatus()
+    # ActStatus before any planning (updated as first in queue at beginning of turn)
+    start_of_turn_action: ActStatus = ActStatus()
     # When was the action queue last updated
     last_real_action_update_step: int = 0
     _planned_action_queue: List[np.ndarray] = field(default_factory=list)
@@ -262,7 +267,14 @@ class Status:
     lichen_values: LichenValues = field(default_factory=LichenValues)
 
     # For debug use only
-    _debug_last_beginning_of_step_update: int = 0
+    def update(self, unit: FriendlyUnitManager, master: MasterState):
+        """beginning of turn update"""
+        self.turn_status.update(unit, master)
+        self._step_update_planned_actions(unit)
+        if len(self.planned_act_statuses) > 0:
+            self.start_of_turn_action = self.planned_act_statuses[0].copy()
+        else:
+            self.start_of_turn_action = self.current_action.copy()
 
     # @property
     # def current_action(self):
@@ -273,6 +285,8 @@ class Status:
     #     if not isinstance(value, ActStatus):
     #         raise TypeError(f'must be ActStatus got type {value}')
     #     self._current_action = value
+
+    _debug_last_beginning_of_step_update: int = 0
 
     @property
     def planned_action_queue(self) -> List[np.ndarray]:
@@ -328,11 +342,6 @@ class Status:
 
     def __post_init__(self, master: MasterState):
         self.mine_values: MineValues = MineValues(ice=master.maps.ice, ore=master.maps.ore)
-
-    def update(self, unit: FriendlyUnitManager, master: MasterState):
-        """beginning of turn update"""
-        self.turn_status.update(unit, master)
-        self._step_update_planned_actions(unit)
 
     def _step_planned_actions_and_status(self) -> List[np.ndarray]:
         new_actions = list(self.planned_action_queue.copy())

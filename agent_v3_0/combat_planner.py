@@ -463,7 +463,7 @@ class CombatUnitPlanner(BaseUnitPlanner):
 
         If need to add more to path, call self.add_new_actions(...)
         """
-        should_acts = self.unit.status.turn_status.should_act_reasons
+        # should_acts = self.unit.status.turn_status.should_act_reasons
         if self.unit.status.turn_status.must_move:
             # This also handles enemy heavy near friendly light (just move out of the way)
 

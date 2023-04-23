@@ -50,6 +50,8 @@ class ActionHandler:
         MAX_STEPS_REACHED_PAUSE = auto()
 
         LOW_POWER_RETURNING = auto()
+        # Pausing when action is important, but not enough power this turn
+        LOW_POWER_PAUSING = auto()
         ENEMY_NEAR_ATTACKING = auto()
         ENEMY_NEAR_WAIT = auto()
         ENEMY_NEAR_FLEEING = auto()

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Tuple, Optional, List
+from typing import TYPE_CHECKING, Tuple, Optional, List, Dict
 from dataclasses import dataclass
 
 import numpy as np
@@ -23,7 +23,7 @@ from util import (
     path_to_factory_edge_nearest_pos,
 )
 
-from unit_status import MineValues, MineActSubCategory, ActStatus
+from unit_status import MineValues, MineActSubCategory, ActStatus, ActCategory
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager
@@ -952,11 +952,24 @@ class MiningRecommender:
         )
 
 
+@dataclass
+class ResourceInfo:
+    value: int
+    pos: Tuple[int, int]
+    used_by: Dict[str, FriendlyUnitManager]
+    dist: int
+
 class MiningUnitPlanner(BaseUnitPlanner):
+    min_power = 0.5
+
     def  __init__(self, master: MasterState, general_planner: MiningPlanner, unit: FriendlyUnitManager):
         super().__init__(master, general_planner, unit)
+        self.planner = general_planner
         self.resource_type = None
         self._action_flag = None
+
+        # Just making this easier to  get to
+        self.SUCCESS = self.unit.action_handler.HandleStatus.SUCCESS
 
     def _get_best_resource(self):
         """
@@ -964,11 +977,33 @@ class MiningUnitPlanner(BaseUnitPlanner):
         - Check each in list to determine best value (nearest, unoccupied etc)
         - Return best or None
         """
-        rec = self.recommend(self.unit, resource_type, unit_must_move=self.unit.status.turn_status.must_move)
-        # success = self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
-        # self.unit.status.planned_action_queue = self.unit.action_queue.copy()
-        # return success
-        # pass
+        resource_list = self.planner.get_resource_list(self.unit.factory_id, self.resource_type)
+        utype = self.unit.unit_type
+        best_resource = None
+        best_value = 0
+        for resource in resource_list:
+            value = resource.value
+            for unit in resource.used_by.values():
+                if utype == 'HEAVY':
+                    if unit.unit_type == 'HEAVY':
+                        if resource.dist < 6:
+                            value = 0
+                        else:
+                            value = value/2
+                # Light
+                else:
+                    if unit.unit_type == 'HEAVY':
+                        value = 0
+                    elif unit.unit_type == 'LIGHT':
+                        if resource.dist < 6:
+                            value = 0
+                        else:
+                            value = value/2
+            if value > best_value:
+                best_resource = resource
+                best_value = value
+        return best_resource
+
 
     def _check_and_handle_action_flags(self,  status=None):
         """
@@ -989,115 +1024,156 @@ class MiningUnitPlanner(BaseUnitPlanner):
         else:
             raise ValueError(f"{self.unit.status.current_action} not correct for Mining")
 
+        resource = self._get_best_resource()
+        if resource is None:
+            logger.warning(f'{self.unit.log_prefix} failed to find available resource')
+            return self.unit.action_handler.return_to_factory()
 
-        # 1. Find the nearest available resource
-        if self.unit.status.mine_values.plan_step == 1:
-            resource = self._get_best_resource()
-            if resource is None:
-                logger.warning(f'{self.unit.log_prefix} failed to find available resource}')
-                return
+        if self.unit.status.current_action.step == 1:
             self.unit.status.current_action.step = 2
 
         # 2. Get at least a min amount of power from factory
         if self.unit.status.current_action.step == 2:
-            if self.unit.power < min_power:
-                status = self.unit.action_handler.add_pickup(allow_partial=True)
-                if self._check_and_handle_action_flags(status):
-                    return
-            if self.unit.power < min_power:
-                # remove pickup
-                return do nothing for now
+            power = self.unit.power_remaining()
+            if power < self.min_power*self.unit.unit_config.BATTERY_CAPACITY:
+                factory_power = self.unit.factory.calculate_power_at_step(util.num_turns_of_actions(self.unit.action_queue))
+                if power + factory_power >= self.min_power*self.unit.unit_config.BATTERY_CAPACITY:
+                    status = self.unit.action_handler.add_pickup(allow_partial=True)
+                    if status != self.SUCCESS:
+                        return status
+                else:
+                    logger.warning(f'{self.unit.log_prefix} wants to do mining, but not enough power at {self.unit.factory_id}')
+                    self.unit.status.turn_status.action_queue_empty_ok = True
+                    return self.unit.action_handler.HandleStatus.LOW_POWER_PAUSING
             self.unit.status.current_action.step = 3
 
         # 3. Path to resource
         if self.unit.status.current_action.step == 3:
-            status = self.action_handler.add_path(self.unit, resource)
-            if self._check_and_handle_action_flags(status):
-                return
+            status = self.unit.action_handler.add_path(self.unit, resource.pos)
+            if status != self.SUCCESS:
+                return status
             self.unit.status.current_action.step = 4
 
         # 4. Add dig actions
         if self.unit.status.current_action.step == 4:
             available_power = self.unit.power_remaining()
-            power_to_facory = self._calculate_power_to_factory()
+            power_to_facory = self.unit.action_handler.path_to_factory_cost(self.unit.pos)
             n_digs = (available_power - power_to_facory)//self.unit.unit_config.DIG_COST
             if n_digs > 0:
-                status = self.action_handler.add_dig(self.unit, n_digs=n_digs)
+                status = self.unit.action_handler.add_dig(self.unit, n_digs=n_digs)
+                if status != self.SUCCESS:
+                    return status
             else:
-                self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
+                logger.warning(f'{self.unit.log_prefix} Not enough power to dig returning to factory')
+                status = self.unit.action_handler.return_to_factory()
                 self.unit.status.current_action.step = 1
-                return
-            if self._check_and_handle_action_flags():
-                return
+                return status
             self.unit.status.current_action.step = 5
 
         # 5. Dropoff at factory
         if self.unit.status.current_action.step == 5:
-            self.unit.status.update_action_status(ActStatus(ActCategory.DROPOFF))
+            status = self.unit.action_handler.return_to_factory()
             self.unit.status.current_action.step = 1
-            self.unit.status.turn_status.replan_required = True
-            return
+            return status
 
         logger.error(f'{self.unit.log_prefix} somehow plan_step not valid {self.unit.status.current_action.step}')
         self.unit.status.current_action.step = 1
-        self.unit.status.update_action_status(ActStatus(category=ActCategory.DROPOFF))
-        return
+        return self.unit.action_handler.return_to_factory()
 
 
-    def recommend(
-        self,
-        unit: FriendlyUnitManager,
-        resource_type: int = ICE,
-        unit_must_move: bool = False,
-    ) -> [None, MiningRecommendation]:
-        recommender = MiningRecommender(self.master, self.planner.ice, self.planner.ore)
-        return recommender.recommend(unit, resource_type=resource_type, unit_must_move=unit_must_move)
-
-    def carry_out(
-        self,
-        unit: FriendlyUnitManager,
-        recommendation: MiningRecommendation,
-        unit_must_move: bool,
-    ) -> bool:
-        factory = self.master.factories.friendly[recommendation.factory_id]
-        route_planner = MiningRoutePlanner(
-            pathfinder=self.master.pathfinder,
-            rubble=self.master.maps.rubble,
-            resource_pos=recommendation.resource_pos,
-            resource_type=recommendation.resource_type,
-            factory=factory,
-            unit=unit,
-        )
-        self.planner.store_planners[unit.unit_id] = route_planner
-        success = route_planner.make_route(unit_must_move=unit_must_move)
-        return success
+    # def recommend(
+    #     self,
+    #     unit: FriendlyUnitManager,
+    #     resource_type: int = ICE,
+    #     unit_must_move: bool = False,
+    # ) -> [None, MiningRecommendation]:
+    #     recommender = MiningRecommender(self.master, self.planner.ice, self.planner.ore)
+    #     return recommender.recommend(unit, resource_type=resource_type, unit_must_move=unit_must_move)
+    #
+    # def carry_out(
+    #     self,
+    #     unit: FriendlyUnitManager,
+    #     recommendation: MiningRecommendation,
+    #     unit_must_move: bool,
+    # ) -> bool:
+    #     factory = self.master.factories.friendly[recommendation.factory_id]
+    #     route_planner = MiningRoutePlanner(
+    #         pathfinder=self.master.pathfinder,
+    #         rubble=self.master.maps.rubble,
+    #         resource_pos=recommendation.resource_pos,
+    #         resource_type=recommendation.resource_type,
+    #         factory=factory,
+    #         unit=unit,
+    #     )
+    #     self.planner.store_planners[unit.unit_id] = route_planner
+    #     success = route_planner.make_route(unit_must_move=unit_must_move)
+    #     return success
 
 
 class MiningPlanner(BaseGeneralPlanner):
     def __init__(self, master: MasterState):
         super().__init__(master)
 
-        # Make it easier to see what was going on for debugging
-        self.store_planners = {}
-
-    def __repr__(self):
-        return f"MiningPlanner[step={self.master.step}]"
-
-    @property
-    def ice(self):
-        return self.master.maps.ice
-
-    @property
-    def ore(self):
-        return self.master.maps.ore
-
-    @property
-    def friendly_factories(self):
-        """Map of friendly factories (where -1 is non-factory, otherwise factory id)"""
-        return self.master.maps.factory_maps.friendly
+        self.ice_resources: Dict[str, List[ResourceInfo]] = {}
+        self.ore_resources :Dict[str, List[ResourceInfo]] = {}
 
     def update(self):
-        self.store_planners = {}
+        # Remove units that are no longer mining
+        for r_dict in [self.ice_resources, self.ore_resources]:
+            for f_id, resources in r_dict.items():
+                for resource in resources:
+                    units_to_pop = []
+                    for unit_id, unit in resource.used_by.items():
+                        if unit is None or unit.status.start_of_turn_action.category in [ActCategory.DROPOFF, ActCategory.WAITING]:
+                            units_to_pop.append(unit_id)
+                    for unit_id in units_to_pop:
+                        resource.used_by.pop(unit_id)
+
+    def update_resources(self):
+        ice = self.master.maps.ice
+        ore = self.master.maps.ore
+        for res_map, resource_dict in zip([ice, ore], [self.ice_resources, self.ore_resources]):
+            for factory_id, factory in self.master.factories.friendly.items():
+                res_list = []
+                factory_dist = factory.dist_array
+                res_dist = factory_dist * res_map
+                for i in range(15):
+                    nearest = util.nearest_non_zero(res_dist, factory.pos)
+                    if nearest is None:
+                        break
+                    dist = util.manhattan(nearest, factory.pos)
+                    if dist < 5:
+                        value = 100
+                    elif dist < 10:
+                        value = 70
+                    elif dist < 15:
+                        value = 40
+                    else:
+                        value = 10
+                    res_list.append(ResourceInfo(value=value, pos=nearest, used_by={}, dist=dist))
+
+
+    # @property
+    # def ice(self):
+    #     return self.master.maps.ice
+    #
+    # @property
+    # def ore(self):
+    #     return self.master.maps.ore
+
+    # @property
+    # def friendly_factories(self):
+    #     """Map of friendly factories (where -1 is non-factory, otherwise factory id)"""
+    #     return self.master.maps.factory_maps.friendly
+
+    def get_resource_list(self, factory_id: str, resource_type: int):
+        if resource_type == util.ICE:
+            return self.ice_resources[factory_id]
+        elif resource_type == util.ORE:
+            return self.ore_resources[factory_id]
+        else:
+            raise ValueError(f'invalid resource_type {resource_type}')
+
 
     # New
     def get_unit_planner(self, unit: FriendlyUnitManager) -> MiningUnitPlanner:
