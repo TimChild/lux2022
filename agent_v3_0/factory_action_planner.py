@@ -35,17 +35,29 @@ def _to_df(data_dict):
 
 
 #
+# _desires_work_ratios_dict = {
+#     "step": [20, 200, 500, 850, 1000],
+#     "mine ore": [2, 1, 0.5, 0.2, 0],
+#     "mine ice": [0.3, 1, 2, 4, 1],
+#     "clear rubble": [0.5, 2, 2, 4, 2],
+#     "clear lichen": [0, 0, 1, 2, 5],
+#     "attack": [0, 1, 2, 3, 0.5],
+#     "defend": [1, 1, 1, 1, 2],
+#     # "transfer": [0, 0.5, 1, 2, 0],
+#     "transfer": [0, 0, 0, 0, 0],
+#     "waiting": [0, 0, 1, 2, 0],
+# }
 _desires_work_ratios_dict = {
-    "step": [20, 200, 500, 850, 1000],
-    "mine ore": [2, 1, 0.5, 0.2, 0],
-    "mine ice": [0.3, 1, 2, 4, 1],
-    "clear rubble": [0.5, 2, 2, 4, 2],
-    "clear lichen": [0, 0, 1, 2, 5],
-    "attack": [0, 1, 2, 3, 0.5],
-    "defend": [1, 1, 1, 1, 2],
+    "step": [1000],
+    "mine ore": [0],
+    "mine ice": [1],
+    "clear rubble": [0],
+    "clear lichen": [0],
+    "attack": [0],
+    "defend": [0],
     # "transfer": [0, 0.5, 1, 2, 0],
-    "transfer": [0, 0, 0, 0, 0],
-    "waiting": [0, 0, 1, 2, 0],
+    "transfer": [0],
+    "waiting": [0],
 }
 DESIRED_WORK_RATIOS_DF = _to_df(_desires_work_ratios_dict)
 
