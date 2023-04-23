@@ -1,5 +1,6 @@
 from __future__ import annotations
 import time
+import pandas as pd
 import os
 import threading
 from dataclasses import dataclass
@@ -109,6 +110,20 @@ RECHARGE = 5
 
 
 ################# General #################
+def get_interpolated_values(df, index) -> pd.Series:
+    """Get values from df interpolated by index value (index must  be numeric of course)"""
+    # Add the input step to the DataFrame
+    temp_df = pd.concat([df, pd.DataFrame({}, index=[index])]).sort_index()
+
+    # Make sure no duplicated rows
+    temp_df = temp_df.groupby(temp_df.index).first()
+
+    # Interpolate the values at the input step
+    interpolated_df = temp_df.interpolate(method="index")
+
+    # Get the interpolated values for the input step
+    interpolated_values = interpolated_df.loc[index]
+    return interpolated_values
 
 
 def timeout_decorator(timeout):
