@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Tuple
 import numpy as np
 
+import actions_util
+from lux.cargo import UnitCargo
 from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, CombatActSubCategory
 from lux.factory import Factory
 
@@ -49,6 +51,9 @@ class FactoryManager:
     def pos(self):
         return self.factory.pos
 
+    @property
+    def cargo(self) -> UnitCargo:
+        return self.factory.cargo
 
 class EnemyFactoryManager(FactoryManager):
     def dead(self):
@@ -90,7 +95,7 @@ class FriendlyFactoryManager(FactoryManager):
     @property
     def power(self):
         """This is just the start of turn power for now
-        Use factory.short_term_power to get expected power in the short term
+        Use factory.calculate_power_at_step(step) to get expected power
         """
         return self._power
 
@@ -112,20 +117,21 @@ class FriendlyFactoryManager(FactoryManager):
         self._light_actions = None
         self._heavy_actions = None
         self._power = factory.power
-        self.short_term_power = self._calculate_start_of_turn_short_term_power()
+        self.short_term_power = self.calculate_power_at_step()
 
-    def _calculate_start_of_turn_short_term_power(self):
+    def calculate_power_at_step(self, step: int = 1):
         """
         For now, assuming all assigned units only pickup power at own factory, and any power pickup is valid
         """
-        short_power = self.power
+        power_at_step = self.power
         for unit_id, unit in dict(**self.light_units, **self.heavy_units).items():
             unit: FriendlyUnitManager
             actions = unit.status.planned_action_queue
-            for action in actions[:2]:
+            actions = actions_util.split_actions_at_step(actions, step)[0]
+            for action in actions:
                 if action[util.ACT_TYPE] == util.PICKUP and action[util.ACT_RESOURCE] == util.POWER:
-                    short_power -= action[util.ACT_AMOUNT]
-        return short_power
+                    power_at_step -= action[util.ACT_AMOUNT]
+        return power_at_step
 
     def assign_unit(self, unit: FriendlyUnitManager):
         logger.debug(f"Assigning {unit.log_prefix} to {self.factory.unit_id}")

@@ -450,6 +450,30 @@ class UnitPaths:
             for unit_num, unit in dict_.items():
                 self.add_unit(unit, is_enemy=is_enemy)
 
+    def get_unit_nums_near(self, pos: util.POS_TYPE, step: int, radius: int = 5, friendly_light=True,
+                           friendly_heavy=True, enemy_light=True, enemy_heavy=True) -> np.ndarray:
+        """Return the ID_NUM of enemies near to pos at given step"""
+        near_nums = np.full_like(self.friendly_valid_move_map, fill_value=-1)
+        if step > self.max_step:
+            logger.warning(f'Requesting unit_near_nums for step {step} > max step {self.max_step}, returning empty')
+            return near_nums
+
+        mask = util.pad_and_crop(util.manhattan_kernel(radius), near_nums.shape, pos[0], pos[1])
+
+        # Start with empty
+        x, y = self._x, self._y
+        near_nums = np.full_like(self.friendly_valid_move_map, fill_value=-1)
+        teams, utypes = self._get_teams_and_utypes(friendly_light, friendly_heavy, enemy_light, enemy_heavy)
+        for team, utype in zip(teams, utypes):
+            key = f"{team}_{utype}"
+            arr = getattr(self, key)
+            arr = arr[step]
+            # Makes all outside of radius zero
+            masked = (arr+1)*mask  # +1 to make id_0 become 1 (and -1s become 0)
+            # But then be sure to copy in the actual id_nums
+            near_nums[masked >= 0] = arr
+        return near_nums
+
     @property
     def all(self):
         """

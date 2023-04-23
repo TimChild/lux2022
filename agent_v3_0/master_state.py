@@ -1,7 +1,7 @@
 from __future__ import annotations
 import abc
 import copy
-from typing import TYPE_CHECKING, List, Tuple
+from typing import TYPE_CHECKING, List, Tuple, Optional
 from dataclasses import dataclass, field
 import collections
 
@@ -12,7 +12,7 @@ from new_path_finder import Pather
 from lux.kit import GameState
 
 from config import get_logger
-from util import ORE, ICE, manhattan
+import util
 
 if TYPE_CHECKING:
     from lux.unit import Unit
@@ -152,14 +152,15 @@ class AllUnits:
         else:
             return self.enemy.unit_at_position(pos)  # Note: None if not there either
 
-    def get_unit(self, unit_id: str) -> UnitManager:
+    def get_unit(self, unit_id: str) -> Optional[UnitManager]:
         unit = self.friendly.get_unit(unit_id)
         if unit is not None:
             return unit
         else:
             unit = self.enemy.get_unit(unit_id)
         if unit is None:
-            raise KeyError(f"{unit_id} does not exist in friendly or enemy units")
+            logger.warning(f"{unit_id} does not exist in friendly or enemy units")
+        return unit
 
     def nearest_unit(self, pos: tuple[int, int], friendly=True, enemy=True, light=True, heavy=True) -> tuple[str, int]:
         """Get unit_id, dist of nearest unit to pos
@@ -226,7 +227,7 @@ class Units(abc.ABC):
             for unit_id, unit in self.heavy.items():
                 unit_positions[unit_id] = unit.pos
 
-        distances = {unit_id: manhattan(pos, other_pos) for unit_id, other_pos in unit_positions.items()}
+        distances = {unit_id: util.manhattan(pos, other_pos) for unit_id, other_pos in unit_positions.items()}
         if not distances:
             return "", 999
         nearest_id = min(distances, key=distances.get)
@@ -497,9 +498,13 @@ class Maps:
     def resource_at_tile(self, pos) -> int:
         pos = tuple(pos)
         if self.ice[pos[0], pos[1]]:
-            return ICE
+            return util.ICE
         if self.ore[pos[0], pos[1]]:
-            return ORE
+            return util.ORE
+        elif self.rubble[pos[0], pos[1]]:
+            return util.RUBBLE
+        elif self.lichen[pos[0], pos[1]]:
+            return util.LICHEN
         return -1  # Invalid
 
 

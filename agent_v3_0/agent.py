@@ -43,6 +43,7 @@ class Agent:
         self.rubble_clearing_planner = ClearingPlanner(self.master)
         self.combat_planner = CombatPlanner(self.master)
         self.factory_action_planner = FactoryActionPlanner(self.master)
+
         self.unit_action_planner = MultipleUnitActionPlanner(self.master)
 
     def _beginning_of_step_update(

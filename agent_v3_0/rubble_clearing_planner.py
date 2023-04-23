@@ -204,7 +204,6 @@ def calc_best_direction(pos: Tuple[int, int], value_array: np.ndarray, costmap: 
 
 
 class RubbleRoutePlanner:
-    move_lookahead = 10
     target_queue_length = 20
 
     def __init__(
@@ -262,6 +261,7 @@ class RubbleRoutePlanner:
             if len(self.unit.action_queue) < self.target_queue_length:
                 logger.debug(f"Adding rubble_clear_action")
                 costmap = self.pathfinder.generate_costmap(self.unit)
+
                 # How much power left to do rubble clearing
                 path_to_factory = self._path_to_factory(costmap)
                 cost_to_factory = (
@@ -461,7 +461,65 @@ class RubbleClearingRecommendation(Recommendation):
 
 
 class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
-    pass
+    def update_planned_actions(self):
+        # print(self.unit.status.current_action.sub_category)
+
+        # 1. Find the target clearing rea
+        if self.unit.status.rubble_values.plan_step == 1:
+            target = self._get_best_area()
+            if target is None:
+                logger.warning(f'{self.unit.log_prefix} failed to find available target')
+                return
+            self.unit.status.rubble_values.plan_step = 2
+
+        # 2. Get at least a min amount of power from factory
+        if self.unit.status.rubble_values.plan_step == 2:
+            if self.unit.power < min_power:
+                status = self.unit.action_handler.add_pickup(allow_partial=True)
+                if self._check_and_handle_action_flags(status):
+                    return
+            if self.unit.power < min_power:
+                # remove pickup
+                return donothingfornow
+            self.unit.status.rubble_values.plan_step = 3
+
+        # 3. Path to target area
+        if self.unit.status.rubble_values.plan_step == 3:
+            status = self.action_handler.add_path(self.unit, target_array=target)
+            if self._check_and_handle_action_flags(status):
+                return
+            self.unit.status.rubble_values.plan_step = 4
+
+        # 4. Add dig actions
+        # TODO: Here I should maybe use the existing rubble clearing stuff? Or make new?
+        if self.unit.status.rubble_values.plan_step == 4:
+            available_power = self.unit.power_remaining()
+            power_to_facory = self._calculate_power_to_factory()
+            for _ in range(10):
+                n_digs = (available_power - power_to_facory) // self.unit.unit_config.DIG_COST
+                if n_digs > 0:
+                    status = self.action_handler.add_dig(self.unit, n_digs=n_digs)
+                else:
+                    self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
+                    self.unit.status.rubble_values.plan_step = 1
+                    return
+            self.unit.status['mining_step'] = 5
+            if self._check_and_handle_action_flags():
+                return
+            self.unit.status.rubble_values.plan_step = 6
+
+        # 5. Return to queue
+        if self.unit.status.rubble_values.plan_step == 6:
+            self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
+            self.unit.status.rubble_values.plan_step = 1
+            self.unit.status.turn_status.replan_required = True
+            return
+
+        logger.error(f'{self.unit.log_prefix} somehow plan_step not valid {self.unit.status.rubble_values.plan_step}')
+        self.unit.status.rubble_values.plan_step = 1
+        self.unit.status.update_action_status(ActStatus(category=ActCategory.DROPOFF))
+        return
+        pass
 
 
 class LichenUnitPlanner(ClearingUnitPlanner):

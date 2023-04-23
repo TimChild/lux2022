@@ -22,6 +22,7 @@ logger = get_logger(__name__)
 
 @dataclass
 class AttackValues:
+    # Position to attack/hold
     position: Tuple[int, int] = (0, 0)
     chase_radius: int = 15
     eliminate_threshold: int = 2
@@ -32,7 +33,9 @@ class AttackValues:
     class Hold:
         # How close to hold position is allowed (i.e. allow collision avoidance and not have to move back)
         pos_buffer: int = 2
+        # Max dist from position to attack enemy
         attack_dist: int = 10
+        # How far to look for units within hold pos
         search_radius: int = 5
 
     hold: Hold = field(default_factory=Hold)
@@ -40,6 +43,8 @@ class AttackValues:
     @dataclass
     class Temporary:
         num_remaining: int = 0
+        # Max dist from position to attack enemy
+        attack_radius = 5
 
     temp: Temporary = field(default_factory=Temporary)
 
@@ -93,6 +98,7 @@ class LichenValues:
 
 class DestType(NamedTuple):
     FACTORY: str = "factory"
+    FACTORY_QUEUE: str = "factory_queue"
     ICE: int = util.ICE
     ORE: int = util.ORE
     RUBBLE: str = "rubble"
@@ -123,6 +129,7 @@ class ActCategory(enum.Enum):
     CLEAR = "clear"
     RUN_AWAY = "runaway"
     WAITING = "waiting"  # Waiting outside factory
+    DROPOFF = 'dropoff'  # Drop off resources at factory
     NOTHING = "nothing"  # Nothing but could be anywhere
 
 
@@ -152,6 +159,7 @@ class CombatActSubCategory(ActSubCategory):
 class ActStatus:
     category: ActCategory = ActCategory.NOTHING
     sub_category: Optional[ActSubCategory] = None
+    step: int = 1
 
 
 def next_dest(path: np.ndarray, maps: Maps, unit_paths: UnitPaths) -> DestStatus:
@@ -187,7 +195,8 @@ class TurnStatus:
     next_dest: DestStatus = None
     should_act_reasons: List[ShouldActInfo] = field(default_factory=list)
     # Whether planned actions are valid after stepping (i.e. do they match the next action in real action queue)
-    planned_actions_valid: bool = True
+    planned_actions_valid_from_last_step: bool = True
+    next_action_valid = False
 
     # must move next turn
     must_move: bool = False
@@ -207,6 +216,9 @@ class TurnStatus:
             unit.current_path(max_len=30, planned_actions=True), master.maps, master.pathfinder.unit_paths
         )
         self.should_act_reasons = []
+        # Gets set when stepping planned actions
+        self.planned_actions_valid_from_last_step = False
+        self.next_action_valid = False
         self.must_move = False
         self.action_queue_empty_ok = False
         self.replan_required = False
@@ -220,7 +232,8 @@ class Status:
     current_action: ActStatus = ActStatus()
     previous_action: ActStatus = ActStatus()
     last_action_update_step: int = 0
-    planned_action_queue: List[np.ndarray] = field(default_factory=list)
+    _planned_action_queue: List[np.ndarray] = field(default_factory=list)
+    act_statuses: List[ActStatus] = field(default_factory=list)
 
     # Storing things about processing of turn for unit (reset at beginning of turn)
     turn_status: TurnStatus = field(default_factory=TurnStatus)
@@ -245,6 +258,16 @@ class Status:
     #         raise TypeError(f'must be ActStatus got type {value}')
     #     self._current_action = value
 
+    @property
+    def planned_action_queue(self):
+        """Should only be updated at beginning/end of turn (use unit.action_queue when planning etc"""
+        return self._planned_action_queue
+
+    def update_planned_action_queue(self, new_queue: List[np.ndarray]):
+        if not isinstance(new_queue, list):
+            raise TypeError
+        self._planned_action_queue = new_queue
+
     def __post_init__(self, master: MasterState):
         self.mine_values: MineValues = MineValues(ice=master.maps.ice, ore=master.maps.ore)
 
@@ -253,7 +276,7 @@ class Status:
         self.turn_status.update(unit, master)
         self._step_update_planned_actions(unit)
 
-    def _step_planned_actions(self) -> List[np.ndarray]:
+    def _step_planned_actions_and_status(self) -> List[np.ndarray]:
         new_actions = list(self.planned_action_queue.copy())
         if len(new_actions) == 0:
             return []
@@ -266,6 +289,7 @@ class Status:
                     f"Not implemented adding repeat actions to back of planned actions (might not make sense)"
                 )
             new_actions.pop(0)
+            self.act_statuses.pop(0)
             return new_actions
         else:
             logger.error(f"failed to update planned actions. First planned action = {new_actions[0]}")
@@ -287,7 +311,9 @@ class Status:
             return True
 
         valid = False
-        new_planned = self._step_planned_actions()
+        new_planned = self._step_planned_actions_and_status()
+        if len(new_planned) != len(self.act_statuses):
+            logger.error(f'{unit.log_prefix} Planned actions and ActStatuses not matched in length {len(new_planned)}!={len(self.act_statuses)}')
         if len(unit.start_of_turn_actions) == 0:
             if len(new_planned) == 0:
                 logger.debug(f"no unit or planned actions, valid")
@@ -300,6 +326,7 @@ class Status:
             logger.error(
                 f"{unit.log_prefix}: len(actions) = {len(unit.start_of_turn_actions)} != len(planned) = {len(new_planned)}"
             )
+            new_planned = unit.start_of_turn_actions.copy()
             valid = False
         elif np.all(unit.start_of_turn_actions[0] == new_planned[0]):
             logger.debug(f"planned_actions still valid")
@@ -311,9 +338,9 @@ class Status:
             new_planned = unit.start_of_turn_actions.copy()
             valid = False
         self._debug_last_beginning_of_step_update = step
-        self.planned_action_queue = new_planned
+        self.update_planned_action_queue(new_planned)
 
-        self.turn_status.planned_actions_valid = valid
+        self.turn_status.planned_actions_valid_from_last_step = valid
         return valid
 
     def update_action_status(self, new_action: ActStatus):
@@ -321,4 +348,3 @@ class Status:
         self.current_action = new_action
         # Action queue might not actually be getting updated
         # self.status.last_action_update_step = self.master.step
-

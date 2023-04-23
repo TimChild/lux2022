@@ -55,16 +55,9 @@ class BaseUnitPlanner(abc.ABC):
 
     @abc.abstractmethod
     def update_planned_actions(self):
-        """Update the planned actions of the unit based on current status"""
-        pass
-
-    @abc.abstractmethod
-    def add_new_actions(self):
-        """Add new actions to the end of the currently planned action queue
-        While planning/modifying use the unit.action_queue, then at the end copy to planned_actions
+        """Update the planned actions of the unit based on current status
+        This will be called every turn, so decide whether things actually need updating per turn
         """
-        # This is usually good start so that start modifying from where previous planned actions end
-        self.unit.action_queue = self.unit.status.planned_action_queue.copy()
         pass
 
     def add_path_to_action_queue(self, path: np.ndarray) -> bool:
@@ -74,11 +67,15 @@ class BaseUnitPlanner(abc.ABC):
             return True
         return False
 
-    def add_path_to_pos(self, dest_pos: util.POS_TYPE, ignore: Optional[List[int]]=None, collision_only=False) -> bool:
+    def add_path_to_pos(
+        self, dest_pos: util.POS_TYPE, ignore: Optional[List[int]] = None, collision_only=False
+    ) -> bool:
         path = self.get_path_to_pos(dest_pos, ignore=ignore, collision_only=collision_only)
         return self.add_path_to_action_queue(path)
 
-    def get_path_to_pos(self, dest_pos: util.POS_TYPE, ignore: Optional[List[int]]=None, collision_only=False) -> np.ndarray:
+    def get_path_to_pos(
+        self, dest_pos: util.POS_TYPE, ignore: Optional[List[int]] = None, collision_only=False
+    ) -> np.ndarray:
         cm = self.master.pathfinder.generate_costmap(
             self.unit,
             ignore_id_nums=ignore,
@@ -89,16 +86,11 @@ class BaseUnitPlanner(abc.ABC):
 
     def add_path_to_factory_queue(self, avoid_collision_only=False) -> bool:
         path = self.get_path_to_factory_queue(avoid_collision_only=avoid_collision_only)
-        # if len(path) > 1:
-        #     print(path.shape)
-        #     print(f'For unit {self.unit.unit_id} at {self.unit.pos}, path {path[0]} to {path[1]}, len {len(path)}')
-        # else:
-        #     print(f'len path {len(path)}')
         return self.add_path_to_action_queue(path)
 
     def get_path_to_factory_queue(self, avoid_collision_only=False) -> np.ndarray:
         cm = self.master.pathfinder.generate_costmap(self.unit, collision_only=avoid_collision_only)
-        path_to_factory = util.calc_path_to_available_nearest_pos(
+        path_to_factory = util.calculate_path_to_nearest_non_zero(
             self.master.pathfinder,
             costmap=cm,
             from_pos=self.unit.pos,
@@ -132,4 +124,7 @@ class BaseRouter(abc.ABC):
     # def get_path_to_location(self, start_pos: util.POS_TYPE, location: LocationManager, start_step: int) -> util.PATH_TYPE:
     #     """Get path to location (including location delay)"""
     #     pass
+
     pass
+
+

@@ -23,7 +23,7 @@ from util import (
     path_to_factory_edge_nearest_pos,
 )
 
-from unit_status import MineValues, MineActSubCategory
+from unit_status import MineValues, MineActSubCategory, ActStatus
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager
@@ -953,21 +953,97 @@ class MiningRecommender:
 
 
 class MiningUnitPlanner(BaseUnitPlanner):
-    def update_planned_actions(self):
-        return self.add_new_actions()
+    def  __init__(self, master: MasterState, general_planner: GeneralMiningPlanner, unit: FriendlyUnitManager):
+        super().__init__(master, general_planner, unit)
+        self.resource_type = None
+        self._action_flag = None
 
-    def add_new_actions(self):
+    def _get_best_resource(self):
+        """
+        - Get list of resources from self.planner
+        - Check each in list to determine best value (nearest, unoccupied etc)
+        - Return best or None
+        """
+        rec = self.recommend(self.unit, resource_type, unit_must_move=self.unit.status.turn_status.must_move)
+        # success = self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
+        # self.unit.status.planned_action_queue = self.unit.action_queue.copy()
+        # return success
+        # pass
+
+    def _check_and_handle_action_flags(self,  status=None):
+        """
+        If current_action changed from MINE and not ATTACK_TEMPORARY, set plan_step = 1
+        elif status stop_here_for_now do nothing
+        elif status attack for a few turns, do nothing
+        ...
+        return
+        """
+        pass
+
+    def update_planned_actions(self):
         # print(self.unit.status.current_action.sub_category)
         if self.unit.status.current_action.sub_category == MineActSubCategory.ICE:
-            resource_type = util.ICE
+            self.resource_type = util.ICE
         elif self.unit.status.current_action.sub_category == MineActSubCategory.ORE:
-            resource_type = util.ORE
+            self.resource_type = util.ORE
         else:
             raise ValueError(f"{self.unit.status.current_action} not correct for Mining")
-        rec = self.recommend(self.unit, resource_type, unit_must_move=self.unit.status.turn_status.must_move)
-        success = self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
-        self.unit.status.planned_action_queue = self.unit.action_queue.copy()
-        return success
+
+
+        # 1. Find the nearest available resource
+        if self.unit.status.mine_values.plan_step == 1:
+            resource = self._get_best_resource()
+            if resource is None:
+                logger.warning(f'{self.unit.log_prefix} failed to find available resource}')
+                return
+            self.unit.status.mine_values.plan_step = 2
+
+        # 2. Get at least a min amount of power from factory
+        if self.unit.status.mine_values.plan_step == 2:
+            if self.unit.power < min_power:
+                status = self.unit.action_handler.add_pickup(allow_partial=True)
+                if self._check_and_handle_action_flags(status):
+                    return
+            if self.unit.power < min_power:
+                # remove pickup
+                return do nothing for now
+            self.unit.status.mine_values.plan_step = 3
+
+        # 3. Path to resource
+        if self.unit.status.mine_values.plan_step == 3:
+            status = self.action_handler.add_path(self.unit, resource)
+            if self._check_and_handle_action_flags(status):
+                return
+            self.unit.status.mine_values.plan_step = 4
+
+        # 4. Add dig actions
+        if self.unit.status.mine_values.plan_step == 4:
+            available_power = self.unit.power_remaining()
+            power_to_facory = self._calculate_power_to_factory()
+            n_digs = (available_power - power_to_facory)//self.unit.unit_config.DIG_COST
+            if n_digs > 0:
+                status = self.action_handler.add_dig(self.unit, n_digs=n_digs)
+            else:
+                self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
+                self.unit.status.mine_values.plan_step = 1
+                return
+            self.unit.status['mining_step'] = 5
+            if self._check_and_handle_action_flags():
+                return
+            self.unit.status.mine_values.plan_step = 6
+
+        # 5. Dropoff at factory
+        if self.unit.status.mine_values.plan_step == 6:
+            self.unit.status.update_action_status(ActStatus(ActCategory.DROPOFF))
+            self.unit.status.mine_values.plan_step = 1
+            self.unit.status.turn_status.replan_required = True
+            return
+
+        logger.error(f'{self.unit.log_prefix} somehow plan_step not valid {self.unit.status.mine_values.plan_step}')
+        self.unit.status.mine_values.plan_step = 1
+        self.unit.status.update_action_status(ActStatus(category=ActCategory.DROPOFF))
+        return
+
 
     def recommend(
         self,

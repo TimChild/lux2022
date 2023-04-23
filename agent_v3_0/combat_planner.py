@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Dict, List, Tuple
 import numpy as np
 
 from base_planners import BaseUnitPlanner, BaseGeneralPlanner
-from unit_status import ActCategory, CombatActSubCategory
+from unit_status import ActCategory, CombatActSubCategory, ActStatus
+import unit_status
 from decide_actions import ActReasons
 from config import get_logger
 import actions_util
@@ -465,26 +466,24 @@ class CombatUnitPlanner(BaseUnitPlanner):
         should_acts = self.unit.status.turn_status.should_act_reasons
         if self.unit.status.turn_status.must_move:
             # This also handles enemy heavy near friendly light (just move out of the way)
+
             pass
         if ActReasons.LOW_POWER in should_acts:
+            success = self.add_path_to_factory_queue()
+            self.unit.status.current_action = ActStatus(ActCategory.WAITING)
+
             pass
         if ActReasons.COLLISION_WITH_ENEMY in should_acts:
             pass
         if ActReasons.COLLISION_WITH_FRIENDLY in should_acts:
             pass
 
-        # TESTING:
+        ############# TODO: TESTING: ########################
         if not isinstance(self.unit.status.current_action.sub_category, CombatActSubCategory):
-            self.unit.status.current_action.sub_category = CombatActSubCategory.RUN_AWAY
-            logger.debug(f'Setting status to runaway')
+            self.unit.status.current_action.sub_category = CombatActSubCategory.RETREAT_HOLD
+            self.unit.status.attack_values.position = (40, 16)
+            logger.debug(f"Setting status to retreat_hold")
 
-
-        if len(self.unit.status.planned_action_queue) == 0:
-            return self.add_new_actions()
-        else:
-            return self.add_new_actions()
-
-    def add_new_actions(self):
         """Add new actions to end of planned action queue"""
         # Make sure current queue is up to date with planned actions
         self.unit.action_queue = self.unit.status.planned_action_queue.copy()
@@ -492,17 +491,17 @@ class CombatUnitPlanner(BaseUnitPlanner):
 
         action_subtype = self.unit.status.current_action.sub_category
         if action_subtype == CombatActSubCategory.RETREAT_HOLD:
-            self._add_retreat_hold()
+            self.update_retreat_hold()
         elif action_subtype == CombatActSubCategory.ATTACK_HOLD:
-            self._add_attack_hold()
+            self.update_attack_hold()
         elif action_subtype == CombatActSubCategory.TEMPORARY:
-            self._add_attack_temporary()
+            self.update_attack_temporary()
         elif action_subtype == CombatActSubCategory.CONSERVE:
-            self._add_attack_conserve()
+            self.update_attack_conserve()
         elif action_subtype == CombatActSubCategory.RUN_AWAY:
-            self._add_runaway()
+            self.update_runaway()
         else:
-            raise NotImplementedError(f'{action_subtype} not implemented')
+            raise NotImplementedError(f"{action_subtype} not implemented")
         self.unit.status.planned_action_queue = self.unit.action_queue.copy()
 
         return True
@@ -514,7 +513,7 @@ class CombatUnitPlanner(BaseUnitPlanner):
             self.unit.status.attack_values.position = hold_pos
         return hold_pos
 
-    def _add_retreat_hold(self) -> bool:
+    def update_retreat_hold(self) -> bool:
         # Figure out where we are supposed to be holding position
         hold_pos = self._get_hold_pos()
 
@@ -530,13 +529,13 @@ class CombatUnitPlanner(BaseUnitPlanner):
             # If enemies nearby switch mode
             if self._enemies_in_radius(self.unit.status.attack_values.hold.search_radius):
                 self.unit.status.current_action.sub_category = CombatActSubCategory.ATTACK_HOLD
-                return self._add_attack_hold()
+                return self.update_attack_hold()
 
         # Otherwise do nothing, and that's OK
         self.unit.status.turn_status.action_queue_empty_ok = True
         return True
 
-    def _add_attack_hold(self) -> bool:
+    def update_attack_hold(self) -> bool:
         # Are we close enough to hold pos
         hold_pos = self._get_hold_pos()
         enemies = self._enemies_in_radius(self.unit.status.attack_values.hold.attack_dist, pos=hold_pos)
@@ -545,23 +544,46 @@ class CombatUnitPlanner(BaseUnitPlanner):
             self._attack_best_enemy(enemies)
         else:
             self.unit.status.current_action.sub_category = CombatActSubCategory.RETREAT_HOLD
-            return self._add_retreat_hold()
+            return self.update_retreat_hold()
         return True
 
-    def _add_runaway(self):
+    def update_attack_temporary(self) -> bool:
+        num = self.unit.status.attack_values.temp.num_remaining
+        if num > 0:
+            self.unit.status.attack_values.temp.num_remaining -= 1
+            target = self.unit.status.attack_values.target
+            if target is not None:
+                success = self._attack(target)
+                return success
+            else:
+                logger.warning(
+                    f"{self.unit.log_prefix}: Set to temporary attack, but no target, swapping back with {num} attack turns unused"
+                )
+        self.unit.status.update_action_status(self.unit.status.previous_action)
+        self.unit.status.turn_status.replan_required = True
+        return True
+
+    def update_runaway(self):
+        if self.unit.status.turn_status.next_dest.type == unit_status.DestType.FACTORY_QUEUE:
+            self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
+            return True
+
         success = self.add_path_to_factory_queue()
         if not success:
-            logger.warning(f'{self.unit.log_prefix} Failed to path to factory queue with default pathing, trying again only avoiding collisions')
+            logger.warning(
+                f"{self.unit.log_prefix} Failed to path to factory queue with default pathing, trying again only avoiding collisions"
+            )
             success = self.add_path_to_factory_queue(avoid_collision_only=True)
             if not success:
-                logger.error(
-                    f'{self.unit.log_prefix} Failed to path to factory queue even only avoiding collisions')
+                logger.error(f"{self.unit.log_prefix} Failed to path to factory queue even only avoiding collisions")
                 return self.abort()
+
+        self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
         return success
 
     def _attack_best_enemy(self, enemies: List[TargetInfo]) -> bool:
         if len(enemies) == 0:
-            logger.error(f'{self.unit.log_prefix}: attacking best enemies but enemies list empty')
+            logger.error(f"{self.unit.log_prefix}: attacking best enemies but enemies list empty")
             raise ValueError
             return False
 
@@ -569,7 +591,7 @@ class CombatUnitPlanner(BaseUnitPlanner):
         best = enemies[0]
         return self._attack(best)
 
-    def _enemies_in_radius(self, radius: int, pos = None) -> List[TargetInfo]:
+    def _enemies_in_radius(self, radius: int, pos=None) -> List[TargetInfo]:
         """Are there enemies within the hold radius of unit"""
         self.planner: CombatPlanner
         if pos is None:
@@ -578,12 +600,12 @@ class CombatUnitPlanner(BaseUnitPlanner):
         dist_array = util.pad_and_crop(util.manhattan_kernel(30), self.master.maps.map_shape, pos[0], pos[1])
 
         enemy_values = np.zeros(self.master.maps.map_shape)
-        if self.unit.unit_type == 'LIGHT' or self.unit.status.attack_values.heavy_attack_light:
+        if self.unit.unit_type == "LIGHT" or self.unit.status.attack_values.heavy_attack_light:
             enemy_values += self.planner.light_enemy_value_map
-        if self.unit.unit_type == 'HEAVY':
+        if self.unit.unit_type == "HEAVY":
             enemy_values += self.planner.heavy_enemy_value_map
 
-        dists = (dist_array * (enemy_values > 0).astype(int))
+        dists = dist_array * (enemy_values > 0).astype(int)
         dists[dists > radius] = 0
 
         coords = util.non_zero_coords(dists)
@@ -620,7 +642,7 @@ class CombatUnitPlanner(BaseUnitPlanner):
         intercept = self.get_best_intercept(enemy)
         path = self.get_path_to_pos(intercept, ignore=[enemy.unit.id_num])
         # Don't quite path to intercept
-        if dist_from_true_intercept > 0 and len(path) > 1+dist_from_true_intercept:
+        if dist_from_true_intercept > 0 and len(path) > 1 + dist_from_true_intercept:
             path = path[:-dist_from_true_intercept]
         return self.add_path_to_action_queue(path)
 
@@ -632,7 +654,9 @@ class CombatUnitPlanner(BaseUnitPlanner):
             friendly_light=False,
             friendly_heavy=False,
             # Only hunt down same type of unit
-            enemy_light=True if self.unit.unit_type == "LIGHT" or self.unit.status.attack_values.heavy_attack_light else False,
+            enemy_light=True
+            if self.unit.unit_type == "LIGHT" or self.unit.status.attack_values.heavy_attack_light
+            else False,
             enemy_heavy=True if self.unit.unit_type == "HEAVY" else False,
         )
         coord = None
@@ -645,7 +669,7 @@ class CombatUnitPlanner(BaseUnitPlanner):
                 break
 
         if coord is None:
-            logger.info(f'Failed to find intercept, returning current location')
+            logger.info(f"Failed to find intercept, returning current location")
             coord = enemy.pos
         return tuple(coord)
 
@@ -672,7 +696,6 @@ class CombatUnitPlanner(BaseUnitPlanner):
         #  Path to enemy  (with larger margin to allow for navigating around things better)
         path_to_enemy = self.master.pathfinder.fast_path(self.unit.pos, pos, costmap=cm, margin=5)
         return path_to_enemy
-
 
     #
     # def old_attack(self, unit: FriendlyUnitManager) -> bool:

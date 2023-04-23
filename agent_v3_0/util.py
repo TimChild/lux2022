@@ -85,6 +85,11 @@ WATER = 2
 METAL = 3
 POWER = 4
 
+# My additions
+RUBBLE = 5
+LICHEN = 6
+############
+
 # Actions:
 # (type, direction, resource, amount, repeat, n)
 ACT_TYPE = 0
@@ -1680,7 +1685,7 @@ def figures_to_subplots(figs, title=None, rows=None, cols=None, shared_data=Fals
     )
     return full_fig
 
-def calc_path_to_available_nearest_pos(
+def calculate_path_to_nearest_non_zero(
         pathfinder: Pather,
         costmap: np.ndarray,
         from_pos: Tuple[int, int],
@@ -1739,7 +1744,7 @@ def calc_path_to_factory(
     factory_loc = factory_loc.copy()
     original_nearest_location = nearest_non_zero(factory_loc, pos)
 
-    path = calc_path_to_available_nearest_pos(pathfinder, costmap, pos, factory_loc, pos, max_attempts=9, margin=margin)
+    path = calculate_path_to_nearest_non_zero(pathfinder, costmap, pos, factory_loc, pos, max_attempts=9, margin=margin)
     #
     # attempts = 0
     # # Try path to the nearest factory tile that will be unoccupied at arrival

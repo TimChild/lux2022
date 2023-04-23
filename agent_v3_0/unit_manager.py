@@ -42,8 +42,15 @@ class UnitManager(abc.ABC):
         self.start_of_turn_pos = tuple(unit.pos)
         self.start_of_turn_power = unit.power
 
-    def power_cost_of_actions(self, rubble: np.ndarray, max_actions=None):
-        actions = self.action_queue[:max_actions]
+    @property
+    def cargo_total(self) -> int:
+        """Total cargo contents of unit"""
+        c = self.cargo
+        return c.ice + c.ore + c.metal + c.ice
+
+    def power_cost_of_actions(self, rubble: np.ndarray, actions: List[np.ndarray] = None, max_actions=None):
+        actions = actions if actions is not None else self.action_queue
+        actions = actions[:max_actions]
         return util.power_cost_of_actions(
             start_pos=self.start_of_turn_pos,
             rubble=rubble,
@@ -260,13 +267,17 @@ class FriendlyUnitManager(UnitManager):
         logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
         raise ValueError(f"{self.log_prefix} has no factory")
 
-    def power_remaining(self, rubble: np.ndarray = None) -> int:
+    def power_cost_of_actions(self, rubble: np.ndarray=None, actions: List[np.ndarray] = None, max_actions=None):
+        rubble = self.master.maps.rubble if rubble is None else rubble
+        return super().power_cost_of_actions(rubble, actions, max_actions)
+
+    def power_remaining(self, rubble: np.ndarray = None, actions: List[np.ndarray] = None) -> int:
         """Return power remaining at final step in actions so far"""
         rubble = self.master.maps.rubble if rubble is None else rubble
         return (
             self.start_of_turn_power
             - self.unit_config.ACTION_QUEUE_POWER_COST
-            - self.power_cost_of_actions(rubble=rubble)
+            - self.power_cost_of_actions(rubble=rubble, actions=actions)
         )
 
     def dead(self):

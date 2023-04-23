@@ -69,6 +69,7 @@ class Pather:
         # self.full_costmap = full_costmap if full_costmap is not None else base_costmap
         self.unit_paths = unit_paths
 
+
     def generate_costmap(
         self,
         unit: FriendlyUnitManager,

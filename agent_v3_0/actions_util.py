@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List, Tuple
 from enum import Enum
 import abc
 
@@ -50,7 +50,7 @@ class Recommendation(HighLevelAction):
 ######################### End of OLD
 
 
-def split_actions_at_step(actions, split_step):
+def split_actions_at_step(actions, split_step)  -> Tuple[List[np.ndarray], List[np.ndarray]]:
     """Split actions into two lists at a given step"""
     before_split = []
     after_split = []
@@ -80,7 +80,7 @@ def split_actions_at_step(actions, split_step):
     return before_split, after_split
 
 
-def split_actions_at_two_steps(actions, split_step1, split_step2):
+def split_actions_at_two_steps(actions, split_step1, split_step2) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
     """Split actions into three parts (useful for replacing middle part of actions)"""
     if split_step1 > split_step2:
         raise ValueError(f"{split_step1} > {split_step2}")
@@ -89,7 +89,7 @@ def split_actions_at_two_steps(actions, split_step1, split_step2):
     return before_split1, between_split1_and_split2, after_split2
 
 
-def replace_actions(existing_actions, start_step, end_step, new_actions):
+def replace_actions(existing_actions, start_step, end_step, new_actions) -> List[np.ndarray]:
     """Replace the actions between start step and end step with new actions
     Note: Does not replace the action at start step or end step, only between!
     Note: New actions may have different length"""

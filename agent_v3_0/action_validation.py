@@ -50,12 +50,10 @@ class ValidActionCalculator:
 
     def __init__(
         self,
-        units_to_act: UnitsToAct,
         factory_infos: Dict[str, FactoryInfo],
         maps: Maps,
         unit_paths: UnitPaths,
     ):
-        self.units_to_act = units_to_act
         self.factory_infos = factory_infos
         self.maps = maps
         self.unit_paths = unit_paths
@@ -83,11 +81,11 @@ class ValidActionCalculator:
                 metal=factory.cargo.metal,
             )
 
-        # Update based on first action of units (pickup or transfer)
-        all_infos = dict(**self.units_to_act.should_not_act, **self.units_to_act.has_updated_actions)
-        for unit_id, act_info in all_infos.items():
-            self.add_next_action(act_info.unit)
-
+        # # Update based on first action of units (pickup or transfer)
+        # all_infos = dict(**self.units_to_act.should_not_act, **self.units_to_act.has_updated_actions)
+        # for unit_id, act_info in all_infos.items():
+        #     self.add_next_action(act_info.unit)
+        #
         return self.factory_resources
 
     def add_next_action(self, unit: FriendlyUnitManager):
@@ -165,13 +163,13 @@ class ValidActionCalculator:
         else:
             raise NotImplementedError(f"resource={resource} not implemented")
 
-    def next_action_valid(self, unit: FriendlyUnitManager):
+    def next_action_valid(self, unit: FriendlyUnitManager, action: np.ndarray = None):
         logger.debug(f"Next action valid for {unit.unit_id}")
         if len(unit.action_queue) == 0:
             logger.error(f"No action, for {unit.unit_id}")
             return False
 
-        action = unit.action_queue[0]
+        action = action if action is not None else unit.action_queue[0]
         act_type = action[util.ACT_TYPE]
         amount = action[util.ACT_AMOUNT]
         resource = action[util.ACT_RESOURCE]
