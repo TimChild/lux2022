@@ -465,15 +465,15 @@ class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
         # print(self.unit.status.current_action.sub_category)
 
         # 1. Find the target clearing rea
-        if self.unit.status.rubble_values.plan_step == 1:
+        if self.unit.status.current_action.step == 1:
             target = self._get_best_area()
             if target is None:
-                logger.warning(f'{self.unit.log_prefix} failed to find available target')
+                logger.warning(f"{self.unit.log_prefix} failed to find available target")
                 return
-            self.unit.status.rubble_values.plan_step = 2
+            self.unit.status.current_action.step = 2
 
         # 2. Get at least a min amount of power from factory
-        if self.unit.status.rubble_values.plan_step == 2:
+        if self.unit.status.current_action.step == 2:
             if self.unit.power < min_power:
                 status = self.unit.action_handler.add_pickup(allow_partial=True)
                 if self._check_and_handle_action_flags(status):
@@ -481,18 +481,18 @@ class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
             if self.unit.power < min_power:
                 # remove pickup
                 return donothingfornow
-            self.unit.status.rubble_values.plan_step = 3
+            self.unit.status.current_action.step = 3
 
         # 3. Path to target area
-        if self.unit.status.rubble_values.plan_step == 3:
+        if self.unit.status.current_action.step == 3:
             status = self.action_handler.add_path(self.unit, target_array=target)
             if self._check_and_handle_action_flags(status):
                 return
-            self.unit.status.rubble_values.plan_step = 4
+            self.unit.status.current_action.step = 4
 
         # 4. Add dig actions
         # TODO: Here I should maybe use the existing rubble clearing stuff? Or make new?
-        if self.unit.status.rubble_values.plan_step == 4:
+        if self.unit.status.current_action.step == 4:
             available_power = self.unit.power_remaining()
             power_to_facory = self._calculate_power_to_factory()
             for _ in range(10):
@@ -501,22 +501,21 @@ class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
                     status = self.action_handler.add_dig(self.unit, n_digs=n_digs)
                 else:
                     self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
-                    self.unit.status.rubble_values.plan_step = 1
+                    self.unit.status.current_action.step = 1
                     return
-            self.unit.status['mining_step'] = 5
             if self._check_and_handle_action_flags():
                 return
-            self.unit.status.rubble_values.plan_step = 6
+            self.unit.status.current_action.step = 5
 
         # 5. Return to queue
-        if self.unit.status.rubble_values.plan_step == 6:
+        if self.unit.status.current_action.step == 5:
             self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
-            self.unit.status.rubble_values.plan_step = 1
+            self.unit.status.current_action.step = 1
             self.unit.status.turn_status.replan_required = True
             return
 
-        logger.error(f'{self.unit.log_prefix} somehow plan_step not valid {self.unit.status.rubble_values.plan_step}')
-        self.unit.status.rubble_values.plan_step = 1
+        logger.error(f"{self.unit.log_prefix} somehow plan_step not valid {self.unit.status.current_action.step}")
+        self.unit.status.current_action.step = 1
         self.unit.status.update_action_status(ActStatus(category=ActCategory.DROPOFF))
         return
         pass

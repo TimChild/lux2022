@@ -14,6 +14,7 @@ from unit_status import ActCategory, ActStatus, CombatActSubCategory
 
 logger = get_logger(__name__)
 
+
 class CombatPlanner:
     def __init__(self, unit):
         self.unit = unit
@@ -58,7 +59,7 @@ class ActionHandler:
         PICKUP_INVALID_RETURNING = auto()
         TRANSFER_INVALID_RETURNING = auto()
 
-    def __init__(self, master: MasterState, unit: FriendlyUnitManager, max_queue_step_length:int):
+    def __init__(self, master: MasterState, unit: FriendlyUnitManager, max_queue_step_length: int):
         self.master = master
         self.unit = unit
         self.pathfinder = self.master.pathfinder
@@ -71,7 +72,7 @@ class ActionHandler:
         """
         # TODO: Maybe this can just be copy?
         act_status = copy.deepcopy(self.unit.status.current_action)
-        self.unit.status.act_statuses.extend([act_status]*num)
+        self.unit.status.act_statuses.extend([act_status] * num)
 
     def add_actions_to_queue(self, actions) -> HandleStatus:
         """
@@ -96,9 +97,14 @@ class ActionHandler:
     def get_costmap(self):
         """Get costmap at current step"""
         cm = self.pathfinder.generate_costmap(
-            self.unit, ignore_id_nums=[self.unit.id_num], friendly_light=True, friendly_heavy=True, enemy_light=None, enemy_heavy=True,
+            self.unit,
+            ignore_id_nums=[self.unit.id_num],
+            friendly_light=True,
+            friendly_heavy=True,
+            enemy_light=None,
+            enemy_heavy=True,
             # TODO: Check whether collision only works OK
-            collision_only=True
+            collision_only=True,
         )
         return cm
 
@@ -116,7 +122,7 @@ class ActionHandler:
         )
         return path
 
-    def path_to_factory_cost(self, from_pos: util.POS_TYPE=None) -> int:
+    def path_to_factory_cost(self, from_pos: util.POS_TYPE = None) -> int:
         """Calculate cost of pathing to factory from_pos (or last pos of unit)"""
         pos = from_pos if from_pos is not None else self.unit.pos
         path = self.path_to_factory(from_pos=pos)
@@ -158,24 +164,55 @@ class ActionHandler:
             self.unit.status.update_action_status(ActStatus(category=ActCategory.WAITING))
             return self.HandleStatus.SUCCESS
 
-    def get_units_near(self, pos=None, radius=5, step=None, friendly_light=True,
-                           friendly_heavy=True, enemy_light=True, enemy_heavy=True) -> Dict[str, UnitManager]:
+    def get_units_near(
+        self,
+        pos=None,
+        radius=5,
+        step=None,
+        friendly_light=True,
+        friendly_heavy=True,
+        enemy_light=True,
+        enemy_heavy=True,
+    ) -> Dict[str, UnitManager]:
         """Get any enemy unit near pos"""
         pos = pos if pos is not None else self.unit.pos
-        step = step if step is  not None else util.num_turns_of_actions(self.unit.action_queue)
-        unit_nums_array = self.pathfinder.unit_paths.get_unit_nums_near(pos, step=step, radius=radius, friendly_light=friendly_light,
-                           friendly_heavy=friendly_heavy, enemy_light=enemy_light, enemy_heavy=enemy_heavy)
+        step = step if step is not None else util.num_turns_of_actions(self.unit.action_queue)
+        unit_nums_array = self.pathfinder.unit_paths.get_unit_nums_near(
+            pos,
+            step=step,
+            radius=radius,
+            friendly_light=friendly_light,
+            friendly_heavy=friendly_heavy,
+            enemy_light=enemy_light,
+            enemy_heavy=enemy_heavy,
+        )
         unit_dict = {}
         for num in np.unique(unit_nums_array):
-            unit_id = f'unit_{num}'
+            unit_id = f"unit_{num}"
             unit = self.master.units.get_unit(unit_id)
             if unit is not None:
                 unit_dict[unit_id] = unit
         return unit_dict
 
-    def get_nearest_unit_near(self, pos=None, radius=5, step=None, friendly_light=True,
-                           friendly_heavy=True, enemy_light=True, enemy_heavy=True) -> Optional[UnitManager]:
-        units = self.get_units_near(pos=pos,step=step, radius=radius, friendly_light=friendly_light,  friendly_heavy=friendly_heavy, enemy_light=enemy_light,enemy_heavy=enemy_heavy)
+    def get_nearest_unit_near(
+        self,
+        pos=None,
+        radius=5,
+        step=None,
+        friendly_light=True,
+        friendly_heavy=True,
+        enemy_light=True,
+        enemy_heavy=True,
+    ) -> Optional[UnitManager]:
+        units = self.get_units_near(
+            pos=pos,
+            step=step,
+            radius=radius,
+            friendly_light=friendly_light,
+            friendly_heavy=friendly_heavy,
+            enemy_light=enemy_light,
+            enemy_heavy=enemy_heavy,
+        )
 
         nearest = None
         nearest_dist = 999
@@ -186,19 +223,21 @@ class ActionHandler:
                 nearest_dist = dist
         return nearest
 
-    def _handle_nearby_enemy(self, pos=None, available_power = None) -> HandleStatus:
+    def _handle_nearby_enemy(self, pos=None, available_power=None) -> HandleStatus:
         """Handle enemy near to pos (i.e. temporary attack or run back to factory)"""
         pos = pos if pos is not None else self.unit.pos
-        available_power =  available_power if available_power is not None else self.unit.power_remaining()
+        available_power = available_power if available_power is not None else self.unit.power_remaining()
 
         # If enemy near pos:
         nearest_enemy = self.get_nearest_unit_near(pos, friendly_light=False, friendly_heavy=False)
         if nearest_enemy is not None:
             # If we'll have lower power or enemy is heavy and we are light go back to factory
             if available_power < nearest_enemy.power or (
-                    nearest_enemy.unit_type == 'HEAVY' and self.unit.unit_type == 'LIGHT'):
+                nearest_enemy.unit_type == "HEAVY" and self.unit.unit_type == "LIGHT"
+            ):
                 logger.warning(
-                    f'{self.unit.log_prefix}, {nearest_enemy.unit_id} near {pos} that is dangerous, returning to factory')
+                    f"{self.unit.log_prefix}, {nearest_enemy.unit_id} near {pos} that is dangerous, returning to factory"
+                )
                 status = self._return_to_factory()
                 if status != self.HandleStatus.SUCCESS:
                     return status
@@ -207,12 +246,14 @@ class ActionHandler:
             # We have more power and are of same or higher type so do a temporary attack
             else:
                 logger.warning(
-                    f'{self.unit.log_prefix}, {nearest_enemy.unit_id} near {pos} that can be targeted, temporary attack')
+                    f"{self.unit.log_prefix}, {nearest_enemy.unit_id} near {pos} that can be targeted, temporary attack"
+                )
                 self.unit.status.attack_values.target = nearest_enemy  # set that unit as target
                 self.unit.status.attack_values.temp.num_remaining = 10  # max 10 attack steps once there
                 self.unit.status.attack_values.position = pos
                 self.unit.status.update_action_status(
-                    ActStatus(ActCategory.COMBAT, sub_category=CombatActSubCategory.TEMPORARY))
+                    ActStatus(ActCategory.COMBAT, sub_category=CombatActSubCategory.TEMPORARY)
+                )
                 self.unit.status.turn_status.replan_required = True
                 return self.HandleStatus.ENEMY_NEAR_ATTACKING
         return self.HandleStatus.SUCCESS
@@ -226,7 +267,7 @@ class ActionHandler:
         """
         # Did target path fail?
         if len(path) == 0:
-            logger.warning(f'{self.unit.log_prefix}, path len 0, returning to factory')
+            logger.warning(f"{self.unit.log_prefix}, path len 0, returning to factory")
             status = self._return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
@@ -243,7 +284,7 @@ class ActionHandler:
         if any_factory[dest_pos[0], dest_pos[1]] <= 0:
             path_to_factory_cost = self.path_to_factory_cost(from_pos=dest_pos)
             if available_power - path_cost - path_to_factory_cost < 0:
-                logger.warning(f'{self.unit.log_prefix}, not enough power after move, returning to factory')
+                logger.warning(f"{self.unit.log_prefix}, not enough power after move, returning to factory")
                 status = self._return_to_factory()
                 if status != self.HandleStatus.SUCCESS:
                     return status
@@ -251,7 +292,7 @@ class ActionHandler:
                 return status
 
         if not targeting_enemy:
-            status = self._handle_nearby_enemy(pos=dest_pos, available_power=available_power-path_cost)
+            status = self._handle_nearby_enemy(pos=dest_pos, available_power=available_power - path_cost)
             if status != self.HandleStatus.SUCCESS:
                 return status
 
@@ -273,11 +314,13 @@ class ActionHandler:
         # Calculate some useful values
         available_power = self.unit.power_remaining()
         cost_to_factory = self.path_to_factory_cost()
-        max_digs = (available_power - cost_to_factory)//self.unit.unit_config.DIG_COST
+        max_digs = (available_power - cost_to_factory) // self.unit.unit_config.DIG_COST
         resource_type = self.master.maps.resource_at_tile(self.unit.pos)
 
         if resource_type < 0:
-            logger.warning(f'{self.unit.log_prefix} trying to add dig where no resource, lichen, or rubble. Returning to factory')
+            logger.warning(
+                f"{self.unit.log_prefix} trying to add dig where no resource, lichen, or rubble. Returning to factory"
+            )
             status = self._return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
@@ -288,7 +331,9 @@ class ActionHandler:
             return status
 
         if n_digs > max_digs:
-            logger.warning(f'{self.unit.log_prefix} attempted too many digs, doing as many as possible then pathihng back to factory')
+            logger.warning(
+                f"{self.unit.log_prefix} attempted too many digs, doing as many as possible then pathihng back to factory"
+            )
             status = self.add_actions_to_queue(self.unit.dig(n=max_digs))
             if status != self.HandleStatus.SUCCESS:
                 return status
@@ -321,7 +366,9 @@ class ActionHandler:
 
         # Not on factory
         if self.unit.factory.factory_loc[pos[0], pos[1]] <= 0:
-            logger.warning(f'{self.unit.log_prefix} trying to do pickup at {pos} which is not on own factory, returning to factory')
+            logger.warning(
+                f"{self.unit.log_prefix} trying to do pickup at {pos} which is not on own factory, returning to factory"
+            )
             status = self._return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
@@ -349,7 +396,7 @@ class ActionHandler:
             available = self.unit.factory.cargo.ore
             max_pickup = self.unit.unit_config.CARGO_SPACE - current
         else:
-            raise ValueError(f'{resource_type} not a valid resource type')
+            raise ValueError(f"{resource_type} not a valid resource type")
 
         # Picking up more than unit can hold
         if amount > max_pickup or amount > available:
@@ -357,7 +404,9 @@ class ActionHandler:
             if allow_partial:
                 amount = max_pickup
             else:
-                logger.warning(f'{self.unit.log_prefix} trying to pickup more than available or than space (amount={amount},  available={available}, current={current})')
+                logger.warning(
+                    f"{self.unit.log_prefix} trying to pickup more than available or than space (amount={amount},  available={available}, current={current})"
+                )
                 status = self._return_to_factory()
                 if status != self.HandleStatus.SUCCESS:
                     return status
@@ -401,14 +450,18 @@ class ActionHandler:
 
         # Not on factory
         if self.unit.factory.factory_loc[pos[0], pos[1]] <= 0:
-            logger.warning(f'{self.unit.log_prefix} trying to do transfer to {pos} which is not on own factory, returning to factory')
+            logger.warning(
+                f"{self.unit.log_prefix} trying to do transfer to {pos} which is not on own factory, returning to factory"
+            )
             status = self._return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
             return self.HandleStatus.TRANSFER_INVALID_RETURNING
 
         # Checks passed, add actions to queue
-        status = self.add_actions_to_queue(self.unit.transfer(transfer_direction=direction, transfer_resource=resource_type, transfer_amount=amount))
+        status = self.add_actions_to_queue(
+            self.unit.transfer(transfer_direction=direction, transfer_resource=resource_type, transfer_amount=amount)
+        )
         if status != self.HandleStatus.SUCCESS:
             return status
 
@@ -430,7 +483,6 @@ class ActionHandler:
             self.unit.cargo.ore -= amount
             factory.cargo.ore += amount
         return self.HandleStatus.SUCCESS
-
 
     """Class to handle adding actions to unit, i.e. like pathfinder currently does with path (adds to action queue and updates pos of unit)
 

@@ -755,10 +755,17 @@ class MultipleUnitActionPlanner:
         Returns:
             A numpy array representing the costmap.
         """
+        # Turn rubble into costmap
         costmap = self.master.maps.rubble.copy() * 0.1  # was 0.05
         costmap += 1  # Zeros aren't traversable
+
+        # Block enemy factories
         enemy_factory_map = self.master.maps.factory_maps.enemy
         costmap[enemy_factory_map >= 0] = -1  # Not traversable
+
+        # Add cost to factory waiting areas
+        for factory in self.master.factories.friendly.values():
+            costmap[factory.queue_array > 0] += 10
 
         # Make center of factories impassible (in case unit is built there)
         # TODO: Only block center if unit actually being built
@@ -905,6 +912,7 @@ class MultipleUnitActionPlanner:
                 action_validator=self.action_validator,
                 factory_desires=factory_desires[unit.factory_id],
                 factory_info=factory_infos[unit.factory_id],
+                collision_resolve_max_step=self.check_friendly_collision_steps,
             )
             unit_action_planner.calculate_actions_for_unit()
             self.debug_single_action_planners[unit_id] = unit_action_planner
@@ -919,7 +927,7 @@ class MultipleUnitActionPlanner:
             self.current_paths.add_unit(unit, is_enemy=False)
 
         # Collect the actions send back to env
-        unit_actions = self._collect_changed_actions(units_to_act)
+        unit_actions = self._collect_changed_actions(self.units_to_act)
         # Make sure they are at least valid against the action space
         unit_actions = self._validate_changed_actions_against_action_space(unit_actions)
         self.debug_actions_returned = unit_actions

@@ -129,7 +129,7 @@ class ActCategory(enum.Enum):
     CLEAR = "clear"
     RUN_AWAY = "runaway"
     WAITING = "waiting"  # Waiting outside factory
-    DROPOFF = 'dropoff'  # Drop off resources at factory
+    DROPOFF = "dropoff"  # Drop off resources at factory
     NOTHING = "nothing"  # Nothing but could be anywhere
 
 
@@ -313,7 +313,9 @@ class Status:
         valid = False
         new_planned = self._step_planned_actions_and_status()
         if len(new_planned) != len(self.act_statuses):
-            logger.error(f'{unit.log_prefix} Planned actions and ActStatuses not matched in length {len(new_planned)}!={len(self.act_statuses)}')
+            logger.error(
+                f"{unit.log_prefix} Planned actions and ActStatuses not matched in length {len(new_planned)}!={len(self.act_statuses)}"
+            )
         if len(unit.start_of_turn_actions) == 0:
             if len(new_planned) == 0:
                 logger.debug(f"no unit or planned actions, valid")

@@ -953,7 +953,7 @@ class MiningRecommender:
 
 
 class MiningUnitPlanner(BaseUnitPlanner):
-    def  __init__(self, master: MasterState, general_planner: GeneralMiningPlanner, unit: FriendlyUnitManager):
+    def  __init__(self, master: MasterState, general_planner: MiningPlanner, unit: FriendlyUnitManager):
         super().__init__(master, general_planner, unit)
         self.resource_type = None
         self._action_flag = None
@@ -996,10 +996,10 @@ class MiningUnitPlanner(BaseUnitPlanner):
             if resource is None:
                 logger.warning(f'{self.unit.log_prefix} failed to find available resource}')
                 return
-            self.unit.status.mine_values.plan_step = 2
+            self.unit.status.current_action.step = 2
 
         # 2. Get at least a min amount of power from factory
-        if self.unit.status.mine_values.plan_step == 2:
+        if self.unit.status.current_action.step == 2:
             if self.unit.power < min_power:
                 status = self.unit.action_handler.add_pickup(allow_partial=True)
                 if self._check_and_handle_action_flags(status):
@@ -1007,17 +1007,17 @@ class MiningUnitPlanner(BaseUnitPlanner):
             if self.unit.power < min_power:
                 # remove pickup
                 return do nothing for now
-            self.unit.status.mine_values.plan_step = 3
+            self.unit.status.current_action.step = 3
 
         # 3. Path to resource
-        if self.unit.status.mine_values.plan_step == 3:
+        if self.unit.status.current_action.step == 3:
             status = self.action_handler.add_path(self.unit, resource)
             if self._check_and_handle_action_flags(status):
                 return
-            self.unit.status.mine_values.plan_step = 4
+            self.unit.status.current_action.step = 4
 
         # 4. Add dig actions
-        if self.unit.status.mine_values.plan_step == 4:
+        if self.unit.status.current_action.step == 4:
             available_power = self.unit.power_remaining()
             power_to_facory = self._calculate_power_to_factory()
             n_digs = (available_power - power_to_facory)//self.unit.unit_config.DIG_COST
@@ -1025,22 +1025,21 @@ class MiningUnitPlanner(BaseUnitPlanner):
                 status = self.action_handler.add_dig(self.unit, n_digs=n_digs)
             else:
                 self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
-                self.unit.status.mine_values.plan_step = 1
+                self.unit.status.current_action.step = 1
                 return
-            self.unit.status['mining_step'] = 5
             if self._check_and_handle_action_flags():
                 return
-            self.unit.status.mine_values.plan_step = 6
+            self.unit.status.current_action.step = 5
 
         # 5. Dropoff at factory
-        if self.unit.status.mine_values.plan_step == 6:
+        if self.unit.status.current_action.step == 5:
             self.unit.status.update_action_status(ActStatus(ActCategory.DROPOFF))
-            self.unit.status.mine_values.plan_step = 1
+            self.unit.status.current_action.step = 1
             self.unit.status.turn_status.replan_required = True
             return
 
-        logger.error(f'{self.unit.log_prefix} somehow plan_step not valid {self.unit.status.mine_values.plan_step}')
-        self.unit.status.mine_values.plan_step = 1
+        logger.error(f'{self.unit.log_prefix} somehow plan_step not valid {self.unit.status.current_action.step}')
+        self.unit.status.current_action.step = 1
         self.unit.status.update_action_status(ActStatus(category=ActCategory.DROPOFF))
         return
 

@@ -178,6 +178,7 @@ class FriendlyUnitManager(UnitManager):
         self.start_of_turn_actions = []
 
         # Calculated per turn
+
     def dist_array(self, start_of_turn=True) -> np.ndarray:
         if start_of_turn:
             pos = self.start_of_turn_pos
@@ -267,7 +268,7 @@ class FriendlyUnitManager(UnitManager):
         logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
         raise ValueError(f"{self.log_prefix} has no factory")
 
-    def power_cost_of_actions(self, rubble: np.ndarray=None, actions: List[np.ndarray] = None, max_actions=None):
+    def power_cost_of_actions(self, rubble: np.ndarray = None, actions: List[np.ndarray] = None, max_actions=None):
         rubble = self.master.maps.rubble if rubble is None else rubble
         return super().power_cost_of_actions(rubble, actions, max_actions)
 

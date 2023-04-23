@@ -46,9 +46,7 @@ class Agent:
 
         self.unit_action_planner = MultipleUnitActionPlanner(self.master)
 
-    def _beginning_of_step_update(
-        self, step: int, obs: dict, remainingOverageTime: int
-    ):
+    def _beginning_of_step_update(self, step: int, obs: dict, remainingOverageTime: int):
         """Use the step and obs to update any turn based info (e.g. map changes)"""
         logger.info(f"Beginning of step update for step {step}")
         game_state = obs_to_game_state(step, self.env_cfg, obs)
@@ -70,16 +68,10 @@ class Agent:
             action = self.bid(obs)
         else:
             # factory placement period
-            my_turn_to_place = my_turn_to_place_factory(
-                self.master.game_state.teams[self.player].place_first, step
-            )
-            factories_to_place = self.master.game_state.teams[
-                self.player
-            ].factories_to_place
+            my_turn_to_place = my_turn_to_place_factory(self.master.game_state.teams[self.player].place_first, step)
+            factories_to_place = self.master.game_state.teams[self.player].factories_to_place
             if factories_to_place > 0 and my_turn_to_place:
-                action = self.factory_action_planner.place_factory(
-                    self.master.game_state, self.player
-                )
+                action = self.factory_action_planner.place_factory(self.master.game_state, self.player)
         logger.info(f"Early setup action {action}")
         return action
 
@@ -99,9 +91,7 @@ class Agent:
         factory_desires = self.factory_action_planner.get_factory_desires()
         factory_infos = self.factory_action_planner.get_factory_infos()
 
-        self.unit_action_planner.update(
-            factory_desires=factory_desires, factory_infos=factory_infos
-        )
+        self.unit_action_planner.update(factory_desires=factory_desires, factory_infos=factory_infos)
 
         factory_actions = self.factory_action_planner.decide_factory_actions()
 

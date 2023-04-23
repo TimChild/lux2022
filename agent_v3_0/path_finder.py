@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+
 @dataclass(frozen=True)
 class CollisionParams:
     look_ahead_turns: int
@@ -26,13 +27,11 @@ class CollisionParams:
     friendly_heavy: bool = True
     enemy_light: bool = True
     enemy_heavy: bool = True
-    starting_step: int = (
-        0  # E.g. 0 for starting this turn, 1 if one action before this pathing
-    )
+    starting_step: int = 0  # E.g. 0 for starting this turn, 1 if one action before this pathing
 
     def __post_init__(self):
         # Ensure ignore_ids is a tuple even if provided as a list
-        object.__setattr__(self, 'ignore_ids', tuple(self.ignore_ids))
+        object.__setattr__(self, "ignore_ids", tuple(self.ignore_ids))
 
 
 class PathFinder:
@@ -47,9 +46,7 @@ class PathFinder:
         self.enemy_factories_array: np.array = None
 
         # for caching
-        self._cached_get_existing_paths = functools.lru_cache(maxsize=10)(
-            self._get_existing_paths
-        )
+        self._cached_get_existing_paths = functools.lru_cache(maxsize=10)(self._get_existing_paths)
 
     def get_costmap(self, rubble: Union[bool, np.ndarray] = False):
         """Power cost of travelling (not taking into account collisions, but taking into account enemy factories)
@@ -75,12 +72,12 @@ class PathFinder:
         """Update a units path after the initial update (i.e. new calculated routes for unit should be updated here)"""
         self._cached_get_existing_paths.cache_clear()
         path = np.asanyarray(path, dtype=int)
-        if unit.unit.unit_type == 'LIGHT':
+        if unit.unit.unit_type == "LIGHT":
             self.friendly_light_paths[unit.unit_id] = path
-        elif unit.unit.unit_type == 'HEAVY':
+        elif unit.unit.unit_type == "HEAVY":
             self.friendly_heavy_paths[unit.unit_id] = path
         else:
-            raise TypeError(f'unit not correct type {unit}')
+            raise TypeError(f"unit not correct type {unit}")
 
     def update(
         self,
@@ -94,31 +91,28 @@ class PathFinder:
 
         # Update Units
         data = {
-            'friendly': {'light': {}, 'heavy': {}},
-            'enemy': {'light': {}, 'heavy': {}},
+            "friendly": {"light": {}, "heavy": {}},
+            "enemy": {"light": {}, "heavy": {}},
         }
 
-        for units, player in zip(
-            [friendly_units.values(), enemy_units.values()], data.keys()
-        ):
+        for units, player in zip([friendly_units.values(), enemy_units.values()], data.keys()):
             for unit in units:
-                if unit.unit.unit_type == 'LIGHT':
-                    data[player]['light'][unit.unit_id] = unit.actions_to_path()
-                elif unit.unit.unit_type == 'HEAVY':
-                    data[player]['heavy'][unit.unit_id] = unit.actions_to_path()
+                if unit.unit.unit_type == "LIGHT":
+                    data[player]["light"][unit.unit_id] = unit.actions_to_path()
+                elif unit.unit.unit_type == "HEAVY":
+                    data[player]["heavy"][unit.unit_id] = unit.actions_to_path()
                 else:
                     raise RuntimeError
 
         self.all_paths = data
-        self.friendly_light_paths = data['friendly']['light']
-        self.friendly_heavy_paths = data['friendly']['heavy']
-        self.enemy_light_paths = data['enemy']['light']
-        self.enemy_heavy_paths = data['enemy']['heavy']
+        self.friendly_light_paths = data["friendly"]["light"]
+        self.friendly_heavy_paths = data["friendly"]["heavy"]
+        self.enemy_light_paths = data["enemy"]["light"]
+        self.enemy_heavy_paths = data["enemy"]["heavy"]
 
         # Update Enemy Factories
         self.enemy_factories = {
-            factory_id: factory.factory.pos_slice
-            for factory_id, factory in enemy_factories.items()
+            factory_id: factory.factory.pos_slice for factory_id, factory in enemy_factories.items()
         }
         arr = np.zeros(rubble.shape)
         for s in self.enemy_factories.values():
@@ -140,30 +134,24 @@ class PathFinder:
         path = np.array(path)
         return path
 
-    def _get_existing_paths(
-        self, collision_params: CollisionParams
-    ) -> Dict[str, List[Tuple[int, int]]]:
+    def _get_existing_paths(self, collision_params: CollisionParams) -> Dict[str, List[Tuple[int, int]]]:
         """Return the existing paths of other units taking into account collision_params
         Note: This method is cached in the __init__ and should be called through self.get_existing_paths
         """
         paths = {}
-        for attr in ['friendly_light', 'friendly_heavy', 'enemy_light', 'enemy_heavy']:
+        for attr in ["friendly_light", "friendly_heavy", "enemy_light", "enemy_heavy"]:
             if getattr(collision_params, attr):
-                for unit_id, path in getattr(self, f'{attr}_paths').items():
+                for unit_id, path in getattr(self, f"{attr}_paths").items():
                     paths[unit_id] = path
         for k in collision_params.ignore_ids:
             paths.pop(k, None)
         return paths
 
-    def get_existing_paths(
-        self, collision_params: CollisionParams
-    ) -> Dict[str, List[Tuple[int, int]]]:
+    def get_existing_paths(self, collision_params: CollisionParams) -> Dict[str, List[Tuple[int, int]]]:
         """Return the existing paths of other units taking into account collision_params"""
         return self._cached_get_existing_paths(collision_params)
 
-    def check_collisions(
-        self, path: np.ndarray, collision_params: CollisionParams
-    ) -> Union[None, Tuple[int, int]]:
+    def check_collisions(self, path: np.ndarray, collision_params: CollisionParams) -> Union[None, Tuple[int, int]]:
         """Returns first collision coordinate if collision, else None"""
         path = np.asanyarray(path, dtype=int)
         other_paths_dict = self.get_existing_paths(collision_params)
@@ -215,9 +203,7 @@ class PathFinder:
         def _path(additional_blocked_cells=None):
             nonlocal start, end
 
-            additional_blocked_cells = (
-                additional_blocked_cells if additional_blocked_cells else []
-            )
+            additional_blocked_cells = additional_blocked_cells if additional_blocked_cells else []
 
             cost_map = self.get_costmap(rubble=rubble)
             for x, y in additional_blocked_cells:
@@ -231,10 +217,7 @@ class PathFinder:
 
             # Bounds including margin (x, y)
             lowers = [max(0, v - margin) for v in mins]
-            uppers = [
-                min(s - 1, v + margin) + 1
-                for s, v in zip(reversed(cost_map.shape), maxs)
-            ]  # +1 for range
+            uppers = [min(s - 1, v + margin) + 1 for s, v in zip(reversed(cost_map.shape), maxs)]  # +1 for range
 
             # Ranges
             x_range, y_range = [(lowers[i], uppers[i]) for i in range(2)]
@@ -267,15 +250,13 @@ class PathFinder:
                 attempts += 1
                 path = _path(blocked_cells)
                 if len(path) == 0:
-                    logger.info(f'No paths found without collisions')
+                    logger.info(f"No paths found without collisions")
                     break
-                collision_pos = self.check_collisions(
-                    path, collision_params=collision_params
-                )
+                collision_pos = self.check_collisions(path, collision_params=collision_params)
                 if collision_pos is None:
                     break
                 blocked_cells.append(collision_pos)
             else:
-                logger.info(f'No paths found without collisions after many attempts')
+                logger.info(f"No paths found without collisions after many attempts")
                 return np.array([start])
         return path

@@ -50,7 +50,7 @@ class Recommendation(HighLevelAction):
 ######################### End of OLD
 
 
-def split_actions_at_step(actions, split_step)  -> Tuple[List[np.ndarray], List[np.ndarray]]:
+def split_actions_at_step(actions, split_step) -> Tuple[List[np.ndarray], List[np.ndarray]]:
     """Split actions into two lists at a given step"""
     before_split = []
     after_split = []
@@ -80,7 +80,9 @@ def split_actions_at_step(actions, split_step)  -> Tuple[List[np.ndarray], List[
     return before_split, after_split
 
 
-def split_actions_at_two_steps(actions, split_step1, split_step2) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+def split_actions_at_two_steps(
+    actions, split_step1, split_step2
+) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
     """Split actions into three parts (useful for replacing middle part of actions)"""
     if split_step1 > split_step2:
         raise ValueError(f"{split_step1} > {split_step2}")

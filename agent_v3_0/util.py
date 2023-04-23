@@ -434,10 +434,12 @@ def nearest_non_zero(array: np.ndarray, pos: Union[np.ndarray, Tuple[int, int]])
     closest = locations[np.argmin(distances)]
     return tuple(closest)
 
+
 def non_zero_coords(arr: np.ndarray) -> List[Tuple[int, int]]:
     non_zero_indices = np.nonzero(arr)
     coordinates = list(zip(non_zero_indices[0], non_zero_indices[1]))
     return coordinates
+
 
 def num_turns_of_actions(actions: Union[np.ndarray, List[np.ndarray]]) -> int:
     """Calculate how many turns the actions will take including their n values, does not include repeat (and should not)"""
@@ -1685,14 +1687,15 @@ def figures_to_subplots(figs, title=None, rows=None, cols=None, shared_data=Fals
     )
     return full_fig
 
+
 def calculate_path_to_nearest_non_zero(
-        pathfinder: Pather,
-        costmap: np.ndarray,
-        from_pos: Tuple[int, int],
-        target_array: np.ndarray,
-        near_pos: Tuple[int, int],
-        max_attempts = 20,
-        margin=2,
+    pathfinder: Pather,
+    costmap: np.ndarray,
+    from_pos: Tuple[int, int],
+    target_array: np.ndarray,
+    near_pos: Tuple[int, int],
+    max_attempts=20,
+    margin=2,
 ) -> np.ndarray:
     """Calculate path from pos to the nearest non-zero of array that will be unoccupied on arrival (closest to near_pos)
     Args:
@@ -1718,12 +1721,12 @@ def calculate_path_to_nearest_non_zero(
                 coord,
                 costmap=costmap,
                 margin=margin,
-
             )
             if len(path) > 0:
                 return path
             array[coord[0], coord[1]] = 0
     return np.array([])
+
 
 def calc_path_to_factory(
     pathfinder: Pather,
@@ -1765,7 +1768,7 @@ def calc_path_to_factory(
     #         factory_loc[nearest_factory[0], nearest_factory[1]] = 0
     # Path to the nearest tile anyway
     if len(path) == 0:
-    # else:
+        # else:
         logger.warning(
             f"No path to any factory tile without collisions from {pos}  (best factory loc would be {original_nearest_location}), returning path without considering collisions"
         )

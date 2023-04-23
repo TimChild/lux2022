@@ -11,6 +11,7 @@ Unit = TypeVar("Unit", bound=UnitManager)
 class LocationManager:
     """Keeps track of units associated with location, or locations associated with unit in a way that they stay in
     sync"""
+
     def __init__(self):
         self.location_to_units: Dict[Location, List[Unit]] = {}
         self.unit_to_location: Dict[Unit, Location] = {}
