@@ -89,7 +89,9 @@ class FriendlyFactoryManager(FactoryManager):
                 for r, n in zip([3, 4, 5, 6, 7], [8, 8, 14, 16, 14])
             ],
         ).astype(int)
-
+        # Block out resources from waiting areas
+        resources = (self.master.maps.ice & self.master.maps.ore)
+        arr[resources > 0] = 0
         return arr
 
     @property

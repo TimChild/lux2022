@@ -219,7 +219,9 @@ class CollisionResolver:
         """
         last_step, next_dest_or_last_step = self._next_dest_or_last_step(collision.step)
         first_step, prev_dest_or_first_step = self._previous_dest_or_start_step(collision.step)
-        logger.debug(f"repathing from {prev_dest_or_first_step} to {next_dest_or_last_step} (starting step {first_step})")
+        logger.debug(
+            f"repathing from {prev_dest_or_first_step} to {next_dest_or_last_step} (starting step {first_step})"
+        )
         if np.all(next_dest_or_last_step == collision.pos) or np.all(prev_dest_or_first_step == collision.step):
             logger.error(
                 f"first or last dest was same as collision pos next={next_dest_or_last_step} prev={prev_dest_or_first_step} collision step={collision.step}"
@@ -450,12 +452,20 @@ class UnitPaths:
             for unit_num, unit in dict_.items():
                 self.add_unit(unit, is_enemy=is_enemy)
 
-    def get_unit_nums_near(self, pos: util.POS_TYPE, step: int, radius: int = 5, friendly_light=True,
-                           friendly_heavy=True, enemy_light=True, enemy_heavy=True) -> np.ndarray:
+    def get_unit_nums_near(
+        self,
+        pos: util.POS_TYPE,
+        step: int,
+        radius: int = 5,
+        friendly_light=True,
+        friendly_heavy=True,
+        enemy_light=True,
+        enemy_heavy=True,
+    ) -> np.ndarray:
         """Return the ID_NUM of enemies near to pos at given step"""
         near_nums = np.full_like(self.friendly_valid_move_map, fill_value=-1)
         if step > self.max_step:
-            logger.warning(f'Requesting unit_near_nums for step {step} > max step {self.max_step}, returning empty')
+            logger.warning(f"Requesting unit_near_nums for step {step} > max step {self.max_step}, returning empty")
             return near_nums
 
         mask = util.pad_and_crop(util.manhattan_kernel(radius), near_nums.shape, pos[0], pos[1])
@@ -469,7 +479,7 @@ class UnitPaths:
             arr = getattr(self, key)
             arr = arr[step]
             # Makes all outside of radius zero
-            masked = (arr+1)*mask  # +1 to make id_0 become 1 (and -1s become 0)
+            masked = (arr + 1) * mask  # +1 to make id_0 become 1 (and -1s become 0)
             # But then be sure to copy in the actual id_nums
             near_nums[masked >= 0] = arr
         return near_nums
@@ -520,9 +530,6 @@ class UnitPaths:
     @staticmethod
     def _add_path_to_array(unit: UnitManager, path, arr: np.ndarray, max_step: int, is_enemy: bool):
         x, y = unit.start_of_turn_pos
-        # # If first coord of path is x, y (which it should be), remove it (next pathing step will be step 1 in paths)
-        # if np.all(path[0] == (x, y)):
-        #     path = path[1:]
 
         # At least leave friendly units on map for one more turn (otherwise they get walked over while on factory)
         max_extra = 10 if is_enemy else 1
@@ -539,6 +546,14 @@ class UnitPaths:
             # Don't do that for too long (probably not true) or for friendly (friendly will act again)
             else:
                 break
+
+        # If low energy, add current position as next step as well (just in case unit doesn't move)
+        if unit.start_of_turn_power < (
+            unit.unit_config.MOVE_COST
+            + 100 * unit.unit_config.RUBBLE_MOVEMENT_COST
+            + unit.unit_config.ACTION_QUEUE_POWER_COST
+        ):
+            arr[1, path[0][0], path[0][1]] = unit.id_num
 
     def add_unit(self, unit: UnitManager, is_enemy=False):
         """Add a new unit to the path arrays"""
@@ -828,7 +843,6 @@ def calculate_collisions(
         if collisions_for_unit.num_collisions(friendly=True, enemy=True) > 0:
             all_unit_collisions[unit_id] = collisions_for_unit
     return all_unit_collisions
-
 
 
 def _decide_collision_avoidance(
