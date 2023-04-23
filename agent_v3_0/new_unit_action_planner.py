@@ -45,9 +45,10 @@ class GeneralPlanner:
 
 class ActionHandler:
     class HandleStatus(Enum):
+        SUCCESS = auto()
+        INVALID_FIRST_STEP = auto()
         MAX_STEPS_REACHED_PAUSE = auto()
         LOW_POWER_RETURNING = auto()
-        SUCCESS = auto()
         ENEMY_NEAR_ATTACKING = auto()
         ENEMY_NEAR_WAIT = auto()
         ENEMY_NEAR_FLEEING = auto()
@@ -62,19 +63,29 @@ class ActionHandler:
     def __init__(self, master: MasterState, unit: FriendlyUnitManager, max_queue_step_length: int):
         self.master = master
         self.unit = unit
-        self.pathfinder = self.master.pathfinder
-        self.rubble = self.master.maps.rubble
         self.max_queue_step_length = max_queue_step_length
 
-    def _add_current_act_status(self, num=1):
+    @property
+    def rubble(self):
+        return self.master.maps.rubble
+
+    @property
+    def pathfinder(self):
+        return self.master.pathfinder
+
+    def _add_current_act_status(self, num=1, targeting_enemy=None, allow_partial=None):
         """
         Add the current act status for as many steps as there are actions (i.e. ActStatuses should match with actions)
         """
-        # TODO: Maybe this can just be copy?
-        act_status = copy.deepcopy(self.unit.status.current_action)
-        self.unit.status.act_statuses.extend([act_status] * num)
+        if targeting_enemy is not None:
+            self.unit.status.current_action.targeting_enemy = targeting_enemy
+        if allow_partial is not None:
+            self.unit.status.current_action.allow_partial = allow_partial
 
-    def add_actions_to_queue(self, actions) -> HandleStatus:
+        act_status = self.unit.status.current_action.copy()
+        self.unit.act_statuses.extend([act_status] * num)
+
+    def add_actions_to_queue(self, actions, targeting_enemy=None, allow_partial=None) -> HandleStatus:
         """
         Add actions to the action queue after checking queue length
         Note: This should be the ONLY way actions are added to unit action queue
@@ -91,7 +102,7 @@ class ActionHandler:
 
         # Otherwise update the action queue and add ActStatus along with each action
         self.unit.action_queue.extend(actions)
-        self._add_current_act_status(len(actions))
+        self._add_current_act_status(len(actions), targeting_enemy=targeting_enemy, allow_partial=allow_partial)
         return self.HandleStatus.SUCCESS
 
     def get_costmap(self):
@@ -297,7 +308,7 @@ class ActionHandler:
                 return status
 
         # Checks passed, add actions to queue
-        status = self.add_actions_to_queue(actions)
+        status = self.add_actions_to_queue(actions, targeting_enemy=targeting_enemy)
         if status != self.HandleStatus.SUCCESS:
             return status
         self.unit.pos = path[-1]
@@ -413,7 +424,9 @@ class ActionHandler:
                 return self.HandleStatus.PICKUP_INVALID_RETURNING
 
         # Checks passed, add actions to queue
-        status = self.add_actions_to_queue(self.unit.pickup(pickup_resource=resource_type, pickup_amount=amount))
+        status = self.add_actions_to_queue(
+            self.unit.pickup(pickup_resource=resource_type, pickup_amount=amount), allow_partial=allow_partial
+        )
         if status != self.HandleStatus.SUCCESS:
             return status
 

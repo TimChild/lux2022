@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import enum
 from collections import deque
 from dataclasses import dataclass, field, InitVar
@@ -131,6 +132,7 @@ class ActCategory(enum.Enum):
     WAITING = "waiting"  # Waiting outside factory
     DROPOFF = "dropoff"  # Drop off resources at factory
     NOTHING = "nothing"  # Nothing but could be anywhere
+    TRANSFER = "transfer"  # Transferring resource from one factory to another
 
 
 class ActSubCategory(enum.Enum):
@@ -160,6 +162,15 @@ class ActStatus:
     category: ActCategory = ActCategory.NOTHING
     sub_category: Optional[ActSubCategory] = None
     step: int = 1
+    previous_action: ActStatus = field(default_factory=lambda: ActStatus())
+
+    # Used when adding actions to unit (they are overwritten, so don't set them here!)
+    targeting_enemy: bool = None  # For pathing to enemy (don't raise Close/Collision enemy statuses)
+    allow_partial: bool = None  # Allow partial pickup of resources
+
+    def copy(self) -> ActStatus:
+        # TODO: Might be able to change this to just copy instead of deepcopy if it's super slow
+        return copy.deepcopy(self)
 
 
 def next_dest(path: np.ndarray, maps: Maps, unit_paths: UnitPaths) -> DestStatus:
@@ -199,7 +210,7 @@ class TurnStatus:
     should_act_reasons: List[ShouldActInfo] = field(default_factory=list)
     # Whether planned actions are valid after stepping (i.e. do they match the next action in real action queue)
     planned_actions_valid_from_last_step: bool = True
-    next_action_valid = False
+    next_action_was_valid = False
 
     # must move next turn
     must_move: bool = False
@@ -220,9 +231,11 @@ class TurnStatus:
         )
         self.factory_dist = util.manhattan(unit.start_of_turn_pos, unit.factory.pos)
         self.should_act_reasons = []
+
         # Gets set when stepping planned actions
         self.planned_actions_valid_from_last_step = False
-        self.next_action_valid = False
+        # Set when checking if next action of unit is valid, if not, this gets set and status gets reset to zero
+        self.next_action_was_valid = False
         self.must_move = False
         self.action_queue_empty_ok = False
         self.replan_required = False
@@ -234,11 +247,10 @@ class Status:
     master: InitVar[MasterState]
     # _current_action: ActStatus = ActStatus()
     current_action: ActStatus = ActStatus()
-    previous_action: ActStatus = ActStatus()
     # When was the action queue last updated
     last_real_action_update_step: int = 0
     _planned_action_queue: List[np.ndarray] = field(default_factory=list)
-    act_statuses: List[ActStatus] = field(default_factory=list)
+    _planned_act_statuses: List[ActStatus] = field(default_factory=list)
 
     # Storing things about processing of turn for unit (reset at beginning of turn)
     turn_status: TurnStatus = field(default_factory=TurnStatus)
@@ -264,14 +276,56 @@ class Status:
     #     self._current_action = value
 
     @property
-    def planned_action_queue(self):
+    def planned_action_queue(self) -> List[np.ndarray]:
         """Should only be updated at beginning/end of turn (use unit.action_queue when planning etc"""
         return self._planned_action_queue
 
-    def update_planned_action_queue(self, new_queue: List[np.ndarray]):
+    @property
+    def planned_act_statuses(self) -> List[ActStatus]:
+        """Should only be updated when updating planned actions"""
+        return self._planned_act_statuses
+
+    def update_planned_action_queue(self, new_queue: List[np.ndarray], new_act_statuses: List[ActStatus]):
         if not isinstance(new_queue, list):
             raise TypeError
+        if not isinstance(new_act_statuses, list):
+            raise TypeError
+        if not len(new_queue) == len(new_act_statuses):
+            raise ValueError(f"{len(new_queue)} == {len(new_act_statuses)} did not evaluate True")
+
         self._planned_action_queue = new_queue
+        self._planned_act_statuses = new_act_statuses
+
+    def update_action_status(self, new_action: ActStatus):
+        """For updating with a new act status (keeps track of previous)"""
+        new_action.previous_action = self.current_action.copy()
+        self.current_action = new_action
+
+    def reset_to_step(self, step: int = 0):
+        """For resetting to ActStatus at step from now
+        Returns ActStatus and queue before that action was applied (so that action can apply again from where it was)
+
+        Notes:
+            - Planned actions start from what will be applied on step 1
+            - Act status stored at same index as Planned Actions are the statuses that made those actions
+            - So when restoring status for e.g.
+                - step 0, want the 0th index status, but no action queue
+                - step 1, want the 1st index status, only zeroth action queue step
+        """
+        if not step < len(self.planned_act_statuses):
+            logger.error(
+                f"Tried to set act status to {step} but act_statuses only {len(self.planned_act_statuses)}. Setting ActStatus Nothing"
+            )
+            self.current_action = ActStatus()
+            return
+
+        new_status = self.planned_act_statuses[step]
+        new_planned = self.planned_action_queue[:step]
+        new_statuses = self.planned_act_statuses[:step]
+        logger.info(f"Resetting to {step} where action was {new_status}")
+        self.current_action = new_status
+        self.update_planned_action_queue(new_planned, new_statuses)
+        return
 
     def __post_init__(self, master: MasterState):
         self.mine_values: MineValues = MineValues(ice=master.maps.ice, ore=master.maps.ore)
@@ -294,7 +348,7 @@ class Status:
                     f"Not implemented adding repeat actions to back of planned actions (might not make sense)"
                 )
             new_actions.pop(0)
-            self.act_statuses.pop(0)
+            self.planned_act_statuses.pop(0)
             return new_actions
         else:
             logger.error(f"failed to update planned actions. First planned action = {new_actions[0]}")
@@ -317,9 +371,9 @@ class Status:
 
         valid = False
         new_planned = self._step_planned_actions_and_status()
-        if len(new_planned) != len(self.act_statuses):
+        if len(new_planned) != len(self.planned_act_statuses):
             logger.error(
-                f"{unit.log_prefix} Planned actions and ActStatuses not matched in length {len(new_planned)}!={len(self.act_statuses)}"
+                f"{unit.log_prefix} Planned actions and ActStatuses not matched in length {len(new_planned)}!={len(self.planned_act_statuses)}"
             )
         if len(unit.start_of_turn_actions) == 0:
             if len(new_planned) == 0:
@@ -349,9 +403,3 @@ class Status:
 
         self.turn_status.planned_actions_valid_from_last_step = valid
         return valid
-
-    def update_action_status(self, new_action: ActStatus):
-        self.previous_action = self.current_action
-        self.current_action = new_action
-        # Action queue might not actually be getting updated
-        # self.status.last_action_update_step = self.master.step

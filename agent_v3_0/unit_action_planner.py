@@ -246,6 +246,12 @@ class AllCloseUnits:
 
 
 class SingleUnitActionPlanner:
+    # If unit has fewer than this many planned steps, replan
+    min_planned_steps = 10
+    # TODO: Not sure what happens if these numbers aren't equal to each other!
+    # Check this many steps are valid in the planned queue
+    max_check_steps = 10
+
     def __init__(
         self,
         unit: FriendlyUnitManager,
@@ -336,187 +342,168 @@ class SingleUnitActionPlanner:
         return success
 
 
-    def _handle_should_acts(self):
-        """Try to handle simple things like repath to avoid collision"""
-        planned_actions = self.unit.status.planned_action_queue
-        act_category = self.unit.status.current_action.category
-        # First action checks
-        if len(planned_actions) == 0:
+    def _check_first_few_actions_valid(self, max_check_steps):
+        """If any of first few actions are not valid, reset unit to that point so repathing can happen"""
+        # First action valid?
+        if len(self.unit.status.planned_action_queue) == 0:
             # Done, current actions are valid
             valid = True
         else:
-            action = planned_actions[0]
+            action = self.unit.status.planned_action_queue[0]
             # check action is valid
+            # TODO: Can improve validation to use the up to date factory values
             valid = self.action_validator.next_action_valid(self.unit, action)
-
-        self.unit.status.turn_status.next_action_valid = valid
+        self.unit.status.turn_status.next_action_was_valid = valid
         if not valid:
-            planned_actions = []
-            self.unit.status.current_action = self.unit.status.status_at_step(0)
-            status = invalid_cleared_action_queue
-        else:
-            status = success
+            logger.warning(f'{self.unit.log_prefix} First action invalid, resetting and returning')
+            self.unit.status.reset_to_step(step=0)
+            return self.unit.action_handler.HandleStatus.INVALID_FIRST_STEP
 
-        # Start from end, if that passes, can continue, otherwise go to previous point in action queue and try
-        # TODO: possibly should go back in chunks (previous_dest maybe)
-        for step in reversed(range(min(len(planned_actions), self.check_act_steps))):
-            actions = actions_util.split_actions_at_step(planned_actions, step)[0]
-            status_at_step = self.unit.status.status_at_step(step)
-
-            # Check enough power back to factory
-            status = self.unit.action_handler._check_power_to_factory(actions)
-            if not status == success:
-                # Try with shorter queue, maybe that is successful
-                continue
-
-            # Check enemy collisions and nearby
-            status = self.unit.action_handler._handle_enemies(actions)
-            if not status == success:
-                # Try with shorter queue, maybe that is successful
-                continue
-
-            # Check friendly collisions
-            status = self.unit.action_handler._check_friendly_collisions(actions)
-            if not status == success:
-                # Try with shorter queue, maybe that is successful
-                continue
-
-        # From here, either the status is that everything is successful, in which case no need to act
-        # or status is something else and unit likely has updated ActStatus that will handle itself
-        # in next planning step
+        # Try running units actions
+        actions_to_check = actions_util.split_actions_at_step(self.unit.status.planned_action_queue, max_check_steps)[0]
+        act_statuses = self.unit.status.planned_act_statuses[:len(actions_to_check)]
+        status = self.unit.run_actions(actions_to_check, act_statuses)
+        if status != self.unit.action_handler.HandleStatus.SUCCESS:
+            num_success = util.num_turns_of_actions(self.unit.action_queue)
+            logger.warning(f'{self.unit.log_prefix} Actions failed after {num_success} with status {status}, resetting to last successful')
+            # TODO: maybe don't want to actually reset here...
+            self.unit.status.reset_to_step(step=num_success)
         return status
-
 
 
     def calculate_actions_for_unit(self) -> bool:
         # Will be using this a lot in here
         unit = self.unit
+        HS = self.unit.action_handler.HandleStatus
 
         logger.info(
-            f"Beginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, len(actions) = {len(unit.action_queue)}, current_action = {unit.status.current_action.category}:{unit.status.current_action.sub_category}"
+            f"\nBeginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, \n"
+            f"\tlen(actions) = {len(unit.action_queue)}, \n"
+            f"\tcurrent_action = {unit.status.current_action.category}:{unit.status.current_action.sub_category}\n"
         )
 
         # Is current location in existing paths for next step or equal or higher enemy adjacent
         unit_must_move = self._unit_must_move()
         self.unit.status.turn_status.must_move = unit_must_move
 
-        # Attempt handing reasons to act in the next X steps
-        status = self._handle_should_acts()
+        # Check next few actions are valid
+        # TODO: Should I change the check value?, lower than max leaves potentially invalid queues after X steps, on othe other hand
+        # TODO: they may become valid by the time they are closer to occurring
+        max_check_steps = min(self.max_check_steps, unit.max_queue_step_length)
+        status = self._check_first_few_actions_valid(max_check_steps)
 
         # If status success and no more updates needed
-        if status == success and num_steps_planned_actions > X:
+        if status == HS.SUCCESS and \
+                util.num_turns_of_actions(self.unit.status.planned_action_queue) > self.min_planned_steps:
             # Done, no need to do more
             return status
 
-        # Otherwise get updates from general planners
-        status = None
-        category = self.unit.status.current_action.category
-        if category in [ActCategory.NOTHING, ActCategory.WAITING]:
-            # This should handle moving waiting units and nothing units, reassigning their status if necessary
-            status = self.multi_planner.general_planner.get_unit_planner(self.unit.unit_id).update_planned_actions()
-        if category == ActCategory.COMBAT:
-            status = self.multi_planner.combat_planner.get_unit_planner(self.unit).update_planned_actions()
-        if category == ActCategory.MINE:
-            status = self.multi_planner.mining_planner.get_unit_planner(self.unit).update_planned_actions()
-        if category == ActCategory.CLEAR:
-            status = self.multi_planner.rubble_clearing_planner.get_unit_planner(self.unit).update_planned_actions()
-        if status is None:
-            raise ValueError
+        for _ in range(5):
+            # Otherwise get updates from general planners
+            status = None
+            category = self.unit.status.current_action.category
+            if category in [ActCategory.NOTHING, ActCategory.WAITING, ActCategory.DROPOFF, ActCategory.TRANSFER]:
+                # This should handle moving waiting units and nothing units, reassigning their status if necessary
+                status = self.multi_planner.general_planner.get_unit_planner(self.unit.unit_id).update_planned_actions()
+            if category == ActCategory.COMBAT:
+                status = self.multi_planner.combat_planner.get_unit_planner(self.unit).update_planned_actions()
+            if category == ActCategory.MINE:
+                status = self.multi_planner.mining_planner.get_unit_planner(self.unit).update_planned_actions()
+            if category == ActCategory.CLEAR:
+                status = self.multi_planner.rubble_clearing_planner.get_unit_planner(self.unit).update_planned_actions()
+            if status is None:
+                raise ValueError(f'{self.unit.log_prefix} Failed to get updates')
 
-        # Check again if unit must move
-        mm_success = self._force_moving_if_necessary(unit_must_move)
-        if not mm_success:
-            status = failed_forcing_single_move
-
-        # Decide how to return from here
-        if status == success and (num_steps_planned > X or self.unit.status.turn_status.action_queue_empty_ok):
-            # Check valid again?
-            # maybe self._handle_should_acts()?
-            # or just leave it
-            return status
-        elif status not success but ok for now:
-            return status
+            # Check again if unit must move
+            if status == HS.SUCCESS:
+                if util.num_turns_of_actions(self.unit.status.planned_action_queue) > 0 or self.unit.status.turn_status.action_queue_empty_ok:
+                    # Good break here
+                    break
+                else:
+                    logger.error(f'{self.unit.log_prefix}, status SUCCESS, but empty planned actions and empty_actions_ok False')
         else:
-            if self.unit.status.turn_status.max_retries > 0:
-                # loop again?
-                self.unit.status.turn_status.max_retries -= 1
-                return self.calculate_actions_for_unit()
-            else:
-                return status
+            logger.error(f'{self.unit.log_prefix}, after X attempts at planning, status = {status}')
+
+            mm_success = self._force_moving_if_necessary(unit_must_move)
+            if not mm_success:
+                logger.warning(f'{self.unit.log_prefix} status was must_move, but first step was not a move')
+                status = HS.INVALID_FIRST_STEP
+
+        return status
 
 
-class ActionImplementer:
-    def __init__(
-        self,
-        master,
-        unit_paths: UnitPaths,
-        unit_info: UnitInfo,
-        action_validator: ValidActionCalculator,
-        close_units: AllCloseUnits,
-        factory_desires: FactoryDesires,
-        factory_info: FactoryInfo,
-        mining_planner: MiningPlanner,
-        clearing_planner: ClearingPlanner,
-        combat_planner: CombatPlanner,
-    ):
-        self.master = master
-        self.unit_paths = unit_paths
-        self.unit_info = unit_info
-        self.action_validator = action_validator
-        self.close_units = close_units
-        self.factory_desires = factory_desires
-        self.factory_info = factory_info
-        self.mining_planner = mining_planner
-        self.clearing_planner = clearing_planner
-        self.combat_planner = combat_planner
-
-    def implement_desired_action(
-        self,
-        unit: FriendlyUnitManager,
-        desired_action: ActStatus,
-        unit_must_move: bool,
-    ):
-        if desired_action.category == ActCategory.COMBAT:
-            success = self.combat_planner.get_unit_planner(unit).update_planned_actions()
-        elif desired_action.category == ActCategory.MINE:
-            success = self.mining_planner.get_unit_planner(unit).update_planned_actions()
-        elif desired_action.category == ActCategory.CLEAR:
-            success = self.clearing_planner.get_unit_planner(unit).update_planned_actions()
-        elif desired_action.category == ActCategory.NOTHING:
-            success = self._do_nothing(unit, unit_must_move)
-        else:
-            logger.error(f"{desired_action} not understood as an action")
-            success = False
-
-        if success:
-            pass
-        else:
-            unit.status.update_action_status(new_action=ActStatus())
-        return success
-
-    def _do_nothing(self, unit, unit_must_move) -> bool:
-        logger.debug(f"Setting action queue to empty to do action {ActCategory.NOTHING}")
-        unit.action_queue = []
-        success = True
-        if unit_must_move:
-            if not unit.factory_id:
-                logger.error(f"Unit must move, but has action {ActCategory.NOTHING} and no factory assigned")
-            else:
-                success = self._handle_nothing_with_must_move(unit)
-        return success
-
-    def _handle_nothing_with_must_move(self, unit) -> bool:
-        if unit.on_own_factory():
-            success = util.move_to_new_spot_on_factory(
-                self.master.pathfinder,
-                unit,
-                self.master.factories.friendly[unit.factory_id],
-            )
-            if not success:
-                util.move_to_cheapest_adjacent_space(self.master.pathfinder, unit)
-        else:
-            util.move_to_cheapest_adjacent_space(self.master.pathfinder, unit)
-        return True
+# class ActionImplementer:
+#     def __init__(
+#         self,
+#         master,
+#         unit_paths: UnitPaths,
+#         unit_info: UnitInfo,
+#         action_validator: ValidActionCalculator,
+#         close_units: AllCloseUnits,
+#         factory_desires: FactoryDesires,
+#         factory_info: FactoryInfo,
+#         mining_planner: MiningPlanner,
+#         clearing_planner: ClearingPlanner,
+#         combat_planner: CombatPlanner,
+#     ):
+#         self.master = master
+#         self.unit_paths = unit_paths
+#         self.unit_info = unit_info
+#         self.action_validator = action_validator
+#         self.close_units = close_units
+#         self.factory_desires = factory_desires
+#         self.factory_info = factory_info
+#         self.mining_planner = mining_planner
+#         self.clearing_planner = clearing_planner
+#         self.combat_planner = combat_planner
+#
+#     def implement_desired_action(
+#         self,
+#         unit: FriendlyUnitManager,
+#         desired_action: ActStatus,
+#         unit_must_move: bool,
+#     ):
+#         if desired_action.category == ActCategory.COMBAT:
+#             success = self.combat_planner.get_unit_planner(unit).update_planned_actions()
+#         elif desired_action.category == ActCategory.MINE:
+#             success = self.mining_planner.get_unit_planner(unit).update_planned_actions()
+#         elif desired_action.category == ActCategory.CLEAR:
+#             success = self.clearing_planner.get_unit_planner(unit).update_planned_actions()
+#         elif desired_action.category == ActCategory.NOTHING:
+#             success = self._do_nothing(unit, unit_must_move)
+#         else:
+#             logger.error(f"{desired_action} not understood as an action")
+#             success = False
+#
+#         if success:
+#             pass
+#         else:
+#             unit.status.update_action_status(new_action=ActStatus())
+#         return success
+#
+#     def _do_nothing(self, unit, unit_must_move) -> bool:
+#         logger.debug(f"Setting action queue to empty to do action {ActCategory.NOTHING}")
+#         unit.action_queue = []
+#         success = True
+#         if unit_must_move:
+#             if not unit.factory_id:
+#                 logger.error(f"Unit must move, but has action {ActCategory.NOTHING} and no factory assigned")
+#             else:
+#                 success = self._handle_nothing_with_must_move(unit)
+#         return success
+#
+#     def _handle_nothing_with_must_move(self, unit) -> bool:
+#         if unit.on_own_factory():
+#             success = util.move_to_new_spot_on_factory(
+#                 self.master.pathfinder,
+#                 unit,
+#                 self.master.factories.friendly[unit.factory_id],
+#             )
+#             if not success:
+#                 util.move_to_cheapest_adjacent_space(self.master.pathfinder, unit)
+#         else:
+#             util.move_to_cheapest_adjacent_space(self.master.pathfinder, unit)
+#         return True
 
 
 class MultipleUnitActionPlanner:
@@ -884,7 +871,7 @@ class MultipleUnitActionPlanner:
         units_datas = []
 
         for unit_id, unit in units.items():
-            current_action = unit.status.act_statuses[0] if len(unit.status.act_statuses) > 0 else ActStatus()
+            current_action = unit.status.planned_act_statuses[0] if len(unit.status.planned_act_statuses) > 0 else ActStatus()
             currently_acting = True if current_action.category not in [ActCategory.NOTHING,
                                                                        ActCategory.WAITING] else False
             turns_left_in_plan = util.num_turns_of_actions(unit.status.planned_action_queue)
@@ -960,7 +947,7 @@ class MultipleUnitActionPlanner:
                 collision_resolve_max_step=self.check_friendly_collision_steps,
                 collision_info=self.all_upcoming_collisions[unit_id],
             )
-            unit_action_planner.calculate_actions_for_unit()
+            status = unit_action_planner.calculate_actions_for_unit()
             self.debug_single_action_planners[unit_id] = unit_action_planner
 
             # update actual action queue if necessary and move to relevant place in units_to_act

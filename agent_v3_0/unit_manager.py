@@ -7,6 +7,8 @@ import copy
 
 from luxai_s2.unit import UnitCargo
 
+from agent_v3_0 import actions_util
+from agent_v3_0.new_unit_action_planner import ActionHandler
 from unit_status import Status, ActStatus
 from lux.unit import Unit
 from lux.config import UnitConfig
@@ -34,13 +36,41 @@ class UnitManager(abc.ABC):
         self.unit_config: UnitConfig = unit.unit_cfg
         self.id_num = int(re.search(r"\d+", unit.unit_id).group())
 
-        self.dig = unit.dig
-        self.transfer = unit.transfer
-        self.pickup = unit.pickup
+    def update(self, unit: Unit):
+        """Beginning of turn update"""
+        self.unit = unit
 
-        # Keep track of pos a start of turn because pos will be updated while planning what to do next
-        self.start_of_turn_pos = tuple(unit.pos)
-        self.start_of_turn_power = unit.power
+    @property
+    def unit_type(self) -> str:
+        return self.unit.unit_type
+
+    @property
+    def pos(self) -> util.POS_TYPE:
+        return self._pos
+
+    @pos.setter
+    def pos(self, value):
+        if value is None or len(value) != 2:
+            raise ValueError(f"got {value} with type {type(value)} for pos")
+        self._pos = tuple(value)
+
+    @property
+    def pos_slice(self):
+        """Can be used for indexing arrays directly
+        Examples:
+            r = rubble[unit.pos_slice]
+        """
+        return np.s_[self.pos[0], self.pos[1]]
+
+    @property
+    def action_queue(self) -> List[np.ndarray]:
+        return self._action_queue
+
+    @action_queue.setter
+    def action_queue(self, value):
+        if not isinstance(value, list):
+            raise TypeError(f"got {value}, expected List[np.ndarray]")
+        self._action_queue = value
 
     @property
     def cargo_total(self) -> int:
@@ -84,14 +114,6 @@ class UnitManager(abc.ABC):
     def log_prefix(self) -> str:
         return f"{self.unit_type} {self.unit_id}(spos{self.start_of_turn_pos})(pos{self.pos}):"
 
-    def update(self, unit: Unit):
-        """Beginning of turn update"""
-        self.unit = unit
-        # Avoid changing the actual pos of unit.pos (which the env also uses)
-        unit.pos = tuple(unit.pos)
-        self.start_of_turn_pos = unit.pos
-        self.start_of_turn_power = unit.power
-
     def current_path(self, max_len: int = 10, actions=None) -> np.ndarray:
         """Return current path from start of turn based on current action queue
         Adds a single no-move if not enough power to do the next move (hopefully avoids collisions better?)
@@ -100,48 +122,6 @@ class UnitManager(abc.ABC):
             actions = self.action_queue
         path = util.actions_to_path(self.start_of_turn_pos, actions, max_len=max_len)
         return path
-
-    @property
-    def action_queue(self) -> List[np.ndarray]:
-        return self.unit.action_queue
-
-    @action_queue.setter
-    def action_queue(self, value):
-        self.unit.action_queue = value
-
-    @property
-    def pos(self) -> util.POS_TYPE:
-        return self.unit.pos
-
-    @pos.setter
-    def pos(self, value):
-        if value is None or len(value) != 2:
-            raise ValueError(f"got {value} with type {type(value)} for pos")
-        self.unit.pos = tuple(value)
-
-    @property
-    def pos_slice(self):
-        """Can be used for indexing arrays directly
-        Examples:
-            r = rubble[unit.pos_slice]
-        """
-        return np.s_[self.pos[0], self.pos[1]]
-
-    @property
-    def cargo(self) -> UnitCargo:
-        return self.unit.cargo
-
-    @property
-    def unit_type(self) -> str:
-        return self.unit.unit_type
-
-    @property
-    def power(self) -> int:
-        return self.unit.power
-
-    @power.setter
-    def power(self, value):
-        self.unit.power = value
 
     def actions_to_path(self, actions: [None, List[np.ndarray]] = None, max_len=20) -> np.ndarray:
         """
@@ -168,6 +148,9 @@ def step_actions(actions: List[np.ndarray]) -> List[np.ndarray]:
 
 
 class FriendlyUnitManager(UnitManager):
+    # Maximum number of steps to plan ahead for (pause after that)
+    max_queue_step_length = 50
+
     def __init__(self, unit: Unit, master_state: MasterState, factory_id: str):
         super().__init__(unit)
         self.factory_id = factory_id
@@ -175,9 +158,26 @@ class FriendlyUnitManager(UnitManager):
         self.status: Status = Status(
             master=self.master,
         )
-        self.start_of_turn_actions = []
+        self.action_handler = ActionHandler(self.master, self, self.max_queue_step_length)
+
+        # Add these for convenience
+        self.dig = unit.dig
+        self.transfer = unit.transfer
+        self.pickup = unit.pickup
+
+        # Keep track of start of turn values (these are changed during planning)
+        self.start_of_turn_actions = copy.copy(unit.action_queue)
+        self.start_of_turn_pos = tuple(unit.pos)
+        self.start_of_turn_power = unit.power
+        self.start_of_turn_cargo = copy.copy(unit.cargo)
+        self._action_queue = copy.copy(unit.action_queue)
+        self._cargo = copy.copy(unit.cargo)
+        self._power = unit.power
+        self._pos = tuple(unit.pos)
 
         # Calculated per turn
+        # Updated from status after stepped (this should be the one updated during planning)
+        self.act_statuses: List[ActStatus] = []
 
     @property
     def log_prefix(self) -> str:
@@ -188,9 +188,116 @@ class FriendlyUnitManager(UnitManager):
     def update(self, unit: Unit):
         """Beginning of turn update"""
         super().update(unit)
-
-        self.start_of_turn_actions = copy.copy(unit.action_queue)
         self.status.update(self, self.master)
+
+        # update from planned actions
+        self.act_statuses = copy.copy(self.status.planned_act_statuses)
+
+        # Avoid changing the actual pos of unit.pos (which the env also uses)
+        self.start_of_turn_actions = copy.copy(unit.action_queue)
+        self.start_of_turn_pos = tuple(unit.pos)
+        self.start_of_turn_power = unit.power
+        self.start_of_turn_cargo = copy.copy(unit.cargo)
+
+        # Init values from real unit
+        self._action_queue = copy.copy(unit.action_queue)
+        self._pos = tuple(unit.pos)
+        self._power = unit.power
+        self._cargo = copy.copy(unit.cargo)
+
+    @property
+    def cargo(self):
+        return self._cargo
+
+    @cargo.setter
+    def cargo(self, value):
+        if not isinstance(value, UnitCargo):
+            raise ValueError(f"got {value}, expected UnitCargo")
+        self._cargo = copy.copy(value)
+
+    @property
+    def power(self) -> int:
+        return self._power
+
+    @power.setter
+    def power(self, value):
+        self._power = value
+
+    def reset_unit_to_start_of_turn_empty_queue(self):
+        """Reset unit to start of turn, with empty queue, for planning actions from scratch"""
+        self.action_queue = []
+        self.act_statuses = []
+        self.power = self.start_of_turn_power
+        self.pos = self.start_of_turn_pos
+        self.cargo = self.start_of_turn_cargo
+
+    def run_actions(
+        self, actions_to_run: List[np.ndarray], act_statuses: List[ActStatus]
+    ) -> ActionHandler.HandleStatus:
+        """Run actions from start of turn to calculate pos, power, cargo and adding to action_queue and act_statuses
+        Returns act status, and action_queue and act_statuses will be updated to the latest point before the raised status
+
+        Note: this will break for anything not SUCCESS, but other statuses may not be considered failures
+        """
+
+        def _add_moves(move_acts: List[np.ndarray], targeting_enemy) -> ActionHandler.HandleStatus:
+            path = util.actions_to_path(self.pos, move_acts, max_len=self.max_queue_step_length)
+            status_ = self.action_handler.add_path(path, targeting_enemy=targeting_enemy)
+            return status_
+
+        if not len(actions_to_run) == len(act_statuses):
+            raise ValueError(f"{len(actions_to_run)} == {len(act_statuses)} did not evaluate True")
+
+        self.reset_unit_to_start_of_turn_empty_queue()
+        SUCCESS = self.action_handler.HandleStatus.SUCCESS
+
+        # Should collect move actions together as add_paths
+        move_actions = []
+        status = self.action_handler.HandleStatus.SUCCESS  # Default to success for no queue
+        for action, act_status in zip(actions_to_run, act_statuses):
+            act_type = action[util.ACT_TYPE]
+            rtype = action[util.ACT_RESOURCE]
+            dir = action[util.ACT_DIRECTION]
+            amount = action[util.ACT_AMOUNT]
+
+            # If move type, collect it and move on to next
+            if act_type == util.MOVE:
+                move_actions.append(action)
+                continue
+            # Now add all the moves in one go
+            elif len(move_actions) > 0:
+                status = _add_moves(move_actions, act_status.targeting_enemy)
+                if status != SUCCESS:
+                    return status
+                move_actions = []
+
+            if act_type == util.DIG:
+                status = self.action_handler.add_dig(n_digs=amount)
+                if status != SUCCESS:
+                    return status
+                continue
+
+            if act_type == util.TRANSFER:
+                status = self.action_handler.add_transfer(
+                    resource_type=rtype, direction=dir, amount=amount, to_unit=False
+                )
+                if status != SUCCESS:
+                    return status
+                continue
+
+            if act_type == util.PICKUP:
+                status = self.action_handler.add_pickup(
+                    resource_type=rtype, amount=amount, allow_partial=act_status.allow_partial
+                )
+                if status != SUCCESS:
+                    return status
+                continue
+
+        # In case last action was a move
+        if len(move_actions) > 0:
+            # Will be using from the last value of the loop
+            status = _add_moves(move_actions, act_status.targeting_enemy)
+        return status
 
     @property
     def factory(self) -> FriendlyFactoryManager:
