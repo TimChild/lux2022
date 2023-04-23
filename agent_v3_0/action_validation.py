@@ -12,8 +12,8 @@ import util
 if TYPE_CHECKING:
     from master_state import Maps
     from unit_action_planner import UnitsToAct
-    from agent_v3_0.collisions import UnitPaths
-    from factory_action_planner import FactoryInfo
+    from collisions import UnitPaths
+    from factory_manager import FactoryInfo
     from unit_manager import FriendlyUnitManager
 
 logger = get_logger(__name__)

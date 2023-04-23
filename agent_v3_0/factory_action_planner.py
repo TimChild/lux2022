@@ -1,22 +1,22 @@
 from __future__ import annotations
+
+import random
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
-from typing import Tuple, Dict, TYPE_CHECKING, Optional
+from typing import Dict, TYPE_CHECKING, Optional
 import copy
 
+from agent_v3_0.factory_manager import FactoryInfo
 from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory
 from lux.kit import GameState
-from lux.factory import Factory
-
-from factory_manager import FriendlyFactoryManager
 
 from master_state import MasterState
 import util
 from config import get_logger
 
 if TYPE_CHECKING:
-    from unit_manager import FriendlyUnitManager
+    pass
 
 logger = get_logger(__name__)
 
@@ -48,9 +48,11 @@ _desires_work_ratios_dict = {
 }
 DESIRED_WORK_RATIOS_DF = _to_df(_desires_work_ratios_dict)
 
+
 @dataclass
 class WorkRatios:
     """For holding the ratio of each unit desired at step"""
+
     mine_ore: float
     mine_ice: float
     clear_rubble: float
@@ -64,16 +66,46 @@ class WorkRatios:
     def at_step(cls, step: int):
         df = util.get_interpolated_values(DESIRED_WORK_RATIOS_DF, step)
         inst = cls(
-            mine_ore=df['mine ore'],
-            mine_ice=df['mine ice'],
-            clear_rubble=df['clear rubble'],
-            clear_lichen=df['clear lichen'],
-            attack=df['attack'],
-            defend=df['defend'],
-            transfer=df['transfer'],
-            waiting=df['waiting'],
+            mine_ore=df["mine ore"],
+            mine_ice=df["mine ice"],
+            clear_rubble=df["clear rubble"],
+            clear_lichen=df["clear lichen"],
+            attack=df["attack"],
+            defend=df["defend"],
+            transfer=df["transfer"],
+            waiting=df["waiting"],
         )
         return inst
+
+    def weighted_random_choice(self):
+        field_names = [field.name for field in self.__dataclass_fields__]
+        field_values = [getattr(self, field_name) for field_name in field_names]
+        selected_field = random.choices(field_names, weights=field_values, k=1)[0]
+
+        category, sub_category = None, None
+
+        if selected_field == "mine_ore":
+            category = ActCategory.MINE
+            sub_category = MineActSubCategory.ORE
+        elif selected_field == "mine_ice":
+            category = ActCategory.MINE
+            sub_category = MineActSubCategory.ICE
+        elif selected_field == "clear_rubble":
+            category = ActCategory.CLEAR
+            sub_category = ClearActSubCategory.RUBBLE
+        elif selected_field == "clear_lichen":
+            category = ActCategory.CLEAR
+            sub_category = ClearActSubCategory.LICHEN
+        elif selected_field == "attack":
+            category = ActCategory.COMBAT
+        elif selected_field == "defend":
+            category = ActCategory.COMBAT
+        elif selected_field == "transfer":
+            category = ActCategory.DROPOFF
+        elif selected_field == "waiting":
+            category = ActCategory.WAITING
+
+        return ActStatus(category=category, sub_category=sub_category)
 
 
 _desires_unit_ratios_dict = {
@@ -82,167 +114,6 @@ _desires_unit_ratios_dict = {
     "light": [0.01, 10, 5, 3, 2],
 }
 DESIRED_UNIT_RATIOS_DF = _to_df(_desires_unit_ratios_dict)
-
-@dataclass
-class FactoryInfo:
-    factory: FriendlyFactoryManager
-    factory_id: str
-    power: int
-    short_term_power: int
-    water: int
-    ice: int
-    ore: int
-    metal: int
-    pos: Tuple[int, int]
-    num_heavy: int
-    num_light: int
-    water_cost: int
-    connected_growable_space: int
-    num_lichen_tiles: int
-    total_lichen: int
-
-    # Below should be equivalent to factory desires
-    light_mining_ore: int
-    light_mining_ice: int
-    light_clearing_rubble: int
-    light_clearing_lichen: int
-    light_attacking: int
-    heavy_mining_ice: int
-    heavy_mining_ore: int
-    heavy_clearing_rubble: int
-    heavy_clearing_lichen: int
-    heavy_attacking: int
-
-    @classmethod
-    def init(
-        cls,
-        master: MasterState,
-        factory: FriendlyFactoryManager,
-        previous: [None, FactoryInfo] = None,
-    ) -> FactoryInfo:
-        current_light_actions = factory.get_light_actions()
-        current_heavy_actions = factory.get_heavy_actions()
-
-        lichen = factory.own_lichen
-        connected_zeros = util.connected_array_values_from_pos(master.maps.rubble, factory.pos, connected_value=0)
-        # ID array of other lichen
-        other_lichen = master.maps.lichen_strains.copy()
-        # Set own lichen to -1 (like no lichen)
-        other_lichen[other_lichen == factory.lichen_id] = -1
-        # Zero rubble, and no other lichen, no ice, no ore, not under factory
-        connected_growable_space = int(
-            np.sum(
-                (connected_zeros > 0)
-                & (other_lichen < 0)
-                & (master.maps.ice == 0)
-                & (master.maps.ore == 0)
-                & (master.maps.factory_maps.all < 0)
-            )
-        )
-
-        factory_info = cls(
-            factory=factory,
-            factory_id=factory.unit_id,
-            power=factory.power,
-            short_term_power=factory.short_term_power,
-            water=factory.factory.cargo.water,
-            ice=factory.factory.cargo.ice,
-            ore=factory.factory.cargo.ore,
-            metal=factory.factory.cargo.metal,
-            pos=factory.pos,
-            num_heavy=len(factory.heavy_units),
-            num_light=len(factory.light_units),
-            water_cost=factory.factory.water_cost(master.game_state),
-            connected_growable_space=connected_growable_space,
-            num_lichen_tiles=int(np.sum(lichen > 0)),
-            total_lichen=int(np.sum(lichen)),
-            light_mining_ore=len(current_light_actions.mining_ore),
-            light_mining_ice=len(current_light_actions.mining_ice),
-            light_clearing_rubble=len(current_light_actions.clearing_rubble),
-            light_clearing_lichen=len(current_light_actions.clearing_lichen),
-            light_attacking=len(current_light_actions.attacking),
-            heavy_mining_ice=len(current_heavy_actions.mining_ice),
-            heavy_mining_ore=len(current_heavy_actions.mining_ore),
-            heavy_clearing_rubble=len(current_heavy_actions.clearing_rubble),
-            heavy_clearing_lichen=len(current_heavy_actions.clearing_lichen),
-            heavy_attacking=len(current_heavy_actions.attacking),
-        )
-
-        if previous:
-            cls.update_averages(factory_info, previous)
-        return factory_info
-
-    @staticmethod
-    def update_averages(new_info: FactoryInfo, previous_info: FactoryInfo):
-        # Average some things
-        # Roughly like average of last 10 values
-        # new_info.power = int(previous_info.power * 0.9 + 0.1 * new_info.power)
-        # new_info.water = int(previous_info.water * 0.9 + 0.1 * new_info.water)
-        # new_info.ice = int(previous_info.ice * 0.9 + 0.1 * new_info.ice)
-        # new_info.ore = int(previous_info.ore * 0.9 + 0.1 * new_info.ore)
-        # new_info.metal = int(previous_info.metal * 0.9 + 0.1 * new_info.metal)
-        # new_info.water_cost = int(previous_info.water_cost * 0.9 + 0.1 * new_info.water_cost)
-        pass
-
-    def remove_unit_from_current_count(self, unit: FriendlyUnitManager):
-        if not unit.factory_id == self.factory_id:
-            logger.error(
-                f"Trying to update factory_info ({self.factory_id}) with unit that has factory id ({unit.factory_id})"
-            )
-            return None
-        logger.info(
-            f"Removing {unit.unit_id} assignment of {unit.status.current_action} from factory_info count ({self.factory_id})"
-        )
-        if unit.unit_type == "HEAVY":
-            if (
-                unit.status.current_action.category == ActCategory.MINE
-                and unit.status.current_action.sub_category == MineActSubCategory.ICE
-            ):
-                self.heavy_mining_ice -= 1
-            elif (
-                unit.status.current_action.category == ActCategory.MINE
-                and unit.status.current_action.sub_category == MineActSubCategory.ORE
-            ):
-                self.heavy_mining_ore -= 1
-            elif unit.status.current_action.category == ActCategory.COMBAT:
-                self.heavy_attacking -= 1
-            elif (
-                unit.status.current_action.category == ActCategory.CLEAR
-                and unit.status.current_action.sub_category == ClearActSubCategory.RUBBLE
-            ):
-                self.heavy_clearing_rubble -= 1
-            elif (
-                unit.status.current_action.category == ActCategory.CLEAR
-                and unit.status.current_action.sub_category == ClearActSubCategory.LICHEN
-            ):
-                self.heavy_clearing_lichen -= 1
-        else:
-            if (
-                unit.status.current_action.category == ActCategory.MINE
-                and unit.status.current_action.sub_category == MineActSubCategory.ICE
-            ):
-                self.light_mining_ice -= 1
-            elif (
-                unit.status.current_action.category == ActCategory.MINE
-                and unit.status.current_action.sub_category == MineActSubCategory.ORE
-            ):
-                self.light_mining_ore -= 1
-            elif unit.status.current_action.category == ActCategory.COMBAT:
-                self.light_attacking -= 1
-            elif (
-                unit.status.current_action.category == ActCategory.CLEAR
-                and unit.status.current_action.sub_category == ClearActSubCategory.RUBBLE
-            ):
-                self.light_clearing_rubble -= 1
-            elif (
-                unit.status.current_action.category == ActCategory.CLEAR
-                and unit.status.current_action.sub_category == ClearActSubCategory.LICHEN
-            ):
-                self.light_clearing_lichen -= 1
-
-    @staticmethod
-    def _get_connected_zeros(rubble: np.ndarray, factory_pos: util.POS_TYPE):
-        return
 
 
 @dataclass
@@ -356,7 +227,6 @@ class FactoryActionPlanner:
     mid_water = 2000
     mid_metal = 200
 
-
     def __init__(self, master: MasterState):
         self.master = master
         self.factories = self.master.factories.friendly
@@ -377,16 +247,17 @@ class FactoryActionPlanner:
         """
         logger.info(f"Updating FactoryActionPlanner")
         # Remove any dead factories from lists
-        for k in set(self._factory_desires.keys()) - set(self.master.factories.friendly.keys()):
-            logger.info(f"Removing factory {k}, assumed dead")
-            self._factory_desires.pop(k)
-            self._factory_infos.pop(k)
+        # for k in set(self._factory_desires.keys()) - set(self.master.factories.friendly.keys()):
+        #     logger.info(f"Removing factory {k}, assumed dead")
+        #     self._factory_work_ratios.pop(k)
+        #     self._factory_desires.pop(k)
+        #     self._factory_infos.pop(k)
 
         # Update their infos
-        infos = self._update_factory_info()
+        # infos = self._update_factory_info()
 
         # update the desired ratios
-        self._update_factory_work_ratios(infos)
+        self._update_factory_work_ratios()
 
         # # Calculate new desires for turn and then every X after that
         # if self.master.step == 0 or self.master.step % 5 == 0:
@@ -398,11 +269,12 @@ class FactoryActionPlanner:
     # def get_factory_desires(self) -> Dict[str, FactoryDesires]:
     #     return self._factory_desires
 
-    def get_factory_infos(self) -> Dict[str, FactoryInfo]:
-        return self._factory_infos
+    # def get_factory_infos(self) -> Dict[str, FactoryInfo]:
+    #     return self._factory_infos
 
-    def _update_factory_work_ratios(self, infos: Dict[str, WorkRatios]):
-        for f_id, info in infos.items():
+    def _update_factory_work_ratios(self):
+        for f_id, factory in self.factories.items():
+            info = factory.info
             logger.debug(f"Updating {f_id} work_ratios")
             ratios = WorkRatios.at_step(self.master.step)
             if info.metal > self.max_metal or info.ore > self.max_ore:
@@ -411,16 +283,16 @@ class FactoryActionPlanner:
                 ratios.mine_ice = 0
             self._factory_work_ratios[f_id] = ratios
 
-    def _update_factory_info(self) -> Dict[str,  FactoryInfo]:
-        """Update info about the factory (uses a sort of rolling average in updating)"""
-        for f_id, factory in self.master.factories.friendly.items():
-            logger.debug(f"Updating {f_id} info")
-            self._factory_infos[f_id] = FactoryInfo.init(
-                master=self.master,
-                factory=factory,
-                previous=self._factory_infos.pop(f_id, None),
-            )
-        return self._factory_infos
+    # def _update_factory_info(self) -> Dict[str, FactoryInfo]:
+    #     """Update info about the factory (uses a sort of rolling average in updating)"""
+    #     for f_id, factory in self.master.factories.friendly.items():
+    #         logger.debug(f"Updating {f_id} info")
+    #         self._factory_infos[f_id] = FactoryInfo.init(
+    #             master=self.master,
+    #             factory=factory,
+    #             previous=self._factory_infos.pop(f_id, None),
+    #         )
+    #     return self._factory_infos
 
     # def _update_factory_desires(self):
     #     """Update the desires for each factory"""
@@ -595,7 +467,7 @@ class FactoryActionPlanner:
         light_ratio = current_light / current_heavy
 
         desired_ratios = util.get_interpolated_values(DESIRED_UNIT_RATIOS_DF, self.master.step)
-        desired_light_ratio = desired_ratios.light/desired_ratios.heavy
+        desired_light_ratio = desired_ratios.light / desired_ratios.heavy
 
         power_in_X = info.factory.calculate_power_at_step(10)
 

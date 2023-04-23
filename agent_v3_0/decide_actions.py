@@ -15,7 +15,8 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager
-    from factory_action_planner import FactoryDesires, FactoryInfo
+    from factory_action_planner import FactoryDesires
+    from factory_manager import FactoryInfo
     from master_state import MasterState
     from unit_action_planner import UnitInfo, CloseUnits
 
@@ -234,7 +235,7 @@ class ActionDecider:
         else:
             logger.debug(f"Unit on factory, can decide a new type of action depending on factory needs")
 
-            self.factory_info.remove_unit_from_current_count(self.unit_info.unit)
+            self.factory_info.remove_or_add_unit_action(self.unit_info.unit)
             action = ActStatus()
             if current_mining_ice < desired_mining_ice:
                 action.category = ActCategory.MINE

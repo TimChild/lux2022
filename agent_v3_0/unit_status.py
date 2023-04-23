@@ -193,6 +193,9 @@ class TurnStatus:
 
     #  Some useful things that can be used to help decide if actions need updating
     next_dest: DestStatus = None
+    factory_dist: int = 0
+
+    # Todo: not sure I'm using this now
     should_act_reasons: List[ShouldActInfo] = field(default_factory=list)
     # Whether planned actions are valid after stepping (i.e. do they match the next action in real action queue)
     planned_actions_valid_from_last_step: bool = True
@@ -208,13 +211,14 @@ class TurnStatus:
     replan_required: bool = False
 
     # I.e. next action not valid, plan should update (might be temporary while I get rid of old Actions)
-    recommend_plan_update: Optional[bool] = None
+    # recommend_plan_update: Optional[bool] = None
 
     def update(self, unit: FriendlyUnitManager, master: MasterState):
         """Beginning of turn update"""
         self.next_dest = next_dest(
             unit.current_path(max_len=30, planned_actions=True), master.maps, master.pathfinder.unit_paths
         )
+        self.factory_dist = util.manhattan(unit.start_of_turn_pos, unit.factory.pos)
         self.should_act_reasons = []
         # Gets set when stepping planned actions
         self.planned_actions_valid_from_last_step = False
@@ -222,7 +226,7 @@ class TurnStatus:
         self.must_move = False
         self.action_queue_empty_ok = False
         self.replan_required = False
-        self.recommend_plan_update = None
+        # self.recommend_plan_update = None
 
 
 @dataclass

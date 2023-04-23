@@ -20,7 +20,8 @@ from collisions import (
 )
 from decide_actions import ActionDecider, ActReasons, ConsiderActInfo, should_unit_consider_acting, ShouldActInfo
 from config import get_logger
-from factory_action_planner import FactoryDesires, FactoryInfo
+from factory_action_planner import FactoryDesires
+from factory_manager import FactoryInfo
 from master_state import MasterState, AllUnits
 from mining_planner import MiningPlanner
 from new_path_finder import Pather
@@ -684,39 +685,39 @@ class MultipleUnitActionPlanner:
                 )
                 unit.action_queue = valid_actions.valid_actions
 
-    def _get_units_to_act(self, units: Dict[str, FriendlyUnitManager], close_units: AllCloseUnits) -> UnitsToAct:
-        """
-        Determines which units should potentially act this turn, and which should continue with current actions
-        Does this based on:
-            - collisions in next couple of turns
-            - enemies nearby
-            - empty action queue
-
-        Args:
-            units: list of friendly units
-
-        Returns:
-            Instance of UnitsToAct
-        """
-        logger.info(f"units_should_consider_acting called with len(units): {len(units)}")
-
-        all_unit_collisions = self._calculate_collisions()
-        all_unit_close_to_enemy = close_units.close_to_enemy
-        needs_to_act = {}
-        should_not_act = {}
-        for unit_id, unit in units.items():
-            # Todo: this actually updates list of should_act_reasons in unit now
-            should_act = should_unit_consider_acting(
-                unit,
-                upcoming_collisions=all_unit_collisions,
-                close_enemies=all_unit_close_to_enemy,
-            )
-
-            if should_act.should_act:
-                needs_to_act[unit_id] = should_act
-            else:
-                should_not_act[unit_id] = should_act
-        return UnitsToAct(needs_to_act=needs_to_act, should_not_act=should_not_act)
+    # def _get_units_to_act(self, units: Dict[str, FriendlyUnitManager], close_units: AllCloseUnits) -> UnitsToAct:
+    #     """
+    #     Determines which units should potentially act this turn, and which should continue with current actions
+    #     Does this based on:
+    #         - collisions in next couple of turns
+    #         - enemies nearby
+    #         - empty action queue
+    #
+    #     Args:
+    #         units: list of friendly units
+    #
+    #     Returns:
+    #         Instance of UnitsToAct
+    #     """
+    #     logger.info(f"units_should_consider_acting called with len(units): {len(units)}")
+    #
+    #     all_unit_collisions = self._calculate_collisions()
+    #     all_unit_close_to_enemy = close_units.close_to_enemy
+    #     needs_to_act = {}
+    #     should_not_act = {}
+    #     for unit_id, unit in units.items():
+    #         # Todo: this actually updates list of should_act_reasons in unit now
+    #         should_act = should_unit_consider_acting(
+    #             unit,
+    #             upcoming_collisions=all_unit_collisions,
+    #             close_enemies=all_unit_close_to_enemy,
+    #         )
+    #
+    #         if should_act.should_act:
+    #             needs_to_act[unit_id] = should_act
+    #         else:
+    #             should_not_act[unit_id] = should_act
+    #     return UnitsToAct(needs_to_act=needs_to_act, should_not_act=should_not_act)
 
     def _calculate_collisions(self) -> Dict[str, AllCollisionsForUnit]:
         """Calculates the upcoming collisions based on action queues of all units"""
@@ -728,22 +729,22 @@ class MultipleUnitActionPlanner:
         )
         return all_collisions
 
-    def _collect_unit_data(self, act_infos: Dict[str, ConsiderActInfo]) -> UnitInfos:
-        """
-        Collects data from units and stores it in a pandas dataframe.
-
-        Args:
-            act_infos: List of ActInfo objects.
-
-        Returns:
-            A pandas dataframe containing the unit data.
-        """
-        data = {}
-        for unit_id, act_info in act_infos.items():
-            unit = act_info.unit
-            unit_info = UnitInfo.from_data(unit=unit, act_info=act_info)
-            data[unit_id] = unit_info
-        return UnitInfos(infos=data)
+    # def _collect_unit_data(self, act_infos: Dict[str, ConsiderActInfo]) -> UnitInfos:
+    #     """
+    #     Collects data from units and stores it in a pandas dataframe.
+    #
+    #     Args:
+    #         act_infos: List of ActInfo objects.
+    #
+    #     Returns:
+    #         A pandas dataframe containing the unit data.
+    #     """
+    #     data = {}
+    #     for unit_id, act_info in act_infos.items():
+    #         unit = act_info.unit
+    #         unit_info = UnitInfo.from_data(unit=unit, act_info=act_info)
+    #         data[unit_id] = unit_info
+    #     return UnitInfos(infos=data)
 
     def _calculate_base_costmap(self) -> np.ndarray:
         """
@@ -881,6 +882,8 @@ class MultipleUnitActionPlanner:
                 - Above 90% power first
                 - Then nearest to factory outward
         """
+        ordered = OrderedDict()
+        for
         pass
 
     def decide_unit_actions(

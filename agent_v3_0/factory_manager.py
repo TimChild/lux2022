@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Dict, Tuple
 import numpy as np
 
 import actions_util
+
 from lux.cargo import UnitCargo
 from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, CombatActSubCategory
 from lux.factory import Factory
@@ -30,6 +31,7 @@ class UnitActions:
     clearing_rubble: Dict[str, FriendlyUnitManager]
     clearing_lichen: Dict[str, FriendlyUnitManager]
     attacking: Dict[str, FriendlyUnitManager]
+    defending: Dict[str, FriendlyUnitManager]
     waiting: Dict[str, FriendlyUnitManager]
     nothing: Dict[str, FriendlyUnitManager]
 
@@ -55,15 +57,141 @@ class FactoryManager:
     def cargo(self) -> UnitCargo:
         return self.factory.cargo
 
+
 class EnemyFactoryManager(FactoryManager):
     def dead(self):
         logger.info(f"dead, nothing else to do")
+
+
+@dataclass
+class FactoryInfo:
+    factory_id: str
+    num_heavy: int
+    num_light: int
+    water_cost: int
+    connected_growable_space: int
+    num_lichen_tiles: int
+    total_lichen: int
+
+    # TODO: what about these?
+    light_mining_ore: int
+    light_mining_ice: int
+    light_clearing_rubble: int
+    light_clearing_lichen: int
+    light_attacking: int
+    light_defending: int
+    heavy_mining_ice: int
+    heavy_mining_ore: int
+    heavy_clearing_rubble: int
+    heavy_clearing_lichen: int
+    heavy_attacking: int
+    heavy_defending: int
+
+    @classmethod
+    def init(
+        cls,
+        master: MasterState,
+        factory: FriendlyFactoryManager,
+    ) -> FactoryInfo:
+        current_light_actions = factory.get_light_actions()
+        current_heavy_actions = factory.get_heavy_actions()
+
+        lichen = factory.own_lichen
+        connected_zeros = util.connected_array_values_from_pos(master.maps.rubble, factory.pos, connected_value=0)
+        # ID array of other lichen
+        other_lichen = master.maps.lichen_strains.copy()
+        # Set own lichen to -1 (like no lichen)
+        other_lichen[other_lichen == factory.lichen_id] = -1
+        # Zero rubble, and no other lichen, no ice, no ore, not under factory
+        connected_growable_space = int(
+            np.sum(
+                (connected_zeros > 0)
+                & (other_lichen < 0)
+                & (master.maps.ice == 0)
+                & (master.maps.ore == 0)
+                & (master.maps.factory_maps.all < 0)
+            )
+        )
+
+        factory_info = cls(
+            factory_id=factory.unit_id,
+            num_heavy=len(factory.heavy_units),
+            num_light=len(factory.light_units),
+            water_cost=factory.factory.water_cost(master.game_state),
+            connected_growable_space=connected_growable_space,
+            num_lichen_tiles=int(np.sum(lichen > 0)),
+            total_lichen=int(np.sum(lichen)),
+            light_mining_ore=len(current_light_actions.mining_ore),
+            light_mining_ice=len(current_light_actions.mining_ice),
+            light_clearing_rubble=len(current_light_actions.clearing_rubble),
+            light_clearing_lichen=len(current_light_actions.clearing_lichen),
+            light_attacking=len(current_light_actions.attacking),
+            light_defending=len(current_light_actions.defending),
+            heavy_mining_ice=len(current_heavy_actions.mining_ice),
+            heavy_mining_ore=len(current_heavy_actions.mining_ore),
+            heavy_clearing_rubble=len(current_heavy_actions.clearing_rubble),
+            heavy_clearing_lichen=len(current_heavy_actions.clearing_lichen),
+            heavy_attacking=len(current_heavy_actions.attacking),
+            heavy_defending=len(current_heavy_actions.defending),
+        )
+        return factory_info
+
+    def remove_or_add_unit_action(self, unit: FriendlyUnitManager, remove_or_add="remove"):
+        if not unit.factory_id == self.factory_id:
+            logger.error(
+                f"Trying to update factory_info ({self.factory_id}) with unit that has factory id ({unit.factory_id})"
+            )
+            return None
+        logger.info(
+            f"Removing {unit.unit_id} assignment of {unit.status.current_action} from factory_info count ({self.factory_id})"
+        )
+        if remove_or_add == "remove":
+            amount = -1
+        elif remove_or_add == "add":
+            amount = 1
+        else:
+            raise ValueError(f'got {remove_or_add}, must be "remove" or "add"')
+
+        category = unit.status.current_action.category
+        sub_category = unit.status.current_action.sub_category
+
+        if unit.unit_type == "HEAVY":
+            if category == ActCategory.MINE and sub_category == MineActSubCategory.ICE:
+                self.heavy_mining_ice += amount
+            elif category == ActCategory.MINE and sub_category == MineActSubCategory.ORE:
+                self.heavy_mining_ore += amount
+            elif category == ActCategory.COMBAT:
+                self.heavy_attacking += amount
+            elif category == ActCategory.CLEAR and sub_category == ClearActSubCategory.RUBBLE:
+                self.heavy_clearing_rubble += amount
+            elif category == ActCategory.CLEAR and sub_category == ClearActSubCategory.LICHEN:
+                self.heavy_clearing_lichen += amount
+            else:
+                raise NotImplementedError(f"{unit.status.current_action} not implemented")
+        else:
+            if category == ActCategory.MINE and sub_category == MineActSubCategory.ICE:
+                self.light_mining_ice += amount
+            elif category == ActCategory.MINE and sub_category == MineActSubCategory.ORE:
+                self.light_mining_ore += amount
+            elif category == ActCategory.COMBAT:
+                self.light_attacking += amount
+            elif category == ActCategory.CLEAR and sub_category == ClearActSubCategory.RUBBLE:
+                self.light_clearing_rubble += amount
+            elif category == ActCategory.CLEAR and sub_category == ClearActSubCategory.LICHEN:
+                self.light_clearing_lichen += amount
+            else:
+                raise NotImplementedError(f"{unit.status.current_action} not implemented")
+
+    @staticmethod
+    def _get_connected_zeros(rubble: np.ndarray, factory_pos: util.POS_TYPE):
+        return
 
 
 class FriendlyFactoryManager(FactoryManager):
     def __init__(self, factory: Factory, master: MasterState):
         super().__init__(factory, master.maps.rubble.shape)
         self.master = master
+        self.info: FactoryInfo = None
 
         self.light_units: Dict[str, FriendlyUnitManager] = {}
         self.heavy_units: Dict[str, FriendlyUnitManager] = {}
@@ -78,6 +206,14 @@ class FriendlyFactoryManager(FactoryManager):
         self._light_actions = None
         self._heavy_actions = None
 
+    def update(self, factory: Factory):
+        super().update(factory)
+        self._light_actions = None
+        self._heavy_actions = None
+        self._power = factory.power
+        self.short_term_power = self.calculate_power_at_step()
+        self.info = FactoryInfo.init(self.master, self)
+
     def generate_circle_array(self, center: util.POS_TYPE, radius: int, num: int):
         return util.generate_circle_coordinates_array(center, num, radius, self.master.maps.rubble.shape[0])
 
@@ -90,7 +226,7 @@ class FriendlyFactoryManager(FactoryManager):
             ],
         ).astype(int)
         # Block out resources from waiting areas
-        resources = (self.master.maps.ice & self.master.maps.ore)
+        resources = self.master.maps.ice & self.master.maps.ore
         arr[resources > 0] = 0
         return arr
 
@@ -113,13 +249,6 @@ class FriendlyFactoryManager(FactoryManager):
         lichen = self.master.maps.lichen.copy()
         lichen[lichen_locations != 1] = 0
         return lichen
-
-    def update(self, factory: Factory):
-        super().update(factory)
-        self._light_actions = None
-        self._heavy_actions = None
-        self._power = factory.power
-        self.short_term_power = self.calculate_power_at_step()
 
     def calculate_power_at_step(self, step: int = 1):
         """

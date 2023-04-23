@@ -195,6 +195,7 @@ class FriendlyUnitManager(UnitManager):
     def update(self, unit: Unit):
         """Beginning of turn update"""
         super().update(unit)
+
         self.start_of_turn_actions = copy.copy(unit.action_queue)
         self.status.update(self, self.master)
 

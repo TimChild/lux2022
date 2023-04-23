@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 import numpy as np
+import random
 
 from unit_action_planner import MultipleUnitActionPlanner
 from lux.kit import obs_to_game_state
@@ -31,6 +32,7 @@ class Agent:
         self.player = player
         self.env_cfg: EnvConfig = env_cfg
         np.random.seed(0)
+        random.seed(0)
 
         # Additional initialization
         self.last_obs = None
