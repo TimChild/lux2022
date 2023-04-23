@@ -379,7 +379,7 @@ class CollectInfoFromEnv:
         step_info = {}
         for unit_id, unit in self.master.units.friendly.all.items():
             unit: FriendlyUnitManager
-            step_info[unit_id] = unit.status.last_action_update_step
+            step_info[unit_id] = unit.status.last_real_action_update_step
         self.unit_last_update_step[self.master.step] = step_info
 
     def collect(self, env: MyEnv):

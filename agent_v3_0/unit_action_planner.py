@@ -61,7 +61,7 @@ class UnitInfo:
             unit=unit,
             act_info=act_info,
             unit_id=unit.unit_id,
-            last_action_update_step=unit.status.last_action_update_step,
+            last_action_update_step=unit.status.last_real_action_update_step,
             len_action_queue=len(unit.action_queue),
             distance_to_factory=util.manhattan(unit.start_of_turn_pos, unit.factory.pos)
             if unit.factory_id is not None
@@ -117,7 +117,7 @@ class UnitInfos:
         for series, priority in zip([highest, lowest], ["higheset", "lowest"]):
             logger.debug(
                 f"Unit with {priority} priority: {series.unit_id}  ({series.unit.pos}), is_heavy={series.is_heavy}, "
-                f"last_acted_step={series.last_action_update_step}, power={series.power}, ice={series.ice}, ore={series.ore}, len_acts={series.len_action_queue}"
+                f"last_acted_step={series.last_real_action_update_step}, power={series.power}, ice={series.ice}, ore={series.ore}, len_acts={series.len_action_queue}"
             )
         ordered_infos = OrderedDict()
         for unit_id in sorted_df.index:
@@ -138,17 +138,17 @@ class UnitInfos:
         return df
 
 
-@dataclass
-class UnitsToAct:
-    needs_to_act: dict[str, ConsiderActInfo]
-    should_not_act: dict[str, ConsiderActInfo]
-    has_updated_actions: dict[str, ConsiderActInfo] = field(default_factory=dict)
-
-    def get_act_info(self, unit_id: str) -> ConsiderActInfo:
-        for d in [self.needs_to_act, self.should_not_act, self.has_updated_actions]:
-            if unit_id in d:
-                return d[unit_id]
-        raise KeyError(f"{unit_id} not in UnitsToAct")
+# @dataclass
+# class UnitsToAct:
+#     needs_to_act: dict[str, ConsiderActInfo]
+#     should_not_act: dict[str, ConsiderActInfo]
+#     has_updated_actions: dict[str, ConsiderActInfo] = field(default_factory=dict)
+#
+#     def get_act_info(self, unit_id: str) -> ConsiderActInfo:
+#         for d in [self.needs_to_act, self.should_not_act, self.has_updated_actions]:
+#             if unit_id in d:
+#                 return d[unit_id]
+#         raise KeyError(f"{unit_id} not in UnitsToAct")
 
 @dataclass
 class NewUnitsToAct:
@@ -184,7 +184,9 @@ class CloseUnits:
 
 @dataclass
 class AllCloseUnits:
-    """Collection of close unit info for all units"""
+    """Collection of close unit info for all units,
+    Their id will only be in the dicts if they are close to other units
+    """
 
     close_to_friendly: Dict[str, CloseUnits]
     close_to_enemy: Dict[str, CloseUnits]
@@ -252,8 +254,6 @@ class SingleUnitActionPlanner:
         current_paths: UnitPaths,
         all_close_units: AllCloseUnits,
         collision_info: AllCollisionsForUnit,
-        factory_desires: FactoryDesires,
-        factory_info: FactoryInfo,
         action_validator: ValidActionCalculator,
         collision_resolve_max_step: int,
     ):
@@ -263,32 +263,8 @@ class SingleUnitActionPlanner:
         self.current_paths = current_paths
         self.all_close_units = all_close_units
         self.collision_info = collision_info
-        self.factory_desires = factory_desires
-        self.factory_info = factory_info
         self.action_validator = action_validator
         self.collision_resolve_max_step = collision_resolve_max_step
-
-        # self.action_decider = ActionDecider(
-        #     unit,
-        #     unit_info,
-        #     action_validator,
-        #     factory_desires,
-        #     factory_info,
-        #     close_enemy_units.close_to_enemy.get(unit_info.unit_id, None),
-        #     master,
-        # )
-        # self.action_implementer = ActionImplementer(
-        #     master=master,
-        #     unit_paths=current_paths,
-        #     unit_info=unit_info,
-        #     action_validator=action_validator,
-        #     close_units=close_enemy_units,
-        #     factory_desires=factory_desires,
-        #     factory_info=factory_info,
-        #     mining_planner=mining_planner,
-        #     clearing_planner=rubble_clearing_planner,
-        #     combat_planner=combat_planner,
-        # )
 
     def _unit_must_move(self) -> bool:
         """Must move if current location will be occupied at step 1 (not zero which is now)"""
@@ -313,27 +289,27 @@ class SingleUnitActionPlanner:
 
         return unit_must_move
 
-    def _attempt_resolve_continue_actions(self) -> bool:
-        """
-        Note: probably remove this once action planners are working
-
-        Returns:
-            bool: unti.status.turn_status updated
-        """
-        if self.unit_info.act_info.reason == ActReasons.COLLISION_WITH_FRIENDLY:
-            collision_resolver = CollisionResolver(
-                self.unit,
-                pathfinder=self.master.pathfinder,
-                maps=self.master.maps,
-                unit_paths=self.current_paths,
-                collisions=self.collision_info,
-                max_step=self.collision_resolve_max_step,
-            )
-            status_updated = collision_resolver.resolve()
-            return status_updated
-        logger.info(f"Don't know how to resolve {self.unit_info.act_info.reason} without calling the planner again")
-        self.unit.status.turn_status.recommend_plan_update = True
-        return True
+    # def _attempt_resolve_continue_actions(self) -> bool:
+    #     """
+    #     Note: probably remove this once action planners are working
+    #
+    #     Returns:
+    #         bool: unti.status.turn_status updated
+    #     """
+    #     if self.unit_info.act_info.reason == ActReasons.COLLISION_WITH_FRIENDLY:
+    #         collision_resolver = CollisionResolver(
+    #             self.unit,
+    #             pathfinder=self.master.pathfinder,
+    #             maps=self.master.maps,
+    #             unit_paths=self.current_paths,
+    #             collisions=self.collision_info,
+    #             max_step=self.collision_resolve_max_step,
+    #         )
+    #         status_updated = collision_resolver.resolve()
+    #         return status_updated
+    #     logger.info(f"Don't know how to resolve {self.unit_info.act_info.reason} without calling the planner again")
+    #     self.unit.status.turn_status.recommend_plan_update = True
+    #     return True
 
     def _force_moving_if_necessary(self, unit_must_move: bool) -> bool:
         success = True
@@ -349,7 +325,7 @@ class SingleUnitActionPlanner:
                 move_success = util.move_to_cheapest_adjacent_space(
                     self.master.pathfinder, self.unit, collision_only=True
                 )
-                self.unit.status.planned_action_queue = self.unit.action_queue.copy()
+                self.unit.status.update_planned_action_queue(self.unit.action_queue.copy())
                 if move_success:
                     logger.warning(f"successfully forced move out of the way")
                 else:
@@ -582,6 +558,8 @@ class MultipleUnitActionPlanner:
         self.current_paths: UnitPaths = None  # Enemy queue and Friendly that have already acted
         self.all_upcoming_collisions: Dict[str, AllCollisionsForUnit] = None
         self.all_close_units: AllCloseUnits = None
+        self.ordered_units: Dict[str, FriendlyUnitManager] = None
+        self.units_to_act: NewUnitsToAct = None
 
         # Stored for ease of access debugging
         self.debug_units_to_act_start = None
@@ -594,12 +572,12 @@ class MultipleUnitActionPlanner:
 
     def update(
         self,
-        factory_infos: Dict[str, FactoryInfo],
-        factory_desires: Dict[str, FactoryDesires],
+        # factory_infos: Dict[str, FactoryInfo],
+        # factory_desires: Dict[str, FactoryDesires],
     ):
         """Beginning of turn update"""
-        self.factory_infos = factory_infos
-        self.factory_desires = factory_desires
+        # self.factory_infos = factory_infos
+        # self.factory_desires = factory_desires
 
         # Validate and replace enemy actions so that their move path is correct (i.e. cannot path through friendly
         # factories or off edge of map, so replace those moves with move.CENTER)
@@ -628,10 +606,16 @@ class MultipleUnitActionPlanner:
 
         # Set up the NextActionValidCalculator
         self.action_validator = ValidActionCalculator(
-            factory_infos=factory_infos,
+            friendly_factories=self.master.factories.friendly,
             maps=self.master.maps,
             unit_paths=self.current_paths,
         )
+
+        # Order units by which should act first
+        self.ordered_units = self._order_units()
+
+        # Keep track of which units have acted or updated actions with this
+        self.units_to_act = NewUnitsToAct(needs_to_act=self.ordered_units.copy(), should_not_act={}, has_updated_actions={})
 
         # Clear things that are only stored for ease of access debugging
         self.debug_units_to_act_start = None
@@ -775,18 +759,18 @@ class MultipleUnitActionPlanner:
             costmap[pos[0], pos[1]] = -1
         return costmap
 
-    def _collect_changed_actions(self, units_to_act):
+    def _collect_changed_actions(self, units_to_act: NewUnitsToAct):
         unit_actions = {}
-        for unit_id, act_info in units_to_act.has_updated_actions.items():
-            if len(act_info.unit.action_queue) > 0:
-                unit_actions[unit_id] = act_info.unit.action_queue[:20]
+        for unit_id, unit in units_to_act.has_updated_actions.items():
+            if len(unit.status.planned_action_queue) > 0:
+                unit_actions[unit_id] = unit.status.planned_action_queue[:20]
             else:
                 logger.warning(
                     f"Updating {unit_id} with empty actions (previous action len = "
-                    f"{len(act_info.unit.start_of_turn_actions)}) previous_status = {act_info.unit.status.previous_action}"
+                    f"{len(unit.start_of_turn_actions)}) previous_status = {unit.status.previous_action}"
                     f"(could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
                 )
-                if len(act_info.unit.start_of_turn_actions) == 0:
+                if len(unit.start_of_turn_actions) == 0:
                     # no need to actually send empty as a command if already empty
                     continue
                 unit_actions[unit_id] = []
@@ -822,10 +806,13 @@ class MultipleUnitActionPlanner:
             best_factory.assign_unit(unit)
             logger.warning(f"Re-assigning to {best_factory.unit_id} because no factory assigned")
 
-    def _should_real_actions_update(self, unit: FriendlyUnitManager, unit_info: UnitInfo, units_to_act: UnitsToAct):
+    def _real_action_update(self, unit: FriendlyUnitManager, units_to_act: NewUnitsToAct):
+        """If real unit actions should update, update with these, otherwise this will return None (i.e. if
+        real action queue still matches planned actions for now)"""
         current_unit_actions = unit.start_of_turn_actions
         planned_actions = unit.status.planned_action_queue
 
+        update_required = False
         # If first X actions are the same, don't update (unnecessary cost for unit)
         if np.all(
             np.array(current_unit_actions[: self.actions_same_check])
@@ -835,25 +822,37 @@ class MultipleUnitActionPlanner:
             logger.info(
                 f"First {self.actions_same_check} real actions same ({first_act}), not updating unit action queue"
             )
+
             # Set the action_queue to what it will be (don't think this will actually get used again)
-            unit.action_queue = planned_actions[:20]
-            units_to_act.should_not_act[unit.unit_id] = unit_info.act_info
+            update_required = False
+            # unit.action_queue = planned_actions[:20]
+            # units_to_act.should_not_act[unit.unit_id] = unit_info.act_info
         else:
-            last_updated = self.master.step - unit.status.last_action_update_step
+            last_updated = self.master.step - unit.status.last_real_action_update_step
             logger.info(
                 f"{unit.log_prefix} has updated actions "
                 f"(last updated {last_updated} ago),"
                 f"was {unit.status.previous_action.category}:{unit.status.previous_action.sub_category}, now {unit.status.current_action.category}:{unit.status.current_action.sub_category}"
                 f" first few new actions are {planned_actions[:3]}, first few old actions were {unit.start_of_turn_actions[:3]}"
             )
+            update_required = True
             if last_updated < 3 or last_updated > 30 and unit.status.previous_action.category != ActCategory.NOTHING:
                 logger.info(
                     f"{unit.log_prefix} updated {last_updated} ago <<< This is just a note to see how things are going"
                 )
 
-            unit.action_queue = planned_actions[:20]
-            unit.status.last_action_update_step = self.master.step
-            units_to_act.has_updated_actions[unit.unit_id] = unit_info.act_info
+
+        units_to_act.needs_to_act.pop(unit.unit_id)
+        if update_required:
+            unit.status.last_real_action_update_step = self.master.step
+            units_to_act.has_updated_actions[unit.unit_id] = unit
+            return True
+        else:
+            units_to_act.should_not_act[unit.unit_id] = unit
+            return False
+            # unit.action_queue = planned_actions[:20]
+            # unit.status.last_action_update_step = self.master.step
+            # units_to_act.has_updated_actions[unit.unit_id] = unit_info.act_info
 
     def _check_additional_collisions(self, unit: FriendlyUnitManager, units_to_act: UnitsToAct):
         collisions = find_collisions(
@@ -876,28 +875,73 @@ class MultipleUnitActionPlanner:
             - Nothing units first  (they may have issues or are at center of factory)
             - Acting first
                 - Below X power  (need more direct routes)
-                - Nearest collision
                 - last step update (older have  higher priority so generally don't need to update)
             - Waiting units last
                 - Above 90% power first
                 - Then nearest to factory outward
         """
-        ordered = OrderedDict()
-        for
-        pass
+        units = self.master.units.friendly.all
+        units_datas = []
+
+        for unit_id, unit in units.items():
+            current_action = unit.status.act_statuses[0] if len(unit.status.act_statuses) > 0 else ActStatus()
+            currently_acting = True if current_action.category not in [ActCategory.NOTHING,
+                                                                       ActCategory.WAITING] else False
+            turns_left_in_plan = util.num_turns_of_actions(unit.status.planned_action_queue)
+            turns_left_in_real = util.num_turns_of_actions(unit.start_of_turn_actions)
+            action_is_nothing = True if current_action.category == ActCategory.NOTHING else False
+
+            unit_data = {
+                'unit_id': unit_id,
+                'is_heavy': True if unit.unit_type == 'HEAVY' else False,
+                'nothing_action': action_is_nothing,
+                'currently_acting': currently_acting,
+                'below_15_power': unit.start_of_turn_power < unit.unit_config.BATTERY_CAPACITY * 0.15,
+                'turns_left_in_plan': turns_left_in_plan,
+                'turns_left_in_real': turns_left_in_real,
+                'power': unit.start_of_turn_power,
+                'last_real_update': unit.status.last_real_action_update_step,
+                'above_90_power': unit.start_of_turn_power > unit.unit_config.BATTERY_CAPACITY * 0.9,
+                'factory_dist': util.manhattan(unit.start_of_turn_pos, unit.factory.pos)
+            }
+
+            units_datas.append(unit_data)
+
+        units_df = pd.DataFrame(units_datas)
+
+        HIGHEST = False
+        LOWEST = True
+
+        # Sorting conditions as a dictionary
+        sort_conditions = {
+            'is_heavy': HIGHEST,
+            'nothing_action': HIGHEST,
+            'currently_acting': HIGHEST,
+            'below_15_power': HIGHEST,
+            'turns_left_in_plan': HIGHEST,
+            'turns_left_in_real': LOWEST,
+            'above_90_power': HIGHEST,
+            'factory_dist': LOWEST
+        }
+
+        # Sort the DataFrame based on the desired order
+        units_df.sort_values(
+            by=list(sort_conditions.keys()),
+            ascending=list(sort_conditions.values()),
+            inplace=True
+        )
+
+        # Create an ordered dictionary with the sorted unit IDs
+        ordered_units = OrderedDict()
+        for unit_id in units_df['unit_id']:
+            ordered_units[unit_id] = units[unit_id]
+
+        return ordered_units
 
     def decide_unit_actions(
         self,
-        factory_desires: Dict[str, FactoryDesires],
-        factory_infos: Dict[str, FactoryInfo],
     ) -> Dict[str, List[np.ndarray]]:
         logger.info(f"deciding all unit actions")
-
-        # Highest priority first
-        self.ordered_units = self._order_units()
-
-        # Start collecting which units have acted
-        self.units_to_act = NewUnitsToAct(needs_to_act=self.master.units.friendly.all, should_not_act={}, has_updated_actions={})
 
         # For each unit
         for unit_id, unit in self.ordered_units.items():
@@ -911,17 +955,16 @@ class MultipleUnitActionPlanner:
                 master=self.master,
                 multi_planner=self,
                 current_paths=self.current_paths,
-                all_close_units=self.all_close_units.close_to_enemy,
+                all_close_units=self.all_close_units,
                 action_validator=self.action_validator,
-                factory_desires=factory_desires[unit.factory_id],
-                factory_info=factory_infos[unit.factory_id],
                 collision_resolve_max_step=self.check_friendly_collision_steps,
+                collision_info=self.all_upcoming_collisions[unit_id],
             )
             unit_action_planner.calculate_actions_for_unit()
             self.debug_single_action_planners[unit_id] = unit_action_planner
 
             # update actual action queue if necessary and move to relevant place in units_to_act
-            self._should_real_actions_update(unit, self.units_to_act)
+            self._real_action_update(unit, self.units_to_act)
 
             # Make sure the next action is taken into account for next validation (e.g. if this unit is taking power)
             self.action_validator.add_next_action(unit)

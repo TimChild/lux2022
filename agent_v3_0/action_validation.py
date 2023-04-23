@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from master_state import Maps
     from unit_action_planner import UnitsToAct
     from collisions import UnitPaths
-    from factory_manager import FactoryInfo
+    from factory_manager import FactoryInfo, FriendlyFactoryManager
     from unit_manager import FriendlyUnitManager
 
 logger = get_logger(__name__)
@@ -50,11 +50,11 @@ class ValidActionCalculator:
 
     def __init__(
         self,
-        factory_infos: Dict[str, FactoryInfo],
+        friendly_factories: Dict[str, FriendlyFactoryManager],
         maps: Maps,
         unit_paths: UnitPaths,
     ):
-        self.factory_infos = factory_infos
+        self.factories = friendly_factories
         self.maps = maps
         self.unit_paths = unit_paths
 
@@ -71,8 +71,7 @@ class ValidActionCalculator:
         """Get the amount of resources each factory will have based on starting amount and other units transfers"""
         # Get the initial values
         self.factory_resources: Dict[str, FactoryResources] = {}
-        for factory_id, info in self.factory_infos.items():
-            factory = info.factory.factory
+        for factory_id, factory in self.factories.items():
             self.factory_resources[factory_id] = FactoryResources(
                 power=factory.power,
                 ice=factory.cargo.ice,
@@ -91,7 +90,7 @@ class ValidActionCalculator:
     def add_next_action(self, unit: FriendlyUnitManager):
         """Apply next action of unit to factories (i.e. update their resources if applicable)"""
         # Are there even actions?
-        q = unit.action_queue
+        q = unit.status.planned_action_queue
         if not len(q) > 0:
             return
 

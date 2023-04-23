@@ -235,7 +235,8 @@ class Status:
     # _current_action: ActStatus = ActStatus()
     current_action: ActStatus = ActStatus()
     previous_action: ActStatus = ActStatus()
-    last_action_update_step: int = 0
+    # When was the action queue last updated
+    last_real_action_update_step: int = 0
     _planned_action_queue: List[np.ndarray] = field(default_factory=list)
     act_statuses: List[ActStatus] = field(default_factory=list)
 

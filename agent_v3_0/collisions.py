@@ -840,8 +840,7 @@ def calculate_collisions(
                 ),
             ),
         )
-        if collisions_for_unit.num_collisions(friendly=True, enemy=True) > 0:
-            all_unit_collisions[unit_id] = collisions_for_unit
+        all_unit_collisions[unit_id] = collisions_for_unit
     return all_unit_collisions
 
 

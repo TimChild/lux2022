@@ -179,13 +179,6 @@ class FriendlyUnitManager(UnitManager):
 
         # Calculated per turn
 
-    def dist_array(self, start_of_turn=True) -> np.ndarray:
-        if start_of_turn:
-            pos = self.start_of_turn_pos
-        else:
-            pos = self.pos
-        return util.pad_and_crop(util.manhattan_kernel(30), self.master.maps.map_shape, pos[0], pos[1])
-
     @property
     def log_prefix(self) -> str:
         log_prefix = super().log_prefix
@@ -198,6 +191,22 @@ class FriendlyUnitManager(UnitManager):
 
         self.start_of_turn_actions = copy.copy(unit.action_queue)
         self.status.update(self, self.master)
+
+    @property
+    def factory(self) -> FriendlyFactoryManager:
+        if self.factory_id:
+            factory = self.master.factories.friendly.get(self.factory_id, None)
+            if factory is not None:
+                return factory
+        logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
+        raise ValueError(f"{self.log_prefix} has no factory")
+
+    def dist_array(self, start_of_turn=True) -> np.ndarray:
+        if start_of_turn:
+            pos = self.start_of_turn_pos
+        else:
+            pos = self.pos
+        return util.pad_and_crop(util.manhattan_kernel(30), self.master.maps.map_shape, pos[0], pos[1])
 
     def current_path(self, max_len: int = 10, actions=None, planned_actions=True) -> np.ndarray:
         """Return current path from start of turn based on current action queue"""
@@ -259,15 +268,6 @@ class FriendlyUnitManager(UnitManager):
         factory = self.factory
         if factory is not None:
             return factory.factory_loc
-
-    @property
-    def factory(self) -> FriendlyFactoryManager:
-        if self.factory_id:
-            factory = self.master.factories.friendly.get(self.factory_id, None)
-            if factory is not None:
-                return factory
-        logger.error(f"{self.log_prefix}: f_id={self.factory_id} not in factories")
-        raise ValueError(f"{self.log_prefix} has no factory")
 
     def power_cost_of_actions(self, rubble: np.ndarray = None, actions: List[np.ndarray] = None, max_actions=None):
         rubble = self.master.maps.rubble if rubble is None else rubble
