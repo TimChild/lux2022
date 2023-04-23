@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import Dict, TYPE_CHECKING, Optional
 import copy
 
-from agent_v3_0.factory_manager import FactoryInfo
-from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory
+from factory_manager import FactoryInfo
+from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, ActStatus
 from lux.kit import GameState
 
 from master_state import MasterState
@@ -43,7 +43,8 @@ _desires_work_ratios_dict = {
     "clear lichen": [0, 0, 1, 2, 5],
     "attack": [0, 1, 2, 3, 0.5],
     "defend": [1, 1, 1, 1, 2],
-    "transfer": [0, 0.5, 1, 2, 0],
+    # "transfer": [0, 0.5, 1, 2, 0],
+    "transfer": [0, 0, 0, 0, 0],
     "waiting": [0, 0, 1, 2, 0],
 }
 DESIRED_WORK_RATIOS_DF = _to_df(_desires_work_ratios_dict)

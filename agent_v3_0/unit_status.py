@@ -128,7 +128,6 @@ class ActCategory(enum.Enum):
     COMBAT = "combat"
     MINE = "mine"
     CLEAR = "clear"
-    RUN_AWAY = "runaway"
     WAITING = "waiting"  # Waiting outside factory
     DROPOFF = "dropoff"  # Drop off resources at factory
     NOTHING = "nothing"  # Nothing but could be anywhere

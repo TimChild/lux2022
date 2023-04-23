@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import random
 
+from general_planner import GeneralPlanner
 from unit_action_planner import MultipleUnitActionPlanner
 from lux.kit import obs_to_game_state
 from lux.config import EnvConfig
@@ -42,11 +43,19 @@ class Agent:
         )
 
         self.mining_planner = MiningPlanner(self.master)
-        self.rubble_clearing_planner = ClearingPlanner(self.master)
+        self.clearing_planner = ClearingPlanner(self.master)
         self.combat_planner = CombatPlanner(self.master)
-        self.factory_action_planner = FactoryActionPlanner(self.master)
 
-        self.unit_action_planner = MultipleUnitActionPlanner(self.master)
+        self.factory_action_planner = FactoryActionPlanner(self.master)
+        self.general_planner = GeneralPlanner(self.master, factory_planner=self.factory_action_planner)
+
+        self.unit_action_planner = MultipleUnitActionPlanner(
+            self.master,
+            general_planner=self.general_planner,
+            mining_planner=self.mining_planner,
+            clearing_planner=self.clearing_planner,
+            combat_planner=self.combat_planner,
+        )
 
     def _beginning_of_step_update(self, step: int, obs: dict, remainingOverageTime: int):
         """Use the step and obs to update any turn based info (e.g. map changes)"""
@@ -85,25 +94,18 @@ class Agent:
         )
         self._beginning_of_step_update(step, obs, remainingOverageTime)
 
-        self.mining_planner.update()
-        self.rubble_clearing_planner.update()
         self.factory_action_planner.update()
+        self.mining_planner.update()
+        self.clearing_planner.update()
         self.combat_planner.update()
+        self.general_planner.update()
+        self.unit_action_planner.update()
 
-        factory_desires = self.factory_action_planner.get_factory_desires()
-        factory_infos = self.factory_action_planner.get_factory_infos()
+        # Get unit action updates
+        unit_actions = self.unit_action_planner.decide_unit_actions()
 
-        self.unit_action_planner.update(factory_desires=factory_desires, factory_infos=factory_infos)
-
+        # After unit actions so power accounted for a little at least
         factory_actions = self.factory_action_planner.decide_factory_actions()
-
-        unit_actions = self.unit_action_planner.decide_unit_actions(
-            mining_planner=self.mining_planner,
-            rubble_clearing_planner=self.rubble_clearing_planner,
-            combat_planner=self.combat_planner,
-            factory_desires=factory_desires,
-            factory_infos=factory_infos,
-        )
 
         logger.verbose(f"{self.player} Unit actions: {unit_actions}")
         logger.debug(f"{self.player} Factory actions: {factory_actions}")

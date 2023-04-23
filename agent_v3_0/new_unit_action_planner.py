@@ -48,6 +48,7 @@ class ActionHandler:
         SUCCESS = auto()
         INVALID_FIRST_STEP = auto()
         MAX_STEPS_REACHED_PAUSE = auto()
+
         LOW_POWER_RETURNING = auto()
         ENEMY_NEAR_ATTACKING = auto()
         ENEMY_NEAR_WAIT = auto()
@@ -152,7 +153,33 @@ class ActionHandler:
         path = self.path_to_nearest_non_zero(array)
         return path
 
-    def _return_to_factory(self) -> HandleStatus:
+    def add_dropoff(self) -> HandleStatus:
+        """Assumes already at factory, then drops off any resources necessary"""
+        SUCCESS = self.HandleStatus.SUCCESS
+        cargo = self.unit.cargo
+        status = None
+        if cargo.ice > 0:
+            status = self.add_transfer(resource_type=util.ICE, direction=util.CENTER, to_unit=False)
+            if status != SUCCESS:
+                return status
+        if cargo.ore > 0:
+            status = self.add_transfer(resource_type=util.ORE, direction=util.CENTER, to_unit=False)
+            if status != SUCCESS:
+                return status
+        if cargo.metal > 0:
+            status = self.add_transfer(resource_type=util.METAL, direction=util.CENTER, to_unit=False)
+            if status != SUCCESS:
+                return status
+        if cargo.water > 0:
+            status = self.add_transfer(resource_type=util.WATER, direction=util.CENTER, to_unit=False)
+            if status != SUCCESS:
+                return status
+        if status is None:
+            logger.warning(f'{self.unit.log_prefix} tried to dropoff with no cargo')
+            return SUCCESS
+        return status
+
+    def return_to_factory(self) -> HandleStatus:
         """
         Use this to return action to factory because of failed action (e.g. low power, enemy near, etc)
 
@@ -165,6 +192,10 @@ class ActionHandler:
             status = self.add_path(path_to_factory)
             if status != self.HandleStatus.SUCCESS:
                 return status
+            status = self.add_dropoff()
+            if status != self.HandleStatus.SUCCESS:
+                return status
+
             self.unit.status.update_action_status(ActStatus(category=ActCategory.DROPOFF))
             return self.HandleStatus.SUCCESS
         else:
@@ -172,6 +203,7 @@ class ActionHandler:
             status = self.add_path(path_to_queue)
             if status != self.HandleStatus.SUCCESS:
                 return status
+
             self.unit.status.update_action_status(ActStatus(category=ActCategory.WAITING))
             return self.HandleStatus.SUCCESS
 
@@ -249,7 +281,7 @@ class ActionHandler:
                 logger.warning(
                     f"{self.unit.log_prefix}, {nearest_enemy.unit_id} near {pos} that is dangerous, returning to factory"
                 )
-                status = self._return_to_factory()
+                status = self.return_to_factory()
                 if status != self.HandleStatus.SUCCESS:
                     return status
                 status = self.HandleStatus.ENEMY_NEAR_FLEEING
@@ -279,7 +311,7 @@ class ActionHandler:
         # Did target path fail?
         if len(path) == 0:
             logger.warning(f"{self.unit.log_prefix}, path len 0, returning to factory")
-            status = self._return_to_factory()
+            status = self.return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
             return self.HandleStatus.PATH_INVALID_RETURNING
@@ -296,7 +328,7 @@ class ActionHandler:
             path_to_factory_cost = self.path_to_factory_cost(from_pos=dest_pos)
             if available_power - path_cost - path_to_factory_cost < 0:
                 logger.warning(f"{self.unit.log_prefix}, not enough power after move, returning to factory")
-                status = self._return_to_factory()
+                status = self.return_to_factory()
                 if status != self.HandleStatus.SUCCESS:
                     return status
                 status = self.HandleStatus.LOW_POWER_RETURNING
@@ -332,7 +364,7 @@ class ActionHandler:
             logger.warning(
                 f"{self.unit.log_prefix} trying to add dig where no resource, lichen, or rubble. Returning to factory"
             )
-            status = self._return_to_factory()
+            status = self.return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
             return self.HandleStatus.DIG_INVALID_RETURNING
@@ -348,7 +380,7 @@ class ActionHandler:
             status = self.add_actions_to_queue(self.unit.dig(n=max_digs))
             if status != self.HandleStatus.SUCCESS:
                 return status
-            status = self._return_to_factory()
+            status = self.return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
             return self.HandleStatus.LOW_POWER_RETURNING
@@ -380,7 +412,7 @@ class ActionHandler:
             logger.warning(
                 f"{self.unit.log_prefix} trying to do pickup at {pos} which is not on own factory, returning to factory"
             )
-            status = self._return_to_factory()
+            status = self.return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
             return self.HandleStatus.PICKUP_INVALID_RETURNING
@@ -418,7 +450,7 @@ class ActionHandler:
                 logger.warning(
                     f"{self.unit.log_prefix} trying to pickup more than available or than space (amount={amount},  available={available}, current={current})"
                 )
-                status = self._return_to_factory()
+                status = self.return_to_factory()
                 if status != self.HandleStatus.SUCCESS:
                     return status
                 return self.HandleStatus.PICKUP_INVALID_RETURNING
@@ -455,6 +487,8 @@ class ActionHandler:
             - if on factory
             - if picking up more than unit can hold
             - if picking up more than factory has
+
+        amount None will default to expected cargo (setting 999 will mess up how much factory has)
         """
         if to_unit:
             raise NotImplementedError
@@ -466,7 +500,7 @@ class ActionHandler:
             logger.warning(
                 f"{self.unit.log_prefix} trying to do transfer to {pos} which is not on own factory, returning to factory"
             )
-            status = self._return_to_factory()
+            status = self.return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
             return self.HandleStatus.TRANSFER_INVALID_RETURNING
@@ -481,18 +515,23 @@ class ActionHandler:
         # Update unit and factory
         factory = self.unit.factory
         if resource_type == util.POWER:
+            amount = amount if amount else self.unit.power
             self.unit.power -= amount
             # Factory power calculated based on planned_queues
         elif resource_type == util.METAL:
+            amount = amount if amount else self.unit.cargo.metal
             self.unit.cargo.metal -= amount
             factory.cargo.metal += amount
         elif resource_type == util.WATER:
+            amount = amount if amount else self.unit.cargo.water
             self.unit.cargo.water -= amount
             factory.cargo.water += amount
         elif resource_type == util.ICE:
+            amount = amount if amount else self.unit.cargo.ice
             self.unit.cargo.ice -= amount
             factory.cargo.ice += amount
         elif resource_type == util.ORE:
+            amount = amount if amount else self.unit.cargo.ore
             self.unit.cargo.ore -= amount
             factory.cargo.ore += amount
         return self.HandleStatus.SUCCESS

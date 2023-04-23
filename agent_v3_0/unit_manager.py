@@ -55,6 +55,10 @@ class UnitManager(abc.ABC):
         self._pos = tuple(value)
 
     @property
+    def cargo(self):
+        return self.unit.cargo
+
+    @property
     def pos_slice(self):
         """Can be used for indexing arrays directly
         Examples:
