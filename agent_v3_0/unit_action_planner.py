@@ -439,6 +439,8 @@ class ActionImplementer:
         desired_action: ActStatus,
         unit_must_move: bool,
     ):
+        if desired_action is None:
+            return False
         if desired_action.category == ActCategory.COMBAT:
             success = self.combat_planner.get_unit_planner(unit).update_planned_actions()
         elif desired_action.category == ActCategory.MINE:

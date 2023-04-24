@@ -158,6 +158,9 @@ def next_dest(path: np.ndarray, maps: Maps, unit_paths: UnitPaths) -> DestStatus
     """Find the next destination of this unit and return DestInfo"""
     dest_step = actions_util.find_dest_step_from_step(path, 0, direction="forward")
     pos = path[dest_step]
+    if not (0 <= pos[0] < 48 and 0 <= pos[1] < 48):
+        return None
+
     dist = util.manhattan(path[0], pos)
     dest = DestStatus(pos, dist, dest_step)
     if maps.ice[pos[0], pos[1]] > 0:
@@ -203,9 +206,10 @@ class TurnStatus:
 
     def update(self, unit: FriendlyUnitManager, master: MasterState):
         """Beginning of turn update"""
-        self.next_dest = next_dest(
+        next_dest_ = next_dest(
             unit.current_path(max_len=30, planned_actions=True), master.maps, master.pathfinder.unit_paths
         )
+        self.next_dest = next_dest_ if next_dest_ else unit.start_of_turn_pos
         self.should_act_reasons = []
         self.must_move = False
         self.action_queue_empty_ok = False

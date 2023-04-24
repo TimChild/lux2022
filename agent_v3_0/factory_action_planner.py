@@ -284,7 +284,7 @@ class FactoryDesires:
 
         # Attack
         if info.num_heavy == self.total_heavy():
-            self.heavy_attacking = max(heavy_attack_max_num, info.heavy_attacking + 1)
+            self.heavy_attacking = min(heavy_attack_max_num, info.heavy_attacking + 1)
         elif info.num_heavy < self.total_heavy():
             self.heavy_attacking = max(0, info.heavy_attacking - 1)
 
@@ -536,12 +536,13 @@ class FactoryActionPlanner:
         logger.debug(f"desired_heavy={total_heavy_desired}, desired_light={total_light_desired}")
         logger.debug(f"current_heavy={info.num_heavy}, current_light={info.num_light}")
 
-        if can_build_heavy:
-            if total_heavy_desired > info.num_heavy:
-                return info.factory.factory.build_heavy()
-        elif can_build_light:
-            if total_light_desired > info.num_light:
-                return info.factory.factory.build_light()
+        if info.factory.factory.power > 500:
+            if can_build_heavy:
+                if total_heavy_desired > info.num_heavy:
+                    return info.factory.factory.build_heavy()
+            elif can_build_light:
+                if total_light_desired > info.num_light:
+                    return info.factory.factory.build_light()
 
     def _water(self, info: FactoryInfo, desire: FactoryDesires) -> [None, int]:
         min_water = 100
@@ -554,11 +555,11 @@ class FactoryActionPlanner:
         elif self.master.step <= 700:
             min_water = 900
         elif self.master.step <= 800:
-            min_water = 1500
+            min_water = 700
         elif self.master.step <= 900:
-            min_water = 1000
+            min_water = 500
         elif self.master.step <= 1000:
-            min_water = 150
+            min_water = 100
         logger.debug(f"Current water = {info.water}, water cost = {info.water_cost}, min_water = {min_water}")
         if info.water - info.water_cost > min_water:
             return info.factory.factory.water()

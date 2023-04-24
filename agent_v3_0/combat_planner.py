@@ -754,10 +754,10 @@ class CombatPlanner(BaseGeneralPlanner):
             pos = enemy_unit.pos
             value = 0
             # If some cargo
-            if enemy_unit.cargo.ice + enemy_unit.ore > cfg.CARGO_SPACE * 0.3:
+            if enemy_unit.cargo.ice + enemy_unit.cargo.ore > cfg.CARGO_SPACE * 0.3:
                 value += 20
             # If more cargo
-            if enemy_unit.cargo.ice + enemy_unit.ore > cfg.CARGO_SPACE * 0.6:
+            if enemy_unit.cargo.ice + enemy_unit.cargo.ore > cfg.CARGO_SPACE * 0.6:
                 value += 20
             # If currently on a resource
             if self.master.maps.resource_at_tile(enemy_unit.pos) >= 0:

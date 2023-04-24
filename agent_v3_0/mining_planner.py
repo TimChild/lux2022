@@ -984,18 +984,20 @@ class MiningUnitPlanner(BaseUnitPlanner):
         recommendation: MiningRecommendation,
         unit_must_move: bool,
     ) -> bool:
-        factory = self.master.factories.friendly[recommendation.factory_id]
-        route_planner = MiningRoutePlanner(
-            pathfinder=self.master.pathfinder,
-            rubble=self.master.maps.rubble,
-            resource_pos=recommendation.resource_pos,
-            resource_type=recommendation.resource_type,
-            factory=factory,
-            unit=unit,
-        )
-        self.planner.store_planners[unit.unit_id] = route_planner
-        success = route_planner.make_route(unit_must_move=unit_must_move)
-        return success
+        if recommendation is not None:
+            factory = self.master.factories.friendly[recommendation.factory_id]
+            route_planner = MiningRoutePlanner(
+                pathfinder=self.master.pathfinder,
+                rubble=self.master.maps.rubble,
+                resource_pos=recommendation.resource_pos,
+                resource_type=recommendation.resource_type,
+                factory=factory,
+                unit=unit,
+            )
+            self.planner.store_planners[unit.unit_id] = route_planner
+            success = route_planner.make_route(unit_must_move=unit_must_move)
+            return success
+        return False
 
 
 class MiningPlanner(BaseGeneralPlanner):
