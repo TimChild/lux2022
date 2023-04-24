@@ -47,24 +47,51 @@ def _to_df(data_dict):
 #     "transfer": [0, 0, 0, 0, 0],
 #     "waiting": [0, 0, 1, 2, 0],
 # }
-_desires_work_ratios_dict = {
-    "step": [1000],
-    "mine ore": [0],
-    "mine ice": [0],
-    "clear rubble": [0],
-    "clear lichen": [0],
-    "attack": [1],
-    "defend": [0],
-    # "transfer": [0, 0.5, 1, 2, 0],
-    "transfer": [0],
-    "waiting": [0],
+_desires_work_ratios_heavy_dict = {
+    "step": [20, 50, 200, 500, 850, 1000],
+    "mine ore": [0, 0, 1, 0.5, 0, 0],
+    "mine ice": [1, 1, 1, 2, 4, 1],
+    "clear rubble": [0, 0.5, 2, 2, 4, 2],
+    "clear lichen": [0, 0, 0, 0, 0, 0],
+    # "attack": [0, 1, 2, 3, 0.5],
+    "attack": [0, 0,0,0,0,0],
+    "defend": [0, 0,0,0,0,0],
+    # "transfer": [0, 0, 0.5, 1, 2, 0],
+    "transfer": [0, 0, 0, 0, 0, 0],
+    "waiting": [0, 0, 0, 0, 0, 0],
 }
-DESIRED_WORK_RATIOS_DF = _to_df(_desires_work_ratios_dict)
+_desires_work_ratios_light_dict = {
+    "step": [20, 50, 200, 500, 850, 1000],
+    "mine ore": [0, 2, 2, 0.5, 0.2, 0],
+    "mine ice": [0, 0, 0, 0, 0, 0],
+    "clear rubble": [0, 1, 2, 2, 4, 2],
+    "clear lichen": [0, 0, 0, 0, 0, 0],
+    # "attack": [0, 1, 2, 3, 0.5],
+    "attack": [0, 0,0,0,0,0],
+    "defend": [0, 0,0,0,0,0],
+    # "transfer": [0, 0, 0.5, 1, 2, 0],
+    "transfer": [0, 0, 0, 0, 0, 0],
+    "waiting": [0, 0, 0, 1, 2, 0],
+}
+# _desires_work_ratios_dict = {
+#     "step": [1000],
+#     "mine ore": [1],
+#     "mine ice": [0.5],
+#     "clear rubble": [1],
+#     "clear lichen": [0],
+#     "attack": [0],
+#     "defend": [0],
+#     # "transfer": [0, 0.5, 1, 2, 0],
+#     "transfer": [0],
+#     "waiting": [0],
+# }
+DESIRED_HEAVY_WORK_RATIOS_DF = _to_df(_desires_work_ratios_heavy_dict)
+DESIRED_LIGHT_WORK_RATIOS_DF = _to_df(_desires_work_ratios_light_dict)
 
 _desires_unit_ratios_dict = {
     "step": [1, 10, 100, 500, 850, 1000],
     "heavy": [1, 1, 1, 1, 1, 1],
-    "light": [0.01, 2, 3, 1, 2, 3],
+    "light": [0.01, 1.5, 2, 1, 2, 3],
 }
 DESIRED_UNIT_RATIOS_DF = _to_df(_desires_unit_ratios_dict)
 
@@ -83,8 +110,12 @@ class WorkRatios:
     waiting: float
 
     @classmethod
-    def at_step(cls, step: int):
-        df = util.get_interpolated_values(DESIRED_WORK_RATIOS_DF, step)
+    def at_step(cls, step: int, heavy=True):
+        if  heavy:
+            dict_ =  DESIRED_HEAVY_WORK_RATIOS_DF
+        else:
+            dict_ = DESIRED_LIGHT_WORK_RATIOS_DF
+        df = util.get_interpolated_values(dict_, step)
         inst = cls(
             mine_ore=df["mine ore"],
             mine_ice=df["mine ice"],
@@ -247,7 +278,8 @@ class FactoryActionPlanner:
 
         # Caching variables
         self._factory_desires: Dict[str, FactoryDesires] = {}
-        self._factory_work_ratios: Dict[str, WorkRatios] = {}
+        self._factory_heavy_work_ratios: Dict[str, WorkRatios] = {}
+        self._factory_light_work_ratios: Dict[str, WorkRatios] = {}
         self._factory_infos: Dict[str, FactoryInfo] = {}
 
     def update(self, *args, **kwargs):
@@ -277,8 +309,11 @@ class FactoryActionPlanner:
         # if self.master.step == 0 or self.master.step % 5 == 0:
         #     self._update_factory_desires()
 
-    def get_factory_work_ratios(self) -> Dict[str, WorkRatios]:
-        return self._factory_work_ratios
+    def get_factory_work_ratios(self, heavy=True) -> Dict[str, WorkRatios]:
+        if heavy:
+            return self._factory_heavy_work_ratios
+        else:
+            return self._factory_light_work_ratios
 
     # def get_factory_desires(self) -> Dict[str, FactoryDesires]:
     #     return self._factory_desires
@@ -290,12 +325,16 @@ class FactoryActionPlanner:
         for f_id, factory in self.factories.items():
             info = factory.info
             logger.debug(f"Updating {f_id} work_ratios")
-            ratios = WorkRatios.at_step(self.master.step)
+            heavy_ratios = WorkRatios.at_step(self.master.step,  heavy=True)
+            light_ratios = WorkRatios.at_step(self.master.step, heavy=False)
             if factory.cargo.metal > self.max_metal or factory.cargo.ore > self.max_ore:
-                ratios.mine_ore = 0
+                heavy_ratios.mine_ore = 0
+                light_ratios.mine_ore = 0
             if factory.cargo.water > self.max_water or factory.cargo.ice > self.max_ice:
-                ratios.mine_ice = 0
-            self._factory_work_ratios[f_id] = ratios
+                heavy_ratios.mine_ice = 0
+                light_ratios.mine_ice = 0
+            self._factory_heavy_work_ratios[f_id] = heavy_ratios
+            self._factory_light_work_ratios[f_id] = light_ratios
 
     # def _update_factory_info(self) -> Dict[str, FactoryInfo]:
     #     """Update info about the factory (uses a sort of rolling average in updating)"""
@@ -483,27 +522,27 @@ class FactoryActionPlanner:
         desired_ratios = util.get_interpolated_values(DESIRED_UNIT_RATIOS_DF, self.master.step)
         desired_light_ratio = desired_ratios.light / desired_ratios.heavy
 
-        power_in_X = factory.calculate_power_at_step(10)
+        power_in_X = factory.calculate_power_at_step(20)
 
         # If too many lights, consider building heavy
         if light_ratio > desired_light_ratio:
             can_build = factory.factory.can_build_heavy(self.master.game_state)
-            if can_build and power_in_X > 0:
+            if can_build and power_in_X > 500:
                 return factory.factory.build_heavy()
         # Otherwise consider building light
         else:
             can_build = factory.factory.can_build_light(self.master.game_state)
-            if can_build and power_in_X > 0:
+            if can_build and power_in_X > 500:
                 return factory.factory.build_light()
         return None
 
     def _possible_water(self, factory: FriendlyFactoryManager) -> Optional[int]:
         """Decide when to water"""
-        min_water = 100
+        min_water = 200
         if self.master.step <= 100:
-            min_water = 100
+            min_water = 200
         elif self.master.step <= 400:
-            min_water = 300
+            min_water = 400
         elif self.master.step <= 500:
             min_water = 600
         elif self.master.step <= 700:
@@ -513,7 +552,7 @@ class FactoryActionPlanner:
         elif self.master.step <= 850:
             min_water = 800
         elif self.master.step <= 1000:
-            min_water = 50
+            min_water = 100
 
         steps_remaining = 1000 - self.master.step
         if steps_remaining > 700:
@@ -631,7 +670,9 @@ class FactoryActionPlanner:
         metal_left = game_state.teams[player].metal
 
         # TODO: Debugging only
-        if water_left == 0:
+        # if water_left == 0:
+        #     return {}
+        if factories_to_place < 3:
             return {}
 
         # how much to give to each factory
@@ -708,5 +749,5 @@ class FactoryActionPlanner:
 
         # TODO: Calculate how close to nearest enemy factory for top X
 
-        # return dict(spawn=df.iloc[0].pos, metal=metal, water=water)
-        return dict(spawn=df.iloc[0].pos, metal=metal_left, water=water_left)
+        return dict(spawn=df.iloc[0].pos, metal=metal, water=water)
+        # return dict(spawn=df.iloc[0].pos, metal=metal_left, water=water_left)
