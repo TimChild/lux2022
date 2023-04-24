@@ -1007,8 +1007,8 @@ class MiningUnitPlanner(BaseUnitPlanner):
             if value > best_value:
                 best_resource = resource
                 best_value = value
-        if best_resource is not None:
-            best_resource.used_by[self.unit.unit_id] = self.unit
+        # if best_resource is not None:
+        #     best_resource.used_by[self.unit.unit_id] = self.unit
         return best_resource
 
     def _check_and_handle_action_flags(self, status=None):
@@ -1090,6 +1090,7 @@ class MiningUnitPlanner(BaseUnitPlanner):
             status = self.unit.action_handler.add_path(path)
             if status != self.SUCCESS:
                 return status
+            resource.used_by[self.unit.unit_id] = self.unit
             self.unit.status.current_action.step = 4
 
         # 4. Add dig actions
@@ -1156,6 +1157,8 @@ class MiningPlanner(BaseGeneralPlanner):
         self.ice_resources: Dict[str, List[ResourceInfo]] = {}
         self.ore_resources: Dict[str, List[ResourceInfo]] = {}
 
+        self._all_resources: Dict[Tuple[int, int], ResourceInfo] = {}
+
     def update(self):
         # Remove units that are no longer mining
         for r_dict in [self.ice_resources, self.ore_resources]:
@@ -1186,6 +1189,7 @@ class MiningPlanner(BaseGeneralPlanner):
                         nearest = util.nearest_non_zero(res_dist, factory.pos)
                         if nearest is None:
                             break
+                        nearest = tuple(nearest)
                         dist = util.manhattan(nearest, factory.pos)
                         if dist < 5:
                             value = 100
@@ -1195,7 +1199,12 @@ class MiningPlanner(BaseGeneralPlanner):
                             value = 40
                         else:
                             value = 10
-                        res_list.append(ResourceInfo(value=value, pos=nearest, used_by={}, dist=dist))
+                        resource = ResourceInfo(value=value, pos=nearest, used_by={}, dist=dist)
+                        if resource.pos in self._all_resources:
+                            resource.used_by = self._all_resources[resource.pos].used_by
+                        else:
+                            self._all_resources[resource.pos] = resource
+                        res_list.append(resource)
                         res_dist[nearest[0], nearest[1]] = 0
                     resource_dict[factory_id] = res_list
 
