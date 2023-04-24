@@ -220,7 +220,7 @@ class FactoryDesires:
 
         # Attack
         if info.num_light == self.total_light():
-            self.light_attacking = max(light_attack_max_num, info.light_attacking + 1)
+            self.light_attacking = min(light_attack_max_num, info.light_attacking + 1)
         elif info.num_light < self.total_heavy():
             self.light_attacking = max(0, info.light_attacking - 1)
 
@@ -248,7 +248,7 @@ class FactoryDesires:
 
         # Attack
         if info.num_heavy == self.total_heavy():
-            self.heavy_attacking = max(heavy_attack_max_num, info.heavy_attacking + 1)
+            self.heavy_attacking = min(heavy_attack_max_num, info.heavy_attacking + 1)
         elif info.num_heavy < self.total_heavy():
             self.heavy_attacking = max(0, info.heavy_attacking - 1)
 
@@ -359,10 +359,10 @@ class FactoryActionPlanner:
                 light_energy_consideration=1100,
                 light_rubble_min_tiles=50,
                 light_rubble_max_tiles=200,
-                light_rubble_max_num=6,
+                light_rubble_max_num=4,
                 light_metal_min=50,
                 light_metal_max=200,
-                light_metal_max_num=1,
+                light_metal_max_num=0,
                 light_water_min=100,
                 light_water_max=300,
                 light_water_max_num=0,
@@ -384,16 +384,16 @@ class FactoryActionPlanner:
             desires.update_desires(
                 info=info,
                 light_energy_consideration=1100,
-                light_rubble_min_tiles=70,
-                light_rubble_max_tiles=100,
-                light_rubble_max_num=5,
+                light_rubble_min_tiles=100,
+                light_rubble_max_tiles=150,
+                light_rubble_max_num=4,
                 light_metal_min=100,
                 light_metal_max=200,
                 light_metal_max_num=0,
                 light_water_min=300,
                 light_water_max=1000,
                 light_water_max_num=0,
-                light_attack_max_num=5,
+                light_attack_max_num=3,
                 heavy_energy_consideration=1000,
                 heavy_rubble_min_tiles=30,
                 heavy_rubble_max_tiles=70,
@@ -412,14 +412,14 @@ class FactoryActionPlanner:
                 light_energy_consideration=1000,
                 light_rubble_min_tiles=50,
                 light_rubble_max_tiles=200,
-                light_rubble_max_num=10,
+                light_rubble_max_num=5,
                 light_metal_min=100,
                 light_metal_max=200,
                 light_metal_max_num=0,
                 light_water_min=500,
                 light_water_max=1000,
                 light_water_max_num=0,
-                light_attack_max_num=5,
+                light_attack_max_num=3,
                 heavy_energy_consideration=1000,
                 heavy_rubble_min_tiles=20,
                 heavy_rubble_max_tiles=50,
@@ -474,29 +474,30 @@ class FactoryActionPlanner:
         logger.debug(f"desired_heavy={total_heavy_desired}, desired_light={total_light_desired}")
         logger.debug(f"current_heavy={info.num_heavy}, current_light={info.num_light}")
 
-        if can_build_heavy:
-            if total_heavy_desired > info.num_heavy:
-                return info.factory.factory.build_heavy()
-        elif can_build_light:
-            if total_light_desired > info.num_light:
-                return info.factory.factory.build_light()
+        if info.factory.factory.power > 700:
+            if can_build_heavy:
+                if total_heavy_desired > info.num_heavy:
+                    return info.factory.factory.build_heavy()
+            elif can_build_light:
+                if total_light_desired > info.num_light:
+                    return info.factory.factory.build_light()
 
     def _water(self, info: FactoryInfo, desire: FactoryDesires) -> [None, int]:
         min_water = 100
         if self.master.step <= 300:
             min_water = 200
         elif self.master.step <= 400:
-            min_water = 400
+            min_water = 300
         elif self.master.step <= 500:
-            min_water = 600
+            min_water = 500
         elif self.master.step <= 700:
-            min_water = 900
-        elif self.master.step <= 800:
-            min_water = 1500
-        elif self.master.step <= 900:
-            min_water = 1000
+            min_water = 700
+        elif self.master.step <= 750:
+            min_water = 800
+        elif self.master.step <= 850:
+            min_water = 500
         elif self.master.step <= 1000:
-            min_water = 150
+            min_water = 100
         logger.debug(f"Current water = {info.water}, water cost = {info.water_cost}, min_water = {min_water}")
         if info.water - info.water_cost > min_water:
             return info.factory.factory.water()
