@@ -88,7 +88,7 @@ class ActionHandler:
         self._add_current_act_status(len(actions), targeting_enemy=targeting_enemy, allow_partial=allow_partial)
         return self.HandleStatus.SUCCESS
 
-    def get_costmap(self, collision_only=None, target_enemy_id_num: Optional[int] = None, ignore_friendly=False):
+    def get_costmap(self, collision_only=None, target_enemy_id_num: Optional[int] = None):
         """Get costmap at current step"""
         if collision_only is None:
             # TODO: Check whether collision only works OK
@@ -99,8 +99,8 @@ class ActionHandler:
         cm = self.pathfinder.generate_costmap(
             self.unit,
             ignore_id_nums=ignore_ids,
-            friendly_light=True if not ignore_friendly else False,
-            friendly_heavy=True if not ignore_friendly else False,
+            friendly_light=True,
+            friendly_heavy=True,
             enemy_light=None,
             enemy_heavy=True,
             collision_only=collision_only,
@@ -118,13 +118,16 @@ class ActionHandler:
         return path
 
     def path_to_nearest_non_zero(
-        self, non_zero_array: np.ndarray, from_pos=None, max_attempts=20, ignore_friendly=False
+        self, non_zero_array: np.ndarray, from_pos=None, max_attempts=20, ignore_friendly_at_dest=False
     ) -> np.ndarray:
         """Calculate path to nearest available non-zero in array"""
         pos = from_pos if from_pos is not None else self.unit.pos
+        cm = self.get_costmap()
+        if ignore_friendly_at_dest:
+            cm[(non_zero_array > 0) & (cm <= 0)] = 5
         path = util.calculate_path_to_nearest_non_zero(
             self.pathfinder,
-            self.get_costmap(ignore_friendly=ignore_friendly),
+            cm,
             from_pos=pos,
             target_array=non_zero_array,
             near_pos=pos,
@@ -142,13 +145,15 @@ class ActionHandler:
     def path_to_factory(self, from_pos: util.POS_TYPE = None) -> np.ndarray:
         """Get path to factory tile"""
         pos = from_pos if from_pos is not None else self.unit.pos
-        # If coming from far away, other units can move if needed
-        ignore_friendly = False
-        if util.manhattan(pos, self.unit.factory.pos) > 5:
-            ignore_friendly = True
 
         array = self.unit.factory.factory_loc
-        path = self.path_to_nearest_non_zero(array, from_pos=pos, ignore_friendly=ignore_friendly)
+        array = util.set_middle_of_factory_loc_zero(array)
+
+        # If coming from far away, other units can move if needed
+        ignore_friendly_at_dest = False
+        if util.manhattan(pos, self.unit.factory.pos) > 5:
+            ignore_friendly_at_dest = True
+        path = self.path_to_nearest_non_zero(array, from_pos=pos, ignore_friendly_at_dest=ignore_friendly_at_dest)
         return path
 
     def path_to_factory_queue(self) -> np.ndarray:

@@ -434,7 +434,11 @@ class SingleUnitActionPlanner:
         act_statuses = self.unit.status.planned_act_statuses[: len(actions_to_check)]
         status = self.unit.run_actions(actions_to_check, act_statuses)
         if status != self.unit.action_handler.HandleStatus.SUCCESS:
-            num_success = util.num_turns_of_actions(self.unit.action_queue)
+            broke_at = util.num_turns_of_actions(self.unit.action_queue)
+            # Remove the last in case it is partial
+            success_actions = actions_util.split_actions_at_step(actions_to_check, broke_at)[0][:-1]
+            num_success = util.num_turns_of_actions(success_actions)
+            # num_success = util.num_turns_of_actions(self.unit.action_queue)
             logger.warning(
                 f"{self.unit.log_prefix} Actions failed after {num_success} with status {status}, resetting to last successful"
             )

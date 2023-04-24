@@ -177,6 +177,10 @@ def next_dest(path: np.ndarray, maps: Maps, unit_paths: UnitPaths) -> DestStatus
     """Find the next destination of this unit and return DestInfo"""
     dest_step = actions_util.find_dest_step_from_step(path, 0, direction="forward")
     pos = path[dest_step]
+    if not 0 <= pos[0] < 48 or 0 <= pos[1] < 48:
+        logger.error(f'Next dest outside  of map {pos}, returning path[0]')
+        pos = path[0]
+
     dist = util.manhattan(path[0], pos)
     dest = DestStatus(pos, dist, dest_step)
     if maps.ice[pos[0], pos[1]] > 0:
@@ -228,8 +232,9 @@ class TurnStatus:
 
     def update(self, unit: FriendlyUnitManager, master: MasterState):
         """Beginning of turn update"""
+        path = unit.current_path(max_len=30, planned_actions=True)
         self.next_dest = next_dest(
-            unit.current_path(max_len=30, planned_actions=True), master.maps, master.pathfinder.unit_paths
+            path, master.maps, master.pathfinder.unit_paths
         )
         self.factory_dist = util.manhattan(unit.start_of_turn_pos, unit.factory.pos)
         # not used
@@ -333,17 +338,20 @@ class Status:
                 - step 0, want the 0th index status, but no action queue
                 - step 1, want the 1st index status, only zeroth action queue step
         """
-        if not step < len(self.planned_act_statuses):
+        new_planned = actions_util.split_actions_at_step(self.planned_action_queue, step)[0]
+        num = len(new_planned)
+
+        if not num < len(self.planned_act_statuses):
             logger.error(
-                f"Tried to set act status to {step} but act_statuses only {len(self.planned_act_statuses)}. Setting ActStatus Nothing"
+                f"Tried to set act status to {num}th index but act_statuses only {len(self.planned_act_statuses)}. Setting ActStatus Nothing"
             )
             self.current_action = ActStatus()
             return
 
-        new_status = self.planned_act_statuses[step]
-        new_planned = self.planned_action_queue[:step]
-        new_statuses = self.planned_act_statuses[:step]
-        logger.info(f"Resetting to {step} where action was {new_status}")
+        new_status = self.planned_act_statuses[num]
+        new_planned = self.planned_action_queue[:num]
+        new_statuses = self.planned_act_statuses[:num]
+        logger.info(f"Resetting to {num}th action where action was {new_status}")
         self.current_action = new_status
         self.update_planned_action_queue(new_planned, new_statuses)
         return

@@ -1050,7 +1050,7 @@ class MiningUnitPlanner(BaseUnitPlanner):
                 logger.debug(f"Already have enough power")
                 pass
             else:
-                if not self.unit.on_own_factory():
+                if not self.unit.on_own_factory() or self.unit.status.turn_status.must_move:
                     logger.debug(f"Need to move to factory first")
                     path = self.unit.action_handler.path_to_factory()
                     status = self.unit.action_handler.add_path(path)
