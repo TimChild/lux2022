@@ -28,7 +28,8 @@ class AttackValues:
     chase_radius: int = 15
     eliminate_threshold: int = 2
     heavy_attack_light: bool = False
-    target: Optional[TargetInfo] = None
+    # target: Optional[TargetInfo] = None
+    target: Optional[EnemyUnitManager] = None
 
     @dataclass
     class Hold:

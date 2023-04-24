@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, List, Tuple
 
@@ -330,122 +331,122 @@ class BestEnemyUnit:
             logger.info(f"failed to find a good unit to attack for {self.unit.unit_id} from {self.unit.pos}")
 
 
-class Attack:
-    def __init__(
-        self,
-        unit: FriendlyUnitManager,
-        master: MasterState,
-        targeted_enemies: Dict[str, FriendlyUnitManager],
-    ):
-        self.unit = unit
-        self.master = master
-        self.targeted_enemies = targeted_enemies
-        self.targeted_enemies_reversed = {unit.unit_id: enemy_id for enemy_id, unit in targeted_enemies.items()}
-
-        self.enemy_location_ids = None
-        self.best_enemy_unit = None
-        self.best_intercept = None
-        self.best_power_at_enemy = None
-        self.best_power_back_to_factory = None
-
-        self.action_executed: str = None
-
-    def find_interceptable_enemy_locations(self, specific_id_num: int = None):
-        self.enemy_location_ids = self.master.pathfinder.unit_paths.calculate_likely_unit_collisions(
-            self.unit.pos,
-            util.num_turns_of_actions(self.unit.action_queue),
-            exclude_id_nums=[self.unit.id_num],
-            friendly_light=False,
-            friendly_heavy=False,
-            # Only hunt down same type of unit
-            enemy_light=True if self.unit.unit_type == "LIGHT" else False,
-            enemy_heavy=True if self.unit.unit_type == "HEAVY" else False,
-        )
-        # Note: Only asking for one anyway, so will always be first in dict
-        self.enemy_location_ids = next(iter(self.enemy_location_ids.values()))
-        # if self.unit.unit_id == 'unit_30':
-        #     util.show_map_array(self.enemy_location_ids).show()
-        if specific_id_num is not None:
-            self.enemy_location_ids[self.enemy_location_ids != specific_id_num] = -1
-
-    def find_best_enemy_unit(self):
-        # Instantiate BestEnemyUnit class and call find_best_enemy_unit method
-        best_enemy_unit_finder = BestEnemyUnit(self.master, self.unit, self.enemy_location_ids, self.targeted_enemies)
-        best_enemy_unit_finder.find_best_enemy_unit()
-
-        # Update the Attack class attributes with the results
-        self.best_enemy_unit = best_enemy_unit_finder.best_enemy_unit
-        self.best_intercept = best_enemy_unit_finder.best_intercept
-        self.best_power_at_enemy = best_enemy_unit_finder.best_power_at_enemy
-        self.best_power_back_to_factory = best_enemy_unit_finder.best_power_back_to_factory
-
-    def decide_action(self) -> str:
-        action_decider = ActionDecider(
-            self.unit,
-            self.master,
-            self.best_enemy_unit,
-            self.best_intercept,
-            self.best_power_at_enemy,
-            self.best_power_back_to_factory,
-        )
-        return action_decider.decide_action()
-
-    def execute_action(self, what_do: str) -> bool:
-        action_executor = ActionExecutor(self.unit, self.master, what_do, self.best_enemy_unit, self.best_intercept)
-        return action_executor.execute_action()
-
-    def continue_attack(self) -> bool:
-        enemy_id = self.targeted_enemies_reversed[self.unit.unit_id]
-        enemy = self.master.units.enemy.get_unit(enemy_id)
-        if enemy is None:
-            logger.warning(f"{self.unit.log_prefix} enemy {enemy_id} no longer exists")
-            self.targeted_enemies.pop(enemy_id)
-            return False
-        enemy: EnemyUnitManager
-        self.best_enemy_unit = enemy
-        self.find_interceptable_enemy_locations(specific_id_num=enemy.id_num)
-        enemy_map = (self.enemy_location_ids >= 0).astype(int)
-        nearest_intercept = util.nearest_non_zero(enemy_map, self.unit.start_of_turn_pos)
-
-        # If new intercept, maybe can get there better
-        if nearest_intercept is not None:
-            intercept_valid = self.master.maps.valid_friendly_move[nearest_intercept[0], nearest_intercept[1]] > 0
-            if not intercept_valid:
-                # probably on own factory
-                return False
-            else:
-                logger.info(
-                    f"Continuing attack on {enemy_id}, current dist = {util.manhattan(self.unit.start_of_turn_pos, enemy.start_of_turn_pos)}"
-                )
-                self.best_intercept = nearest_intercept
-                return self.execute_action("attack")
-        elif len(self.unit.status.planned_action_queue) > 0:
-            logger.info(f"didn't find new intercept for enemy, continuing with previous path")
-            # Carry on, enemy will probably pop up again
-            self.unit.action_queue = self.unit.status.planned_action_queue.copy()
-            return True
-        else:
-            logger.info(f"no intercept with enemy, and no planned actions, lost enemy, returning false")
-            # We've lost the enemy
-            return False
-
-    def perform_attack(self) -> bool:
-        logger.debug(f"Starting attack planning")
-        success = False
-        # Continue previous attack
-        if self.unit.unit_id in self.targeted_enemies_reversed:
-            success = self.continue_attack()
-
-        if not success:
-            self.find_interceptable_enemy_locations()
-            logger.debug(f"finding best enemy")
-            self.find_best_enemy_unit()
-            logger.debug(f"Decding what to do next")
-            what_do = self.decide_action()
-            self.action_executed = what_do
-            logger.debug(f"Executing attack behavior {what_do}")
-            success = self.execute_action(what_do)
-        return success
+# class Attack:
+#     def __init__(
+#         self,
+#         unit: FriendlyUnitManager,
+#         master: MasterState,
+#         targeted_enemies: Dict[str, FriendlyUnitManager],
+#     ):
+#         self.unit = unit
+#         self.master = master
+#         self.targeted_enemies = targeted_enemies
+#         self.targeted_enemies_reversed = {unit.unit_id: enemy_id for enemy_id, unit in targeted_enemies.items()}
+#
+#         self.enemy_location_ids = None
+#         self.best_enemy_unit = None
+#         self.best_intercept = None
+#         self.best_power_at_enemy = None
+#         self.best_power_back_to_factory = None
+#
+#         self.action_executed: str = None
+#
+#     def find_interceptable_enemy_locations(self, specific_id_num: int = None):
+#         self.enemy_location_ids = self.master.pathfinder.unit_paths.calculate_likely_unit_collisions(
+#             self.unit.pos,
+#             util.num_turns_of_actions(self.unit.action_queue),
+#             exclude_id_nums=[self.unit.id_num],
+#             friendly_light=False,
+#             friendly_heavy=False,
+#             # Only hunt down same type of unit
+#             enemy_light=True if self.unit.unit_type == "LIGHT" else False,
+#             enemy_heavy=True if self.unit.unit_type == "HEAVY" else False,
+#         )
+#         # Note: Only asking for one anyway, so will always be first in dict
+#         self.enemy_location_ids = next(iter(self.enemy_location_ids.values()))
+#         # if self.unit.unit_id == 'unit_30':
+#         #     util.show_map_array(self.enemy_location_ids).show()
+#         if specific_id_num is not None:
+#             self.enemy_location_ids[self.enemy_location_ids != specific_id_num] = -1
+#
+#     def find_best_enemy_unit(self):
+#         # Instantiate BestEnemyUnit class and call find_best_enemy_unit method
+#         best_enemy_unit_finder = BestEnemyUnit(self.master, self.unit, self.enemy_location_ids, self.targeted_enemies)
+#         best_enemy_unit_finder.find_best_enemy_unit()
+#
+#         # Update the Attack class attributes with the results
+#         self.best_enemy_unit = best_enemy_unit_finder.best_enemy_unit
+#         self.best_intercept = best_enemy_unit_finder.best_intercept
+#         self.best_power_at_enemy = best_enemy_unit_finder.best_power_at_enemy
+#         self.best_power_back_to_factory = best_enemy_unit_finder.best_power_back_to_factory
+#
+#     def decide_action(self) -> str:
+#         action_decider = ActionDecider(
+#             self.unit,
+#             self.master,
+#             self.best_enemy_unit,
+#             self.best_intercept,
+#             self.best_power_at_enemy,
+#             self.best_power_back_to_factory,
+#         )
+#         return action_decider.decide_action()
+#
+#     def execute_action(self, what_do: str) -> bool:
+#         action_executor = ActionExecutor(self.unit, self.master, what_do, self.best_enemy_unit, self.best_intercept)
+#         return action_executor.execute_action()
+#
+#     def continue_attack(self) -> bool:
+#         enemy_id = self.targeted_enemies_reversed[self.unit.unit_id]
+#         enemy = self.master.units.enemy.get_unit(enemy_id)
+#         if enemy is None:
+#             logger.warning(f"{self.unit.log_prefix} enemy {enemy_id} no longer exists")
+#             self.targeted_enemies.pop(enemy_id)
+#             return False
+#         enemy: EnemyUnitManager
+#         self.best_enemy_unit = enemy
+#         self.find_interceptable_enemy_locations(specific_id_num=enemy.id_num)
+#         enemy_map = (self.enemy_location_ids >= 0).astype(int)
+#         nearest_intercept = util.nearest_non_zero(enemy_map, self.unit.start_of_turn_pos)
+#
+#         # If new intercept, maybe can get there better
+#         if nearest_intercept is not None:
+#             intercept_valid = self.master.maps.valid_friendly_move[nearest_intercept[0], nearest_intercept[1]] > 0
+#             if not intercept_valid:
+#                 # probably on own factory
+#                 return False
+#             else:
+#                 logger.info(
+#                     f"Continuing attack on {enemy_id}, current dist = {util.manhattan(self.unit.start_of_turn_pos, enemy.start_of_turn_pos)}"
+#                 )
+#                 self.best_intercept = nearest_intercept
+#                 return self.execute_action("attack")
+#         elif len(self.unit.status.planned_action_queue) > 0:
+#             logger.info(f"didn't find new intercept for enemy, continuing with previous path")
+#             # Carry on, enemy will probably pop up again
+#             self.unit.action_queue = self.unit.status.planned_action_queue.copy()
+#             return True
+#         else:
+#             logger.info(f"no intercept with enemy, and no planned actions, lost enemy, returning false")
+#             # We've lost the enemy
+#             return False
+#
+#     def perform_attack(self) -> bool:
+#         logger.debug(f"Starting attack planning")
+#         success = False
+#         # Continue previous attack
+#         if self.unit.unit_id in self.targeted_enemies_reversed:
+#             success = self.continue_attack()
+#
+#         if not success:
+#             self.find_interceptable_enemy_locations()
+#             logger.debug(f"finding best enemy")
+#             self.find_best_enemy_unit()
+#             logger.debug(f"Decding what to do next")
+#             what_do = self.decide_action()
+#             self.action_executed = what_do
+#             logger.debug(f"Executing attack behavior {what_do}")
+#             success = self.execute_action(what_do)
+#         return success
 
 
 @dataclass
@@ -457,54 +458,88 @@ class TargetInfo:
 
 
 class CombatUnitPlanner(BaseUnitPlanner):
+    def __init__(self, master: MasterState, general_planner: CombatPlanner, unit: FriendlyUnitManager):
+        super().__init__(master, general_planner, unit)
+        self.planner = general_planner
+
+        self.weights = [self.planner.prop_single_target, self.planner.prop_attack,  self.planner.prop_defend]
+        self.attack_types = ['single', 'attack', 'defend']
+
+        self.SUCCESS = self.unit.action_handler.HandleStatus.SUCCESS
+
     def update_planned_actions(self):
         """Update existing actions
         I.e. Handle should_act reasons here, then only call add_new_actions when needing to add new actions
 
         If need to add more to path, call self.add_new_actions(...)
         """
-        # should_acts = self.unit.status.turn_status.should_act_reasons
-        if self.unit.status.turn_status.must_move:
-            # This also handles enemy heavy near friendly light (just move out of the way)
 
-            pass
-        if ActReasons.LOW_POWER in should_acts:
-            success = self.add_path_to_factory_queue()
-            self.unit.status.current_action = ActStatus(ActCategory.WAITING)
+        new_assignment = random.choices(self.attack_types, weights=self.weights, k=1)[0]
 
-            pass
-        if ActReasons.COLLISION_WITH_ENEMY in should_acts:
-            pass
-        if ActReasons.COLLISION_WITH_FRIENDLY in should_acts:
-            pass
+        if self.unit.status.current_action.sub_category is None:
+            if new_assignment == 'single':
+                self.unit.status.current_action.sub_category = CombatActSubCategory.TEMPORARY
+                self.unit.status.attack_values.temp.num_remaining = 100
+                if self.unit.unit_type == 'HEAVY':
+                    arr = self.planner.heavy_by_factory[self.unit.factory_id]
+                else:
+                    arr = self.planner.light_by_factory[self.unit.factory_id]
 
-        ############# TODO: TESTING: ########################
-        if not isinstance(self.unit.status.current_action.sub_category, CombatActSubCategory):
-            self.unit.status.current_action.sub_category = CombatActSubCategory.RETREAT_HOLD
-            self.unit.status.attack_values.position = (40, 16)
-            logger.debug(f"Setting status to retreat_hold")
+                highest_coord = np.unravel_index(np.argmax(arr), arr.shape)
+                enemy = self.master.units.unit_at_position(highest_coord)
+                if arr[highest_coord] < 10 or enemy is None:
+                    # Not enough value, just go back to factory and await new instructions
+                    logger.warning(f'{self.unit.log_prefix} No good targets, returning to factory')
+                    return self.unit.action_handler.return_to_factory()
+                self.unit.status.attack_values.target = enemy
+            elif new_assignment == 'attack':
+                self.unit.status.current_action.sub_category = CombatActSubCategory.ATTACK_HOLD
+                nearest = util.nearest_non_zero(self.planner.attack_by_factory[self.unit.factory_id], self.unit.pos)
+                if nearest is None:
+                    logger.warning(f'{self.unit.log_prefix} No attack positions, returning to factory')
+                    return self.unit.action_handler.return_to_factory()
+                self.unit.status.attack_values.position = nearest
+            elif new_assignment == 'defend':
+                self.unit.status.current_action.sub_category = CombatActSubCategory.ATTACK_HOLD
+                nearest = util.nearest_non_zero(self.planner.defend_by_factory[self.unit.factory_id], self.unit.pos)
+                if nearest is None:
+                    logger.warning(f'{self.unit.log_prefix} No defend positions, returning to factory')
+                    return self.unit.action_handler.return_to_factory()
+                self.unit.status.attack_values.position = nearest
 
         """Add new actions to end of planned action queue"""
         # Make sure current queue is up to date with planned actions
         self.unit.action_queue = self.unit.status.planned_action_queue.copy()
-        self.unit.pos = self.unit.current_path(planned_actions=True)[-1]
+        self.unit.act_statuses = self.unit.status.planned_act_statuses.copy()
+        self.unit.pos = self.unit.current_path(planned_actions=True, max_len=50)[-1]
+
+        if self.unit.power_remaining() < self.unit.unit_config.BATTERY_CAPACITY*0.5 and util.manhattan(self.unit.pos, self.unit.factory.pos) < 15:
+            logger.info(f'close enough to factory and on low power, picking up power first')
+            path = self.unit.action_handler.path_to_factory()
+            status = self.unit.action_handler.add_path(path)
+            if status != self.SUCCESS:
+                logger.warning(f'failed to path to factory')
+                return status
+            status = self.unit.action_handler.add_pickup(amount=self.unit.unit_config.BATTERY_CAPACITY - self.unit.power_remaining(), allow_partial=True)
+            if status != self.SUCCESS:
+                logger.warning(f'failed to pickup from factory')
+                return status
 
         action_subtype = self.unit.status.current_action.sub_category
         if action_subtype == CombatActSubCategory.RETREAT_HOLD:
-            self.update_retreat_hold()
+            status = self.update_retreat_hold()
         elif action_subtype == CombatActSubCategory.ATTACK_HOLD:
-            self.update_attack_hold()
+            status = self.update_attack_hold()
         elif action_subtype == CombatActSubCategory.TEMPORARY:
-            self.update_attack_temporary()
+            status = self.update_attack_temporary()
         elif action_subtype == CombatActSubCategory.CONSERVE:
-            self.update_attack_conserve()
+            status = self.update_attack_conserve()
         elif action_subtype == CombatActSubCategory.RUN_AWAY:
-            self.update_runaway()
+            status = self.update_runaway()
         else:
             raise NotImplementedError(f"{action_subtype} not implemented")
-        self.unit.status.planned_action_queue = self.unit.action_queue.copy()
 
-        return True
+        return status
 
     def _get_hold_pos(self) -> Tuple[int, int]:
         hold_pos = tuple(self.unit.status.attack_values.position)
@@ -513,17 +548,24 @@ class CombatUnitPlanner(BaseUnitPlanner):
             self.unit.status.attack_values.position = hold_pos
         return hold_pos
 
-    def update_retreat_hold(self) -> bool:
+    def update_retreat_hold(self):
+        from unit_manager import EnemyUnitManager
         # Figure out where we are supposed to be holding position
         hold_pos = self._get_hold_pos()
 
         # If not at location, path there (ignoring enemies while retreating)
         within_dist = util.manhattan(hold_pos, self.unit.pos) < self.unit.status.attack_values.hold.pos_buffer
         if not within_dist:
-            success = self.add_path_to_pos(hold_pos)
-            if not success:
-                self.abort()
-                return False
+            enemy_at_hold = self.master.units.unit_at_position(hold_pos)
+            if enemy_at_hold is not None and isinstance(enemy_at_hold, EnemyUnitManager):
+                path = self.unit.action_handler.path_to_pos(hold_pos, target_enemy_id_num=enemy_at_hold.id_num)
+            else:
+                path = self.unit.action_handler.path_to_pos(hold_pos)
+            status = self.unit.action_handler.add_path(path, targeting_enemy=True)
+            if status != self.SUCCESS:
+                return status
+            return status
+
         # If at hold location
         else:
             # If enemies nearby switch mode
@@ -533,59 +575,62 @@ class CombatUnitPlanner(BaseUnitPlanner):
 
         # Otherwise do nothing, and that's OK
         self.unit.status.turn_status.action_queue_empty_ok = True
-        return True
+        return self.SUCCESS
 
-    def update_attack_hold(self) -> bool:
+    def update_attack_hold(self):
         # Are we close enough to hold pos
         hold_pos = self._get_hold_pos()
         enemies = self._enemies_in_radius(self.unit.status.attack_values.hold.attack_dist, pos=hold_pos)
 
         if enemies:
-            self._attack_best_enemy(enemies)
+            return self._attack_best_enemy(enemies)
         else:
             self.unit.status.current_action.sub_category = CombatActSubCategory.RETREAT_HOLD
             return self.update_retreat_hold()
-        return True
+        return self.SUCCESS
 
-    def update_attack_temporary(self) -> bool:
+    def update_attack_temporary(self):
         num = self.unit.status.attack_values.temp.num_remaining
         if num > 0:
             self.unit.status.attack_values.temp.num_remaining -= 1
-            target = self.unit.status.attack_values.target
-            if target is not None:
-                success = self._attack(target)
-                return success
+            enemy_unit = self.unit.status.attack_values.target
+            if enemy_unit is not None:
+                target = TargetInfo(enemy_unit, pos=enemy_unit.pos, dist=util.manhattan(self.unit.pos, enemy_unit.pos), value=100)
+                status = self._attack(target)
+                return status
             else:
                 logger.warning(
                     f"{self.unit.log_prefix}: Set to temporary attack, but no target, swapping back with {num} attack turns unused"
                 )
-        self.unit.status.update_action_status(self.unit.status.previous_action)
+        self.unit.status.update_action_status(self.unit.status.current_action.previous_action)
         self.unit.status.turn_status.replan_required = True
-        return True
+        return self.SUCCESS
 
     def update_runaway(self):
-        if self.unit.status.turn_status.next_dest.type == unit_status.DestType.FACTORY_QUEUE:
-            self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
-            return True
+        return self.unit.action_handler.return_to_factory()
 
-        success = self.add_path_to_factory_queue()
-        if not success:
-            logger.warning(
-                f"{self.unit.log_prefix} Failed to path to factory queue with default pathing, trying again only avoiding collisions"
-            )
-            success = self.add_path_to_factory_queue(avoid_collision_only=True)
-            if not success:
-                logger.error(f"{self.unit.log_prefix} Failed to path to factory queue even only avoiding collisions")
-                return self.abort()
+        # if self.unit.status.turn_status.next_dest.type == unit_status.DestType.FACTORY_QUEUE:
+        #     self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
+        #     return True
+        #
+        # success = self.add_path_to_factory_queue()
+        # if not success:
+        #     logger.warning(
+        #         f"{self.unit.log_prefix} Failed to path to factory queue with default pathing, trying again only avoiding collisions"
+        #     )
+        #     success = self.add_path_to_factory_queue(avoid_collision_only=True)
+        #     if not success:
+        #         logger.error(f"{self.unit.log_prefix} Failed to path to factory queue even only avoiding collisions")
+        #         return self.abort()
+        #
+        # self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
+        # return success
 
-        self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
-        return success
-
-    def _attack_best_enemy(self, enemies: List[TargetInfo]) -> bool:
+    def _attack_best_enemy(self, enemies: List[TargetInfo]):
         if len(enemies) == 0:
             logger.error(f"{self.unit.log_prefix}: attacking best enemies but enemies list empty")
-            raise ValueError
-            return False
+            status = self.unit.action_handler.return_to_factory()
+            return status
 
         enemies = list(reversed(sorted(enemies, key=lambda x: x.value)))
         best = enemies[0]
@@ -616,27 +661,29 @@ class CombatUnitPlanner(BaseUnitPlanner):
             dist = dists[coord[0], coord[1]]
             enemy = self.master.units.unit_at_position(coord)
             enemies.append(TargetInfo(enemy, coord, dist, value))
-
         return enemies
 
-    def _attack(self, enemy: TargetInfo) -> bool:
+    def _attack(self, enemy: TargetInfo):
         if enemy.dist > self.unit.status.attack_values.eliminate_threshold:
             # Move 1 short of best intercept (set enemy as target)
-            self.add_path_to_intercept(enemy, dist_from_true_intercept=1)
-            self.unit.status.attack_values.target = enemy
+            status = self.add_path_to_intercept(enemy, dist_from_true_intercept=1)
+            if status == self.SUCCESS:
+                self.unit.status.attack_values.target = enemy.unit
         else:
             if enemy.dist == 1 or (enemy.dist == 2 and self.unit.power > enemy.unit.power) or enemy.dist > 3:
                 # path directly toward enemy
-                success = self.add_path_to_enemy(enemy, collision_only=True)
+                path = self.unit.action_handler.path_to_pos(enemy.pos, target_enemy_id_num=enemy.unit.id_num)
+                status = self.unit.action_handler.add_path(path, targeting_enemy=True)
             # Should avoid direct collision if they are moving
             else:
                 # Assume if their path is short they are targeting me
                 if util.num_turns_of_actions(enemy.unit.action_queue) < 2:
-                    success = self.add_step_away_from_enemy(enemy)
+                    status = self.add_step_away_from_enemy(enemy)
                 # Assume they are standing still and go for them
                 else:
-                    success = self.add_path_to_enemy(enemy, collision_only=True)
-        return success
+                    path = self.unit.action_handler.path_to_pos(enemy.pos, target_enemy_id_num=enemy.unit.id_num)
+                    status = self.unit.action_handler.add_path(path, targeting_enemy=True)
+        return status
 
     def add_path_to_intercept(self, enemy: TargetInfo, dist_from_true_intercept: int = 0) -> bool:
         intercept = self.get_best_intercept(enemy)
@@ -644,7 +691,7 @@ class CombatUnitPlanner(BaseUnitPlanner):
         # Don't quite path to intercept
         if dist_from_true_intercept > 0 and len(path) > 1 + dist_from_true_intercept:
             path = path[:-dist_from_true_intercept]
-        return self.add_path_to_action_queue(path)
+        return self.unit.action_handler.add_path(path, targeting_enemy=True)
 
     def get_best_intercept(self, enemy: TargetInfo) -> Tuple[int, int]:
         enemy_location_ids = self.master.pathfinder.unit_paths.calculate_likely_unit_collisions(
@@ -673,15 +720,15 @@ class CombatUnitPlanner(BaseUnitPlanner):
             coord = enemy.pos
         return tuple(coord)
 
-    def add_step_away_from_enemy(self, enemy: TargetInfo) -> bool:
+    def add_step_away_from_enemy(self, enemy: TargetInfo):
         target = 2 * (enemy.pos - self.unit.pos)
         path = self.get_path_to_pos(target)
-        success = self.add_path_to_action_queue(path[:2])
-        return success
+        status = self.unit.action_handler.add_path(path, targeting_enemy=True)
+        return status
 
-    def add_path_to_enemy(self, enemy: TargetInfo, pos=None, collision_only=True) -> bool:
-        path = self.get_path_to_enemy(enemy, pos, collision_only=collision_only)
-        return self.add_path_to_action_queue(path)
+    # def add_path_to_enemy(self, enemy: TargetInfo, pos=None, collision_only=True) -> bool:
+    #     path = self.get_path_to_enemy(enemy, pos, collision_only=collision_only)
+    #     return self.add_path_to_action_queue(path)
 
     def get_path_to_enemy(self, enemy: TargetInfo, pos=None, collision_only=True) -> np.ndarray:
         pos = pos if pos is not None else enemy.pos
@@ -742,6 +789,10 @@ class CombatUnitPlanner(BaseUnitPlanner):
 
 
 class CombatPlanner(BaseGeneralPlanner):
+    prop_single_target = 0.1
+    prop_defend = 0.4
+    prop_attack = 0.5
+
     def __init__(self, master: MasterState):
         super().__init__(master)
         self.master = master
@@ -754,6 +805,11 @@ class CombatPlanner(BaseGeneralPlanner):
         # Map of current enemy locations and values of attacking that enemy (probably want to account for factory dist when using these)
         self.light_enemy_value_map: np.ndarray = np.zeros(self.master.maps.map_shape)
         self.heavy_enemy_value_map: np.ndarray = np.zeros(self.master.maps.map_shape)
+
+        self.light_by_factory = {}
+        self.heavy_by_factory = {}
+        self.defend_by_factory = {}
+        self.attack_by_factory = {}
 
     def update(self):
         # Keep track of targeted enemies (if unit no longer attacking, remove from targeted)
@@ -769,6 +825,12 @@ class CombatPlanner(BaseGeneralPlanner):
         for k in keys_to_pop:
             self.targeted_enemies.pop(k)
 
+        self.update_single_target_values()
+        self.update_single_target_by_factory()
+        self.update_defend_positions()
+        self.update_attack_positions()
+
+    def update_single_target_values(self):
         # Update enemy values
         self.light_enemy_value_map = np.zeros(self.master.maps.map_shape)
         self.heavy_enemy_value_map = np.zeros(self.master.maps.map_shape)
@@ -792,6 +854,39 @@ class CombatPlanner(BaseGeneralPlanner):
                 self.light_enemy_value_map[pos[0], pos[1]] = value
             else:
                 self.heavy_enemy_value_map[pos[0], pos[1]] = value
+
+    def update_single_target_by_factory(self):
+        for f_id, factory in self.master.factories.friendly.items():
+            dist_arr = factory.dist_array
+            dist_value = 0.8**dist_arr
+            self.light_by_factory[f_id] = dist_value * self.light_enemy_value_map
+            self.heavy_by_factory[f_id] = dist_value * self.heavy_enemy_value_map
+
+    def update_defend_positions(self):
+        for f_id, factory in self.master.factories.friendly.items():
+            num_light = factory.info.light_attacking
+            num_heavy = factory.info.heavy_attacking
+            total = num_heavy+num_light+2
+            circle = util.generate_circle_coordinates_array(factory.pos, N=round(self.prop_defend*total), radius=10)
+            self.defend_by_factory[f_id] = circle
+
+    def update_attack_positions(self):
+        for f_id, factory in self.master.factories.friendly.items():
+            nearest_enemy_factory = None
+            nearest = 999
+            for enemy_factory in self.master.factories.enemy.values():
+                dist = util.manhattan(factory.pos, enemy_factory.pos)
+                if dist < nearest:
+                    nearest_enemy_factory = enemy_factory
+                    nearest = dist
+            if nearest_enemy_factory and nearest < 15:
+                num_light = factory.info.light_attacking
+                num_heavy = factory.info.heavy_attacking
+                total = num_heavy+num_light+2
+                circle = util.generate_circle_coordinates_array(nearest_enemy_factory.pos, N=int(self.prop_attack*total), radius=10)
+                self.attack_by_factory[f_id] = circle
+            else:
+                self.attack_by_factory[f_id] = np.zeros(self.master.maps.map_shape)
 
     def get_unit_planner(self, unit: FriendlyUnitManager) -> CombatUnitPlanner:
         """Return a subclass of BaseUnitPlanner to actually update or create new actions for a single Unit"""
