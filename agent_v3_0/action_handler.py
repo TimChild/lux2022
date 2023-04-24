@@ -395,6 +395,13 @@ class ActionHandler:
                 return status
             return self.HandleStatus.DIG_INVALID_RETURNING
 
+        if max_digs < 1:
+            logger.warning(f"{self.unit.log_prefix} trying to dig  but not enough power, returning to  factory")
+            status = self.return_to_factory()
+            if status != self.HandleStatus.SUCCESS:
+                return status
+            return self.HandleStatus.LOW_POWER_RETURNING
+
         status = self._handle_nearby_enemy()
         if status != self.HandleStatus.SUCCESS:
             return status

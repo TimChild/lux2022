@@ -197,6 +197,47 @@ class FriendlyUnitManager(UnitManager):
         # update from planned actions
         self.act_statuses = copy.copy(self.status.planned_act_statuses)
 
+    def _recalculate_current_values(self):
+        """Assuming all actions are valid, just add up the transfers etc"""
+        from mining_planner import MineActSubCategory
+
+        self.pos = self.start_of_turn_pos
+        self.cargo = copy.copy(self.start_of_turn_cargo)
+        self.power = self.start_of_turn_power
+
+        self.pos = self.current_path(max_len=self.max_queue_step_length)[-1]
+        self.power -= self.power_cost_of_actions()
+
+        # And now cargo
+        for action, act_status in zip(self.action_queue, self.act_statuses):
+            act_type = action[util.ACT_TYPE]
+            rtype = action[util.ACT_RESOURCE]
+            dir = action[util.ACT_DIRECTION]
+            amount = action[util.ACT_AMOUNT]
+            n = action[util.ACT_N]
+            if act_type == util.DIG:
+                if act_status.sub_category == MineActSubCategory.ICE:
+                    self.cargo.ice += self.unit_config.DIG_RESOURCE_GAIN * n
+                elif act_status.sub_category == MineActSubCategory.ORE:
+                    self.cargo.ore += self.unit_config.DIG_RESOURCE_GAIN * n
+                continue
+            if act_type == util.TRANSFER:
+                if rtype == util.ICE:
+                    self.cargo.ice -= amount
+                elif rtype == util.ORE:
+                    self.cargo.ore -= amount
+                elif rtype == util.WATER:
+                    self.cargo.water -= amount
+                elif rtype == util.METAL:
+                    self.cargo.metal -= amount
+                continue
+
+    def reset_to_step(self, step: int):
+        self.status._reset_to_step(step)
+        self.action_queue = self.status.planned_action_queue.copy()
+        self.act_statuses = self.status.planned_act_statuses.copy()
+        self._recalculate_current_values()
+
     @property
     def cargo(self):
         return self._cargo

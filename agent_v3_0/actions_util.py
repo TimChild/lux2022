@@ -102,6 +102,8 @@ def replace_actions(existing_actions, start_step, end_step, new_actions) -> List
 
 def find_first_equal_pair_index(arr: np.ndarray, direction: str = "forward") -> Optional[int]:
     """Find index of first value of consecutive pair, or index of last value of last consecutive pair"""
+    if len(arr) <= 1:
+        return 0
     shifted_arr = np.roll(arr, shift=-1, axis=0)
     equal_pairs = np.all(arr[:-1] == shifted_arr[:-1], axis=1)
 

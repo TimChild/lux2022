@@ -232,6 +232,7 @@ class TurnStatus:
             unit.current_path(max_len=30, planned_actions=True), master.maps, master.pathfinder.unit_paths
         )
         self.factory_dist = util.manhattan(unit.start_of_turn_pos, unit.factory.pos)
+        # not used
         self.should_act_reasons = []
 
         # Gets set when stepping planned actions
@@ -274,6 +275,8 @@ class Status:
         self._step_update_planned_actions(unit)
         if len(self.planned_act_statuses) > 0:
             self.start_of_turn_action = self.planned_act_statuses[0].copy()
+            # If replanning, need to run to end anyway, so just initialize this at current step
+            self.current_action = self.start_of_turn_action.copy()
         else:
             self.start_of_turn_action = self.current_action.copy()
 
@@ -318,7 +321,7 @@ class Status:
             new_action.previous_action.previous_action = None
         self.current_action = new_action
 
-    def reset_to_step(self, step: int = 0):
+    def _reset_to_step(self, step: int = 0):
         """For resetting to ActStatus at step from now
         Returns ActStatus and queue before that action was applied (so that action can apply again from where it was)
 

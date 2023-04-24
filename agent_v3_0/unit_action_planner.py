@@ -242,10 +242,10 @@ class AllCloseUnits:
 
 class SingleUnitActionPlanner:
     # If unit has fewer than this many planned steps, replan
-    min_planned_steps = 10
+    min_planned_steps = 30
     # TODO: Not sure what happens if these numbers aren't equal to each other!
     # Check this many steps are valid in the planned queue
-    max_check_steps = 10
+    # max_check_steps = 30
 
     def __init__(
         self,
@@ -341,7 +341,6 @@ class SingleUnitActionPlanner:
     def _run_actions_to_step(self, max_check_steps):
         """If any of first few actions are not valid, reset unit to that point so repathing can happen"""
 
-
         # First action valid?
         if len(self.unit.status.planned_action_queue) == 0:
             logger.debug(f"Actions valid because 0 len")
@@ -355,7 +354,7 @@ class SingleUnitActionPlanner:
         self.unit.status.turn_status.next_action_was_valid = valid
         if not valid:
             logger.warning(f"{self.unit.log_prefix} First action invalid, resetting and returning")
-            self.unit.status.reset_to_step(step=0)
+            self.unit.reset_to_step(step=0)
             self.unit.reset_unit_to_start_of_turn_empty_queue()
             return self.unit.action_handler.HandleStatus.INVALID_FIRST_STEP
         logger.debug(f"First action valid")
@@ -367,7 +366,10 @@ class SingleUnitActionPlanner:
             if len(planned_actions) == 0:
                 logger.info(f"no more planned actions, so no point checking more collisions")
                 break
-            if collision.step < min(len(planned_actions), self.max_check_steps):
+            if collision.step < min(util.num_turns_of_actions(planned_actions), max_check_steps):
+                # print(
+                #     collision.step, util.num_turns_of_actions(planned_actions), len(planned_actions), self.unit.unit_id
+                # )
                 previous_dest_step = actions_util.find_dest_step_from_step(
                     planned_actions, collision.step, direction="backward"
                 )
@@ -377,7 +379,7 @@ class SingleUnitActionPlanner:
                     continue
                 else:
                     # Reset unit to before collision (will have to path from there)
-                    self.unit.status.reset_to_step(previous_dest_step)
+                    self.unit.reset_to_step(previous_dest_step)
                     continue
 
         # With Enemy
@@ -386,7 +388,7 @@ class SingleUnitActionPlanner:
             if len(planned_actions) == 0:
                 logger.info(f"no more planned actions, so no point checking more collisions")
                 break
-            if collision.step < min(len(planned_actions), self.max_check_steps):
+            if collision.step < min(len(planned_actions), max_check_steps):
                 previous_dest_step = actions_util.find_dest_step_from_step(
                     planned_actions, collision.step, direction="backward"
                 )
@@ -398,7 +400,7 @@ class SingleUnitActionPlanner:
                 if other_unit.unit_type == "HEAVY" and self.unit.unit_type == "LIGHT":
                     # Yes
                     logger.info(f"{other_id} is dangerous (they heavy we not), resetting queue to previous dest")
-                    self.unit.status.reset_to_step(previous_dest_step)
+                    self.unit.reset_to_step(previous_dest_step)
                     continue
                 if other_unit.unit_type == "LIGHT" and self.unit.unit_type == "HEAVY":
                     logger.info(f"{other_id} is not dangerous (we heavy they not) ignoring")
@@ -413,13 +415,13 @@ class SingleUnitActionPlanner:
                 if were_moving is False and theyre_moving is True:
                     # Yes
                     logger.info(f"{other_id} is dangerous (they moving, we not), resetting queue to previous dest")
-                    self.unit.status.reset_to_step(previous_dest_step)
+                    self.unit.reset_to_step(previous_dest_step)
                     continue
                 # both moving
                 if other_unit.power > self.unit.start_of_turn_power and collision.step < 3:
                     # Yes
                     logger.info(f"{other_id} is dangerous (they higher power), resetting queue to previous dest")
-                    self.unit.status.reset_to_step(previous_dest_step)
+                    self.unit.reset_to_step(previous_dest_step)
                     continue
                 logger.error(
                     f"colliding with {other_id} at step {collision.step} {collision.pos} but slipped through checks"
@@ -435,7 +437,7 @@ class SingleUnitActionPlanner:
                 f"{self.unit.log_prefix} Actions failed after {num_success} with status {status}, resetting to last successful"
             )
             # TODO: maybe don't want to actually reset here...
-            self.unit.status.reset_to_step(step=num_success)
+            self.unit.reset_to_step(step=num_success)
         logger.debug(f"passed initial validation")
         return status
 
@@ -443,6 +445,7 @@ class SingleUnitActionPlanner:
         # Will be using this a lot in here
         unit = self.unit
         HS = self.unit.action_handler.HandleStatus
+        target_steps = unit.max_queue_step_length
 
         logger.info(
             f"\nBeginning calculating action for {unit.unit_id}: power = {unit.power}, pos = {unit.pos}, \n"
@@ -458,7 +461,7 @@ class SingleUnitActionPlanner:
         # Check next few actions are valid
         # TODO: Should I change the check value?, lower than max leaves potentially invalid queues after X steps, on othe other hand
         # TODO: they may become valid by the time they are closer to occurring
-        max_check_steps = min(self.max_check_steps, unit.max_queue_step_length)
+        max_check_steps = min(target_steps, unit.max_queue_step_length)
         status = self._run_actions_to_step(max_check_steps)
         logger.debug(f"status of checks = {status}")
 
@@ -466,7 +469,10 @@ class SingleUnitActionPlanner:
         if (
             status == HS.SUCCESS
             and util.num_turns_of_actions(self.unit.status.planned_action_queue) > self.min_planned_steps
-            and not (self.unit.status.planned_action_queue[0][util.ACT_TYPE] == util.MOVE and self.unit.status.planned_action_queue[0][util.ACT_DIRECTION] == util.CENTER)
+            and not (
+                self.unit.status.planned_action_queue[0][util.ACT_TYPE] == util.MOVE
+                and self.unit.status.planned_action_queue[0][util.ACT_DIRECTION] == util.CENTER
+            )
         ):
             # Done, no need to do more
             logger.info(f"No need to update this units planned actions")
@@ -670,6 +676,7 @@ class MultipleUnitActionPlanner:
         self.debug_single_action_planners = {}
         self.debug_existing_paths = None
         self.debug_actions_returned = None
+        self.debug_ordered_df = None
 
     def update(
         self,
@@ -714,6 +721,7 @@ class MultipleUnitActionPlanner:
         )
 
         # Order units by which should act first
+        self.debug_ordered_df = None
         self.ordered_units = self._order_units()
 
         # Keep track of which units have acted or updated actions with this
@@ -992,6 +1000,15 @@ class MultipleUnitActionPlanner:
             turns_left_in_plan = util.num_turns_of_actions(unit.status.planned_action_queue)
             turns_left_in_real = util.num_turns_of_actions(unit.start_of_turn_actions)
             action_is_nothing = True if current_action.category == ActCategory.NOTHING else False
+            next_act_move = (
+                True
+                if len(unit.status.planned_action_queue) > 0
+                and unit.status.planned_action_queue[0][util.ACT_TYPE] == util.MOVE
+                else False
+            )
+            next_act_real_move = (
+                next_act_move and unit.status.planned_action_queue[0][util.ACT_DIRECTION] != util.CENTER
+            )
 
             unit_data = {
                 "unit_id": unit_id,
@@ -1005,6 +1022,8 @@ class MultipleUnitActionPlanner:
                 "last_real_update": unit.status.last_real_action_update_step,
                 "above_90_power": unit.start_of_turn_power > unit.unit_config.BATTERY_CAPACITY * 0.9,
                 "factory_dist": util.manhattan(unit.start_of_turn_pos, unit.factory.pos),
+                "next_act_move": next_act_move,
+                "next_act_real_move": next_act_real_move,
             }
 
             units_datas.append(unit_data)
@@ -1020,10 +1039,11 @@ class MultipleUnitActionPlanner:
                 "is_heavy": HIGHEST,
                 "nothing_action": HIGHEST,
                 "currently_acting": HIGHEST,
+                "next_act_move": LOWEST,  # moving ones should plan later
                 "below_15_power": HIGHEST,
-                "turns_left_in_plan": HIGHEST,
-                "turns_left_in_real": LOWEST,
-                "above_90_power": HIGHEST,
+                # "turns_left_in_plan": HIGHEST,
+                # "turns_left_in_real": LOWEST,
+                # "above_90_power": HIGHEST,
                 "factory_dist": LOWEST,
             }
 
@@ -1031,6 +1051,7 @@ class MultipleUnitActionPlanner:
             units_df.sort_values(
                 by=list(sort_conditions.keys()), ascending=list(sort_conditions.values()), inplace=True
             )
+            self.debug_ordered_df = units_df
 
             # Create an ordered dictionary with the sorted unit IDs
             ordered_units = OrderedDict()
