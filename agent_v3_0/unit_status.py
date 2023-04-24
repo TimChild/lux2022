@@ -300,9 +300,9 @@ class Status:
 
     def update_planned_action_queue(self, new_queue: List[np.ndarray], new_act_statuses: List[ActStatus]):
         if not isinstance(new_queue, list):
-            raise TypeError(f'Got {new_queue}, was expecting list of actions')
+            raise TypeError(f"Got {new_queue}, was expecting list of actions")
         if not isinstance(new_act_statuses, list):
-            raise TypeError(f'Got {new_act_statuses}, was expecting list of ActStatus')
+            raise TypeError(f"Got {new_act_statuses}, was expecting list of ActStatus")
         if not len(new_queue) == len(new_act_statuses):
             raise ValueError(f"{len(new_queue)} == {len(new_act_statuses)} did not evaluate True")
 
@@ -312,6 +312,9 @@ class Status:
     def update_action_status(self, new_action: ActStatus):
         """For updating with a new act status (keeps track of previous)"""
         new_action.previous_action = self.current_action.copy()
+        # Avoid an infinite list of these
+        if new_action.previous_action is not None:
+            new_action.previous_action.previous_action = None
         self.current_action = new_action
 
     def reset_to_step(self, step: int = 0):
@@ -398,7 +401,7 @@ class Status:
                 f"{unit.log_prefix}: len(actions) = {len(unit.start_of_turn_actions)} != len(planned) = {len(new_planned)}"
             )
             new_planned = unit.start_of_turn_actions.copy()
-            new_statuses = [ActStatus()]*len(new_planned)
+            new_statuses = [ActStatus()] * len(new_planned)
             valid = False
         elif np.all(unit.start_of_turn_actions[0] == new_planned[0]):
             logger.debug(f"planned_actions still valid")
@@ -408,7 +411,7 @@ class Status:
                 f"{unit.log_prefix} planned actions no longer match q1 = {unit.start_of_turn_actions[0]}, p1 = {new_planned[0]}. updating planned actions"
             )
             new_planned = unit.start_of_turn_actions.copy()
-            new_statuses = [ActStatus()]*len(new_planned)
+            new_statuses = [ActStatus()] * len(new_planned)
             valid = False
         self._debug_last_beginning_of_step_update = step
         self.update_planned_action_queue(new_planned, new_statuses)

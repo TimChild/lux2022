@@ -144,7 +144,7 @@ class ActionHandler:
         pos = from_pos if from_pos is not None else self.unit.pos
         # If coming from far away, other units can move if needed
         ignore_friendly = False
-        if util.manhattan(pos, self.unit.factory.pos) > 4:
+        if util.manhattan(pos, self.unit.factory.pos) > 5:
             ignore_friendly = True
 
         array = self.unit.factory.factory_loc

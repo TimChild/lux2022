@@ -64,9 +64,10 @@ DESIRED_WORK_RATIOS_DF = _to_df(_desires_work_ratios_dict)
 _desires_unit_ratios_dict = {
     "step": [1, 10, 100, 500, 850, 1000],
     "heavy": [1, 1, 1, 1, 1, 1],
-    "light": [0.01, 3, 8, 5, 3, 2],
+    "light": [0.01, 2, 3, 1, 2, 3],
 }
 DESIRED_UNIT_RATIOS_DF = _to_df(_desires_unit_ratios_dict)
+
 
 @dataclass
 class WorkRatios:
@@ -127,8 +128,6 @@ class WorkRatios:
             category = ActCategory.WAITING
 
         return ActStatus(category=category, sub_category=sub_category)
-
-
 
 
 @dataclass
@@ -519,12 +518,16 @@ class FactoryActionPlanner:
         steps_remaining = 1000 - self.master.step
         if steps_remaining > 700:
             if factory.cargo.water > min_water:
-                logger.debug(f"Current water = {factory.cargo.water}, water cost = {factory.water_cost}, min_water = {min_water}")
+                logger.debug(
+                    f"Current water = {factory.cargo.water}, water cost = {factory.water_cost}, min_water = {min_water}"
+                )
                 logger.info(f"{factory.unit_id} midgame watering because above min water")
                 return factory.factory.water()
         else:
             if factory.cargo.water - min_water > (factory.water_cost * steps_remaining):
-                logger.debug(f"Current water = {factory.cargo.water}, water cost = {factory.water_cost}, min_water = {min_water}")
+                logger.debug(
+                    f"Current water = {factory.cargo.water}, water cost = {factory.water_cost}, min_water = {min_water}"
+                )
                 logger.info(f"{factory.unit_id} endgame watering because won't run out with this water cost")
                 return factory.factory.water()
         return None
@@ -535,9 +538,7 @@ class FactoryActionPlanner:
         """
         actions = {}
         for factory in self.factories.values():
-            center_occupied = (
-                True if self.master.units.friendly.unit_at_position(factory.pos) is not None else False
-            )
+            center_occupied = True if self.master.units.friendly.unit_at_position(factory.pos) is not None else False
             action = None
 
             # Only consider building if center not occupied
