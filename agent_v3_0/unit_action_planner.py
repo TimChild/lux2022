@@ -340,6 +340,8 @@ class SingleUnitActionPlanner:
 
     def _run_actions_to_step(self, max_check_steps):
         """If any of first few actions are not valid, reset unit to that point so repathing can happen"""
+
+
         # First action valid?
         if len(self.unit.status.planned_action_queue) == 0:
             logger.debug(f"Actions valid because 0 len")
@@ -464,6 +466,7 @@ class SingleUnitActionPlanner:
         if (
             status == HS.SUCCESS
             and util.num_turns_of_actions(self.unit.status.planned_action_queue) > self.min_planned_steps
+            and not (self.unit.status.planned_action_queue[0][util.ACT_TYPE] == util.MOVE and self.unit.status.planned_action_queue[0][util.ACT_DIRECTION] == util.CENTER)
         ):
             # Done, no need to do more
             logger.info(f"No need to update this units planned actions")

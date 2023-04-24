@@ -1071,20 +1071,22 @@ class MiningUnitPlanner(BaseUnitPlanner):
             logger.debug(f"trying to path to resource")
             path = self.unit.action_handler.path_to_pos(pos=resource.pos)
             if len(path) == 0:
-                if util.manhattan(self.unit.pos, resource.pos) > 4:
-                    near_array = util.generate_circle_coordinates_array(resource.pos, N=8, radius=2)
-                    path = self.unit.action_handler.path_to_nearest_non_zero(near_array)
-                    status = self.unit.action_handler.add_path(path)
-                    if status == self.SUCCESS:
-                        logger.info(f"{resource.pos} is blocked, pathing near and pausing pathing")
-                        self.unit.status.turn_status.action_queue_empty_ok = True
-                        return self.unit.action_handler.HandleStatus.PAUSING
-                    else:
-                        return status
-                else:
-                    logger.info(f"{resource.pos} is blocked, already near, just pausing pathing")
-                    self.unit.status.turn_status.action_queue_empty_ok = True
-                    return self.unit.action_handler.HandleStatus.PAUSING
+                pass
+                # if util.manhattan(self.unit.pos, resource.pos) > 4:
+                #     near_array = util.generate_circle_coordinates_array(resource.pos, N=8, radius=2)
+                #
+                #     path = self.unit.action_handler.path_to_nearest_non_zero(near_array)
+                #     status = self.unit.action_handler.add_path(path)
+                #     if status == self.SUCCESS:
+                #         logger.info(f"{resource.pos} is blocked, pathing near and pausing pathing")
+                #         self.unit.status.turn_status.action_queue_empty_ok = True
+                #         return self.unit.action_handler.HandleStatus.PAUSING
+                #     else:
+                #         return status
+                # else:
+                #     logger.info(f"{resource.pos} is blocked, already near, just pausing pathing")
+                #     self.unit.status.turn_status.action_queue_empty_ok = True
+                #     return self.unit.action_handler.HandleStatus.PAUSING
             status = self.unit.action_handler.add_path(path)
             if status != self.SUCCESS:
                 return status
