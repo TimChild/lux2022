@@ -470,6 +470,7 @@ class SingleUnitActionPlanner:
         # If status success and no more updates needed
         if (
             status == HS.SUCCESS
+            and not (self.unit.status.turn_status.must_move and not self.unit.next_action_is_move())
             and util.num_turns_of_actions(self.unit.status.planned_action_queue) > self.min_planned_steps
             and not (
                 self.unit.status.planned_action_queue[0][util.ACT_TYPE] == util.MOVE
