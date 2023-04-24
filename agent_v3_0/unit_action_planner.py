@@ -260,7 +260,7 @@ class SingleUnitActionPlanner:
         collision_resolve_max_step: int,
     ):
         self.unit = unit
-        self.units_to_act = units_to_act,
+        self.units_to_act = units_to_act
         self.master = master
         self.multi_planner = multi_planner
         self.current_paths = current_paths
@@ -354,6 +354,7 @@ class SingleUnitActionPlanner:
         if not valid:
             logger.warning(f"{self.unit.log_prefix} First action invalid, resetting and returning")
             self.unit.status.reset_to_step(step=0)
+            self.unit.reset_unit_to_start_of_turn_empty_queue()
             return self.unit.action_handler.HandleStatus.INVALID_FIRST_STEP
         logger.debug(f"First action valid")
 
@@ -361,11 +362,16 @@ class SingleUnitActionPlanner:
         # With Friendly
         for collision in self.collision_info.with_friendly.all.values():
             planned_actions = self.unit.status.planned_action_queue
-            previous_dest_step = actions_util.find_dest_step_from_step(planned_actions, collision.step, direction='backward')
+            if len(planned_actions) == 0:
+                logger.info(f"no more planned actions, so no point checking more collisions")
+                break
             if collision.step < min(len(planned_actions), self.max_check_steps):
+                previous_dest_step = actions_util.find_dest_step_from_step(
+                    planned_actions, collision.step, direction="backward"
+                )
                 other_id = collision.other_unit_id
                 if other_id in self.units_to_act.needs_to_act:
-                    logger.info(f'{self.unit.unit_id} assuming {other_id} will get out of the way')
+                    logger.info(f"{self.unit.unit_id} assuming {other_id} will get out of the way")
                     continue
                 else:
                     # Reset unit to before collision (will have to path from there)
@@ -373,42 +379,49 @@ class SingleUnitActionPlanner:
                     continue
 
         # With Enemy
-        for collision in self.collision_info.with_friendly.all.values():
+        for collision in self.collision_info.with_enemy.all.values():
             planned_actions = self.unit.status.planned_action_queue
-            previous_dest_step = actions_util.find_dest_step_from_step(planned_actions, collision.step, direction='backward')
+            if len(planned_actions) == 0:
+                logger.info(f"no more planned actions, so no point checking more collisions")
+                break
             if collision.step < min(len(planned_actions), self.max_check_steps):
+                previous_dest_step = actions_util.find_dest_step_from_step(
+                    planned_actions, collision.step, direction="backward"
+                )
                 other_id = collision.other_unit_id
                 other_unit = self.master.units.enemy.get_unit(other_id)
                 if other_unit is None:
                     continue
                 # Is the unit a danger?
-                if other_unit.unit_type == 'HEAVY' and self.unit.unit_type == 'LIGHT':
+                if other_unit.unit_type == "HEAVY" and self.unit.unit_type == "LIGHT":
                     # Yes
-                    logger.info(f'{other_id} is dangerous (they heavy we not), resetting queue to previous dest')
+                    logger.info(f"{other_id} is dangerous (they heavy we not), resetting queue to previous dest")
                     self.unit.status.reset_to_step(previous_dest_step)
                     continue
-                if other_unit.unit_type == 'LIGHT' and self.unit.unit_type == 'HEAVY':
-                    logger.info(f'{other_id} is not dangerous (we heavy they not) ignoring')
+                if other_unit.unit_type == "LIGHT" and self.unit.unit_type == "HEAVY":
+                    logger.info(f"{other_id} is not dangerous (we heavy they not) ignoring")
                     # No
                     continue
                 were_moving = actions_util.was_unit_moving_at_step(planned_actions, collision.step)
                 theyre_moving = actions_util.was_unit_moving_at_step(other_unit.action_queue, collision.step)
                 if were_moving and theyre_moving is False:
-                    logger.info(f'{other_id} is not dangerous (we moving they not) ignoring')
+                    logger.info(f"{other_id} is not dangerous (we moving they not) ignoring")
                     # No
                     continue
                 if were_moving is False and theyre_moving is True:
                     # Yes
-                    logger.info(f'{other_id} is dangerous (they moving, we not), resetting queue to previous dest')
+                    logger.info(f"{other_id} is dangerous (they moving, we not), resetting queue to previous dest")
                     self.unit.status.reset_to_step(previous_dest_step)
                     continue
                 # both moving
                 if other_unit.power > self.unit.start_of_turn_power and collision.step < 3:
                     # Yes
-                    logger.info(f'{other_id} is dangerous (they higher power), resetting queue to previous dest')
+                    logger.info(f"{other_id} is dangerous (they higher power), resetting queue to previous dest")
                     self.unit.status.reset_to_step(previous_dest_step)
                     continue
-                logger.error(f'colliding with {other_id} at step {collision.step} {collision.pos} but slipped through checks')
+                logger.error(
+                    f"colliding with {other_id} at step {collision.step} {collision.pos} but slipped through checks"
+                )
 
         # Try running units actions
         actions_to_check = actions_util.split_actions_at_step(self.unit.status.planned_action_queue, max_check_steps)[0]

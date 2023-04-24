@@ -88,7 +88,7 @@ class ActionHandler:
         self._add_current_act_status(len(actions), targeting_enemy=targeting_enemy, allow_partial=allow_partial)
         return self.HandleStatus.SUCCESS
 
-    def get_costmap(self, collision_only=None, target_enemy_id_num: Optional[int] = None):
+    def get_costmap(self, collision_only=None, target_enemy_id_num: Optional[int] = None, ignore_friendly=False):
         """Get costmap at current step"""
         if collision_only is None:
             # TODO: Check whether collision only works OK
@@ -99,8 +99,8 @@ class ActionHandler:
         cm = self.pathfinder.generate_costmap(
             self.unit,
             ignore_id_nums=ignore_ids,
-            friendly_light=True,
-            friendly_heavy=True,
+            friendly_light=True if not ignore_friendly else False,
+            friendly_heavy=True if not ignore_friendly else False,
             enemy_light=None,
             enemy_heavy=True,
             collision_only=collision_only,
@@ -117,12 +117,12 @@ class ActionHandler:
         path = self.pathfinder.fast_path(from_pos, pos, cm, margin=4)
         return path
 
-    def path_to_nearest_non_zero(self, non_zero_array: np.ndarray, from_pos=None, max_attempts=20) -> np.ndarray:
+    def path_to_nearest_non_zero(self, non_zero_array: np.ndarray, from_pos=None, max_attempts=20, ignore_friendly=False) -> np.ndarray:
         """Calculate path to nearest available non-zero in array"""
         pos = from_pos if from_pos is not None else self.unit.pos
         path = util.calculate_path_to_nearest_non_zero(
             self.pathfinder,
-            self.get_costmap(),
+            self.get_costmap(ignore_friendly=ignore_friendly),
             from_pos=pos,
             target_array=non_zero_array,
             near_pos=pos,
@@ -140,8 +140,13 @@ class ActionHandler:
     def path_to_factory(self, from_pos: util.POS_TYPE = None) -> np.ndarray:
         """Get path to factory tile"""
         pos = from_pos if from_pos is not None else self.unit.pos
+        # If coming from far away, other units can move if needed
+        ignore_friendly = False
+        if util.manhattan(from_pos, self.unit.factory.pos) > 4:
+            ignore_friendly = True
+
         array = self.unit.factory.factory_loc
-        path = self.path_to_nearest_non_zero(array, from_pos=pos)
+        path = self.path_to_nearest_non_zero(array, from_pos=pos, ignore_friendly=ignore_friendly)
         return path
 
     def path_to_factory_queue(self) -> np.ndarray:
@@ -188,6 +193,8 @@ class ActionHandler:
         # If unit has cargo, path direct to factory and set DROPOFF
         if self.unit.cargo_total > 0:
             path_to_factory = self.path_to_factory()
+            if len(path_to_factory) == 0:
+                return self.HandleStatus.PATHING_FAILED
             status = self.add_path(path_to_factory)
             if status != self.HandleStatus.SUCCESS:
                 return status
@@ -199,6 +206,8 @@ class ActionHandler:
             return self.HandleStatus.SUCCESS
         else:
             path_to_queue = self.path_to_factory_queue()
+            if len(path_to_queue) == 0:
+                return self.HandleStatus.PATHING_FAILED
             status = self.add_path(path_to_queue)
             if status != self.HandleStatus.SUCCESS:
                 return status

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+
 class GeneralUnitPlanner(BaseUnitPlanner):
     factory_power_low_thresh = 300
     factory_power_med_thresh = 700
@@ -22,7 +23,7 @@ class GeneralUnitPlanner(BaseUnitPlanner):
     unit_power_med_thresh = 0.5
     unit_power_high_thresh = 0.9
 
-    def  __init__(self, master: MasterState, general_planner: GeneralPlanner, unit: FriendlyUnitManager):
+    def __init__(self, master: MasterState, general_planner: GeneralPlanner, unit: FriendlyUnitManager):
         super().__init__(master, general_planner, unit)
         self.planner: GeneralPlanner = general_planner
 
@@ -30,42 +31,45 @@ class GeneralUnitPlanner(BaseUnitPlanner):
         self.SUCCESS = self.unit.action_handler.HandleStatus.SUCCESS
 
     def update_planned_actions(self) -> ActionHandler.HandleStatus:
-
-        act_cat = self.unit.status.current_action.category
         status = None
-        if act_cat == ActCategory.DROPOFF:
+        if self.unit.status.current_action.category == ActCategory.DROPOFF:
             status = self.update_dropoff()
             if status != self.SUCCESS:
                 return status
-        if act_cat == ActCategory.TRANSFER:
+        if self.unit.status.current_action.category == ActCategory.TRANSFER:
             status = self.update_transfer()
             if status != self.SUCCESS:
                 return status
-        if act_cat in [ActCategory.NOTHING, ActCategory.WAITING]:
+        if self.unit.status.current_action.category in [ActCategory.NOTHING, ActCategory.WAITING]:
             status = self.update_idle()
             if status != self.SUCCESS:
                 return status
         if status is None:
-            raise ValueError(f'{act_cat} not valid for GeneralPlanner')
+            raise ValueError(f"{self.unit.status.current_action.category} not valid for GeneralPlanner")
 
         return self.SUCCESS
 
     def update_idle(self) -> ActionHandler.HandleStatus:
         planned = self.unit.status.planned_action_queue
         start_pos = self.unit.start_of_turn_pos
-        logger.debug(f'Updating idle unit')
+        logger.debug(f"Updating idle unit")
 
         # If finishing previous plans
         if len(planned) > 0:
             path = self.unit.current_path(max_len=self.unit.max_queue_step_length)
             end_pos = path[-1]
-            if self.unit.factory.factory_loc[end_pos[0], end_pos[1]] > 0 or self.unit.factory.queue_array[end_pos[0], end_pos[1]] > 0:
-                logger.debug(f'unit still pathing toward factory')
+            if (
+                self.unit.factory.factory_loc[end_pos[0], end_pos[1]] > 0
+                or self.unit.factory.queue_array[end_pos[0], end_pos[1]] > 0
+            ):
+                logger.debug(f"unit still pathing toward factory")
                 return self.SUCCESS
             else:
                 self.unit.reset_unit_to_start_of_turn_empty_queue()
                 status = self.unit.action_handler.return_to_factory()
-                logger.warning(f'{self.unit.log_prefix} current path not ending at factory. Re-pathing unit toward factory')
+                logger.warning(
+                    f"{self.unit.log_prefix} current path not ending at factory. Re-pathing unit toward factory"
+                )
                 return status
 
         # Can new actions be assigned to this unit
@@ -73,21 +77,21 @@ class GeneralUnitPlanner(BaseUnitPlanner):
             # Check in correct place
             if self.unit.on_own_factory() or self.unit.factory.queue_array[start_pos[0], start_pos[1]] > 0:
                 new_work = self.possible_assign_new_work()
-                logger.debug(f'new_work = {new_work}')
+                logger.debug(f"new_work = {new_work}")
                 if new_work == self.SUCCESS:
                     # New job will generate actions
                     return self.SUCCESS
                 elif self.unit.status.turn_status.must_move:
-                    logger.debug(f'handling must move')
+                    logger.debug(f"handling must move")
                     self.unit.reset_unit_to_start_of_turn_empty_queue()
                     status = self.unit.action_handler.return_to_factory()
                     return status
                 else:
-                    logger.debug(f'doing nothing, OK')
+                    logger.debug(f"doing nothing, OK")
                     self.unit.status.turn_status.action_queue_empty_ok = True
                     return self.SUCCESS
             else:
-                logger.warning(f'unit had no actions and was not at factory, returning now')
+                logger.warning(f"unit had no actions and was not at factory, returning now")
                 self.unit.reset_unit_to_start_of_turn_empty_queue()
                 status = self.unit.action_handler.return_to_factory()
                 return status
@@ -95,7 +99,9 @@ class GeneralUnitPlanner(BaseUnitPlanner):
 
     def possible_assign_new_work(self) -> ActionHandler.HandleStatus:
         if len(self.unit.status.planned_action_queue) > 0:
-            raise RuntimeError(f'{self.unit.log_prefix} has {len(self.unit.status.planned_action_queue)} actions remaining')
+            raise RuntimeError(
+                f"{self.unit.log_prefix} has {len(self.unit.status.planned_action_queue)} actions remaining"
+            )
 
         # Start with fresh queue when doing new work
         self.unit.reset_unit_to_start_of_turn_empty_queue()
@@ -114,31 +120,30 @@ class GeneralUnitPlanner(BaseUnitPlanner):
 
         if act_cat == ActCategory.NOTHING:
             self.unit.status.update_action_status(new_action=next_action)
-            logger.info(f'NOTHING, assigned {next_action}')
+            logger.info(f"NOTHING, assigned {next_action}")
             return self.SUCCESS
 
         # Assign units that have lots of energy already
         if factory_power > self.factory_power_low_thresh:
             if unit_power_ratio > self.unit_power_high_thresh:
                 self.unit.status.update_action_status(new_action=next_action)
-                logger.info(f'unit has high power, assigned {next_action}')
+                logger.info(f"unit has high power, assigned {next_action}")
                 return self.SUCCESS
         if factory_power > self.factory_power_med_thresh:
             if unit_power_ratio > self.unit_power_med_thresh:
                 self.unit.status.update_action_status(new_action=next_action)
-                logger.info(f'unit has med power, assigned {next_action}')
+                logger.info(f"unit has med power, assigned {next_action}")
                 return self.SUCCESS
         if factory_power > self.factory_power_low_thresh:
             if unit_power_ratio > self.unit_power_low_thresh:
                 self.unit.status.update_action_status(new_action=next_action)
-                logger.info(f'unit has low power, assigned {next_action}')
+                logger.info(f"unit has low power, assigned {next_action}")
                 return self.SUCCESS
 
-        logger.info(f'Not enough factory power to assign ne work to {self.unit.unit_id}')
+        logger.info(f"Not enough factory power to assign ne work to {self.unit.unit_id}")
         return self.unit.action_handler.HandleStatus.NOT_ENOUGH_POWER_TO_ASSIGN
 
     def update_dropoff(self):
-
         planned = self.unit.status.planned_action_queue
         start_pos = self.unit.start_of_turn_pos
 
@@ -158,7 +163,9 @@ class GeneralUnitPlanner(BaseUnitPlanner):
             self.unit.cargo = self.unit.start_of_turn_cargo
             # If still cargo, dropoff
             if self.unit.cargo_total > 0:
-                logger.warning(f'{self.unit.log_prefix} having to add the final dropoff actions to empty cargo {self.unit.cargo_total}')
+                logger.warning(
+                    f"{self.unit.log_prefix} having to add the final dropoff actions to empty cargo {self.unit.cargo_total}"
+                )
                 status = self.unit.action_handler.return_to_factory()
                 return status
             # Else
@@ -166,15 +173,6 @@ class GeneralUnitPlanner(BaseUnitPlanner):
                 self.unit.status.update_action_status(ActStatus(category=ActCategory.WAITING))
                 return self.SUCCESS
         logger.error(f"dont think this should be reachable")
-
-
-
-
-
-
-
-
-
 
 
 class GeneralPlanner(BaseGeneralPlanner):
@@ -186,8 +184,10 @@ class GeneralPlanner(BaseGeneralPlanner):
     @property
     def work_ratios(self) -> Dict[str, WorkRatios]:
         return self.factory_planner.get_factory_work_ratios()
+
     def update(self):
         pass
+
     # New
     def get_unit_planner(self, unit: FriendlyUnitManager) -> GeneralUnitPlanner:
         """Return a subclass of BaseUnitPlanner to actually update or create new actions for a single Unit"""

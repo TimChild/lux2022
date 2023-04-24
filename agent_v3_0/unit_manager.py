@@ -180,9 +180,6 @@ class FriendlyUnitManager(UnitManager):
     def update(self, unit: Unit):
         """Beginning of turn update"""
         super().update(unit)
-        # update from planned actions
-        self.act_statuses = copy.copy(self.status.planned_act_statuses)
-
         # Avoid changing the actual pos of unit.pos (which the env also uses)
         self.start_of_turn_actions = list(copy.copy(unit.action_queue))
         self.start_of_turn_pos = tuple(unit.pos)
@@ -197,6 +194,8 @@ class FriendlyUnitManager(UnitManager):
 
         # Update after the unit is updated (uses start_of_turn...)
         self.status.update(self, self.master)
+        # update from planned actions
+        self.act_statuses = copy.copy(self.status.planned_act_statuses)
 
     @property
     def cargo(self):

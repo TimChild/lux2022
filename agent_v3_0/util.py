@@ -418,7 +418,9 @@ class CollectInfoFromEnv:
 ##########################################
 
 
-def generate_circle_coordinates_array(center: Tuple[int, int], N: int, radius: float, max_coord: int = 48) -> np.ndarray:
+def generate_circle_coordinates_array(
+    center: Tuple[int, int], N: int, radius: float, max_coord: int = 48
+) -> np.ndarray:
     x, y = center
     angles = np.linspace(0, 2 * np.pi, N + 1)[:-1]  # Exclude the last angle (2 * pi) to avoid overlap
 
@@ -1748,10 +1750,12 @@ def calculate_path_to_nearest_non_zero(
     while attempts < max_attempts:
         attempts += 1
         coord = nearest_non_zero(array, near_pos)
+        if coord is None:
+            break
         # If already there
         if tuple(coord) == tuple(from_pos):
             return np.array([from_pos])  # Path is list of positions
-        if coord is not None:
+        else:
             path = pathfinder.fast_path(
                 from_pos,
                 coord,
