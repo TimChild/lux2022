@@ -204,7 +204,8 @@ def calc_best_direction(pos: Tuple[int, int], value_array: np.ndarray, costmap: 
 
 
 class RubbleRoutePlanner:
-    target_queue_length = 20
+    # target_queue_length = 20
+    target_num_steps = 20
 
     def __init__(
         self,
@@ -234,51 +235,56 @@ class RubbleRoutePlanner:
         self._future_rubble = self.rubble.copy()
         self._future_value = self.rubble_value_map.copy()
 
-    def make_route(self, unit_must_move: bool) -> bool:
-        if unit_must_move:
-            logger.info(f"Acknowledged must move, setting rubble to zero under unit at pos {self.unit.pos}")
-            # Don't count rubble under current position (will ensure move from this location)
-            self._future_rubble[self.unit.pos_slice] = 0
-            # If on factory, move to new spot first
-            if self._unit_starting_on_factory():
-                logger.debug(f"Also moving on factory to get out of the way")
-                #  TODO: make the move toward the best area to rubble clear instead of just anywhere on factory
-                success = move_to_new_spot_on_factory(self.pathfinder, self.unit, self.factory)
-                if not success:
-                    logger.warning(f"Need to move, but no other location on factory to move to")
-                    return False
+    # def make_route(self, unit_must_move: bool) -> bool:
+    def make_route(self):
+        #
+        # if unit_must_move:
+        #     logger.info(f"Acknowledged must move, setting rubble to zero under unit at pos {self.unit.pos}")
+        #     # Don't count rubble under current position (will ensure move from this location)
+        #     self._future_rubble[self.unit.pos_slice] = 0
+        #     # If on factory, move to new spot first
+        #     if self._unit_starting_on_factory():
+        #         logger.debug(f"Also moving on factory to get out of the way")
+        #         #  TODO: make the move toward the best area to rubble clear instead of just anywhere on factory
+        #         success = move_to_new_spot_on_factory(self.pathfinder, self.unit, self.factory)
+        #         if not success:
+        #             logger.warning(f"Need to move, but no other location on factory to move to")
+        #             return False
 
-        # Calculate actions from factory (pickup power and move to good starting location)
-        if self._unit_starting_on_factory():
-            success = self._from_factory_actions()
-            logger.debug(f"from factory action success = {success}")
-            if not success:
-                return False
+        # # Calculate actions from factory (pickup power and move to good starting location)
+        # if self._unit_starting_on_factory():
+        #     success = self._from_factory_actions()
+        #     logger.debug(f"from factory action success = {success}")
+        #     if not success:
+        #         return False
 
         # Calculate rubble route near good location until queue length reached
         kernel = 0.8 ** manhattan_kernel(5)
         for i in range(20):  # max no. loops (should break out before this)
-            if len(self.unit.action_queue) < self.target_queue_length:
+            # if len(self.unit.action_queue) < self.target_queue_length:
+            if util.num_turns_of_actions(self.unit.action_queue) < self.target_num_steps:
                 logger.debug(f"Adding rubble_clear_action")
                 costmap = self.pathfinder.generate_costmap(self.unit)
 
                 # How much power left to do rubble clearing
-                path_to_factory = self._path_to_factory(costmap)
-                cost_to_factory = (
-                    power_cost_of_path(
-                        path=path_to_factory,
-                        rubble=self.rubble,
-                        unit_type=self.unit.unit_type,
-                    )
-                    + 1
-                    * self.unit.unit_config.MOVE_COST
-                    * self._future_rubble[self.unit.pos_slice]
-                    * self.unit.unit_config.RUBBLE_MOVEMENT_COST
-                )
-                if cost_to_factory > 0.5 * self.unit.unit_config.BATTERY_CAPACITY:
-                    logger.warning(
-                        f"{self.unit.log_prefix} cost back to factory high {cost_to_factory}. path = {path_to_factory}"
-                    )
+                cost_to_factory = self.unit.action_handler.path_to_factory_cost()
+                # path_to_factory = self._path_to_factory(costmap)
+                #
+                # cost_to_factory = (
+                #     power_cost_of_path(
+                #         path=path_to_factory,
+                #         rubble=self.rubble,
+                #         unit_type=self.unit.unit_type,
+                #     )
+                #     + 1
+                #     * self.unit.unit_config.MOVE_COST
+                #     * self._future_rubble[self.unit.pos_slice]
+                #     * self.unit.unit_config.RUBBLE_MOVEMENT_COST
+                # )
+                # if cost_to_factory > 0.5 * self.unit.unit_config.BATTERY_CAPACITY:
+                #     logger.warning(
+                #         f"{self.unit.log_prefix} cost back to factory high {cost_to_factory}. path = {path_to_factory}"
+                #     )
                 power_remaining = self.unit.power_remaining() - cost_to_factory
 
                 # Get values to clear nearby (allowed movements only)
@@ -303,28 +309,23 @@ class RubbleRoutePlanner:
                 ] * self.unit.unit_config.RUBBLE_MOVEMENT_COST and (value_at_pos > 0 or value_to_move > 0):
                     logger.debug(f"Enough power to add another action. power_remaining = {power_remaining}")
                     # If enough power, get next action
-                    success = self._calculate_next_action(
+                    status = self._calculate_next_action(
                         power_remaining=power_remaining,
                         value_at_pos=value_at_pos,
                         value_to_move=value_to_move,
                         new_pos=new_pos,
                     )
-                    if not success:
+                    if status != self.unit.action_handler.HandleStatus.SUCCESS:
                         logger.warning(f"Next action failed, at pos {self.unit.pos}")
-                        return False
+                        return status
                 else:
                     logger.debug(
                         f"Not enough power remaining = {power_remaining}, adding path to factory (cost={cost_to_factory})"
                     )
-                    # Otherwise path to factory and break out of loop (done)
-                    if len(path_to_factory) > 0:
-                        self.pathfinder.append_path_to_actions(self.unit, path_to_factory)
-                    else:
-                        logger.warning(f"{self.unit.log_prefix} No path back to factory")
-                    break
+                    return self.unit.action_handler.return_to_factory()
         else:
             logger.error(f"Got stuck in loop, breaking out now")
-        return True
+            return self.unit.action_handler.return_to_factory()
 
     def _unit_starting_on_factory(self) -> bool:
         if self.factory.factory_loc[self.unit_start_pos[0], self.unit_start_pos[1]] == 1:
@@ -352,7 +353,10 @@ class RubbleRoutePlanner:
                 logger.error(f"digs_required={digs_required}, digs planned (n)={n}, << MUST BE POSITIVE")
                 return False
             logger.info(f"digs_required={digs_required}, digs planned (n)={n}")
-            self.unit.action_queue.append(self.unit.dig(n=n))
+            status = self.unit.action_handler.add_dig(n_digs=n)
+            if status != self.unit.action_handler.HandleStatus.SUCCESS:
+                return status
+            # self.unit.action_queue.append(self.unit.dig(n=n))
             self._future_rubble[self.unit.pos[0], self.unit.pos[1]] = rubble_after
             if rubble_after == 0:
                 self._future_value[self.unit.pos[0], self.unit.pos[1]] = 0  # No more value there
@@ -363,19 +367,16 @@ class RubbleRoutePlanner:
             # Should only be pathing to adjacent cell, but safer to use this
             cm = self.pathfinder.generate_costmap(self.unit, collision_only=True)
             path = self.pathfinder.fast_path(self.unit.pos, new_pos, costmap=cm)
-            if len(path) > 0:
-                self.pathfinder.append_path_to_actions(self.unit, path)
-            else:
-                logger.error(f"{self.unit.log_prefix} No path from {self.unit.pos} to {new_pos}")
-                return False
-
+            status = self.unit.action_handler.add_path(path)
+            if status != self.unit.action_handler.HandleStatus.SUCCESS:
+                return status
         # Not near any high value, shouldn't get here
         else:
             logger.error(
                 f"While calculating next action, values were all zero. (adding move center)",
             )
-            return False
-        return True
+            return self.unit.action_handler.return_to_factory()
+        return status
 
     def _from_factory_actions(self) -> bool:
         """Generate starting actions assuming starting on factory"""
@@ -461,116 +462,165 @@ class RubbleClearingRecommendation(Recommendation):
 
 
 class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
+    min_power = 0.4
+    def __init__(self, master: MasterState, general_planner: ClearingPlanner, unit: FriendlyUnitManager):
+        super().__init__(master, general_planner, unit)
+        self.planner = general_planner
+
+        self.SUCCESS = self.unit.action_handler.HandleStatus.SUCCESS
+
+    def _get_best_area(self):
+        def friendlies_near(pos,r=3):
+            dist_array = util.pad_and_crop(util.manhattan_kernel(r*2), self.master.maps.map_shape, pos[0], pos[1])
+
+            friendly_ids = np.zeros(self.master.maps.map_shape)
+            friendly_ids += self.master.pathfinder.unit_paths.friendly_light[0]
+            friendly_ids += self.master.pathfinder.unit_paths.friendly_heavy[0]
+
+            dists = dist_array * (friendly_ids > 0).astype(int)
+            dists[dists > r] = 0
+
+            coords = util.non_zero_coords(dists)
+
+            friendlies = []
+            for coord in coords:
+                friendly = self.master.units.unit_at_position(coord)
+                if friendly is not None:
+                    friendlies.append(friendly)
+            return friendlies
+
+        value = self.planner.factory_rubble_maps[self.unit.factory.unit_id].copy()
+        for r in [5,8,13,16,20]:
+            mask = (self.unit.factory.dist_array < r).astype(int)
+            masked = value*mask
+            if masked.sum() == 0:
+                continue
+
+            masked_values = masked * 0.8**self.unit.dist_array(start_of_turn=False)
+            best = None
+            best_val = 0
+            for _ in range(10):
+                highest_coord = np.unravel_index(np.argmax(masked_values), masked.shape)
+                highest_val = masked_values[highest_coord[0], highest_coord[1]]
+                near_friendlies = friendlies_near(highest_coord, r=3)
+                val = highest_val/max(1, len(near_friendlies)+1)
+                if val > best_val:
+                    best = highest_coord
+                    best_val = val
+                masked_values[highest_coord[0], highest_coord[1]] = 0
+            if best is not None:
+                return best
+        return self.unit.action_handler.HandleStatus.PATHING_FAILED
+
     def update_planned_actions(self):
         # print(self.unit.status.current_action.sub_category)
 
+        target = self._get_best_area()
+        if target is None:
+            logger.warning(f"{self.unit.log_prefix} failed to find available target")
+            return self.unit.action_handler.return_to_factory()
+
         # 1. Find the target clearing rea
         if self.unit.status.current_action.step == 1:
-            target = self._get_best_area()
-            if target is None:
-                logger.warning(f"{self.unit.log_prefix} failed to find available target")
-                return
             self.unit.status.current_action.step = 2
 
         # 2. Get at least a min amount of power from factory
         if self.unit.status.current_action.step == 2:
-            if self.unit.power < min_power:
-                status = self.unit.action_handler.add_pickup(amount=desired, allow_partial=True)
-                if self._check_and_handle_action_flags(status):
-                    return
-            if self.unit.power < min_power:
-                # remove pickup
-                return donothingfornow
+            if self.unit.power < self.min_power*self.unit.unit_config.BATTERY_CAPACITY:
+                status = self.unit.action_handler.add_pickup(amount=self.unit.unit_config.BATTERY_CAPACITY-self.unit.power_remaining(), allow_partial=True)
+                if status != self.unit.action_handler.HandleStatus.SUCCESS:
+                    return status
+            if self.unit.power < self.min_power*self.unit.unit_config.BATTERY_CAPACITY:
+                return self.unit.action_handler.return_to_factory()
             self.unit.status.current_action.step = 3
 
         # 3. Path to target area
         if self.unit.status.current_action.step == 3:
-            path = self.unit.action_handler.path_to_nearest_non_zero(non_zero_array=target)
-            status = self.unit.action_handler.add_path(path)
-            if self._check_and_handle_action_flags(status):
-                return
+            # status = self._path_to_target(target)
+            status = self.unit.action_handler.add_path_to_pos(target)
+            if status != self.unit.action_handler.HandleStatus.SUCCESS:
+                return status
             self.unit.status.current_action.step = 4
 
         # 4. Add dig actions
         # TODO: Here I should maybe use the existing rubble clearing stuff? Or make new?
         if self.unit.status.current_action.step == 4:
+            value_map = self.planner.factory_rubble_maps[self.unit.factory_id].copy()
+            value_map = value_map
+
             available_power = self.unit.power_remaining()
-            power_to_facory = self._calculate_power_to_factory()
-            for _ in range(10):
-                n_digs = (available_power - power_to_facory) // self.unit.unit_config.DIG_COST
-                if n_digs > 0:
-                    status = self.action_handler.add_dig(self.unit, n_digs=n_digs)
-                else:
-                    self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
-                    self.unit.status.current_action.step = 1
-                    return
-            if self._check_and_handle_action_flags():
-                return
-            self.unit.status.current_action.step = 5
+            power_to_factory = self.unit.action_handler.path_to_factory_cost()
 
-        # 5. Return to queue
-        if self.unit.status.current_action.step == 5:
-            self.unit.status.update_action_status(ActStatus(ActCategory.WAITING))
-            self.unit.status.current_action.step = 1
-            self.unit.status.turn_status.replan_required = True
-            return
+            n_digs = (available_power - power_to_factory) // self.unit.unit_config.DIG_COST
+            if n_digs <= 0:
+                return self.unit.action_handler.return_to_factory()
+            route_planner = RubbleRoutePlanner(
+                self.pathfinder, rubble=self.master.maps.rubble,  rubble_value_map=value_map, factory=self.unit.factory, unit=self.unit)
+            status = route_planner.make_route()
+            if status != self.unit.action_handler.HandleStatus.SUCCESS:
+                return status
+            return status
 
-        logger.error(f"{self.unit.log_prefix} somehow plan_step not valid {self.unit.status.current_action.step}")
+            # self.unit.status.current_action.step = 5
+
+
+
         self.unit.status.current_action.step = 1
-        self.unit.status.update_action_status(ActStatus(category=ActCategory.DROPOFF))
-        return
-        pass
+        return self.unit.action_handler.return_to_factory()
+
+    def _path_to_target(self, target: util.POS_TYPE):
+        path = self.unit.action_handler.path_to_nearest_non_zero(non_zero_array=target)
+        status = self.unit.action_handler.add_path(path)
+        if status != self.unit.action_handler.HandleStatus.SUCCESS:
+            return status
+        return  status
 
 
 class LichenUnitPlanner(ClearingUnitPlanner):
-    def update_planned_actions(self):
-        pass
 
-    def add_new_actions(self):
-        pass
+    pass
 
 
 class RubbleUnitPlanner(ClearingUnitPlanner):
-    def update_planned_actions(self):
-        return self.add_new_actions()
 
-    def add_new_actions(self):
-        rec = self.recommend(self.unit)
-        return self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
-
-    def recommend(self, unit: FriendlyUnitManager, *args, **kwargs):
-        """
-        Make recommendation for this unit to clear rubble around factory
-        """
-        unit_factory = unit.factory_id
-        if unit_factory is not None:
-            value_map = self.planner._factory_value_maps[unit_factory]
-            max_coord = np.unravel_index(np.argmax(value_map), value_map.shape)
-            return RubbleClearingRecommendation(
-                best_coord=tuple(max_coord),
-            )
-        return None
-
-    def carry_out(
-        self,
-        unit: FriendlyUnitManager,
-        recommendation: RubbleClearingRecommendation,
-        unit_must_move: bool,
-    ) -> bool:
-        if unit.factory_id is not None:
-            factory = self.master.factories.friendly[unit.factory_id]
-            route_planner = RubbleRoutePlanner(
-                pathfinder=self.master.pathfinder,
-                rubble=self.master.maps.rubble,
-                rubble_value_map=self.planner._factory_value_maps[factory.factory.unit_id],
-                factory=factory,
-                unit=unit,
-            )
-            success = route_planner.make_route(unit_must_move=unit_must_move)
-            return success
-        else:
-            logger.error(f"in carry out, {unit.unit_id} has no factory_id")
-            return False
+    pass
+    # def add_new_actions(self):
+    #     rec = self.recommend(self.unit)
+    #     return self.carry_out(self.unit, rec, self.unit.status.turn_status.must_move)
+    #
+    # def recommend(self, unit: FriendlyUnitManager, *args, **kwargs):
+    #     """
+    #     Make recommendation for this unit to clear rubble around factory
+    #     """
+    #     unit_factory = unit.factory_id
+    #     if unit_factory is not None:
+    #         value_map = self.planner._factory_value_maps[unit_factory]
+    #         max_coord = np.unravel_index(np.argmax(value_map), value_map.shape)
+    #         return RubbleClearingRecommendation(
+    #             best_coord=tuple(max_coord),
+    #         )
+    #     return None
+    #
+    # def carry_out(
+    #     self,
+    #     unit: FriendlyUnitManager,
+    #     recommendation: RubbleClearingRecommendation,
+    #     unit_must_move: bool,
+    # ) -> bool:
+    #     if unit.factory_id is not None:
+    #         factory = self.master.factories.friendly[unit.factory_id]
+    #         route_planner = RubbleRoutePlanner(
+    #             pathfinder=self.master.pathfinder,
+    #             rubble=self.master.maps.rubble,
+    #             rubble_value_map=self.planner._factory_value_maps[factory.factory.unit_id],
+    #             factory=factory,
+    #             unit=unit,
+    #         )
+    #         success = route_planner.make_route(unit_must_move=unit_must_move)
+    #         return success
+    #     else:
+    #         logger.error(f"in carry out, {unit.unit_id} has no factory_id")
+    #         return False
 
 
 class ClearingPlanner(BaseGeneralPlanner):
@@ -578,12 +628,17 @@ class ClearingPlanner(BaseGeneralPlanner):
         super().__init__(master)
         self.master = master
 
-        self._factory_value_maps = {}
+        self.factory_rubble_maps = {}
+        self.factory_lichen_maps = {}
 
     def update(self, *args, **kwargs):
         """Called at beginning of turn, may want to clear caches"""
         # Remove old (in case factories have died)
-        self._factory_value_maps = {}
+        self.update_rubble_maps()
+        self.update_lichen_maps()
+
+    def update_rubble_maps(self):
+        self.factory_rubble_maps = {}
 
         rubble = self.master.maps.rubble
         all_factory_map = self.master.maps.factory_maps.all
@@ -602,7 +657,25 @@ class ClearingPlanner(BaseGeneralPlanner):
                 boundary_kernel_size=3,
                 boundary_kernel_dropoff=0.7,
             )
-            self._factory_value_maps[factory_manager.unit_id] = rubble_value.calculate_final_value()
+            self.factory_rubble_maps[factory_manager.unit_id] = rubble_value.calculate_final_value()
+
+    def update_lichen_maps(self):
+        self.factory_lichen_maps = {}
+
+        enemy_factory_map = self.master.maps.factory_maps.enemy
+        lichen_strains = self.master.maps.lichen_strains
+        lichen = self.master.maps.lichen
+        enemy_lichen = lichen.copy()
+        enemy_lichen[enemy_factory_map < 0] = 0
+
+        for factory in self.master.factories.friendly.values():
+            # Calculated
+            factory_pos = factory.pos
+            kernel = 0.7**util.manhattan_kernel(5)
+            value = util.convolve_array_kernel(enemy_lichen, kernel)
+            value = value*0.8**factory.dist_array
+            self.factory_lichen_maps[factory.unit_id] = value
+
 
     # new
     def get_unit_planner(self, unit: FriendlyUnitManager) -> RubbleUnitPlanner:
