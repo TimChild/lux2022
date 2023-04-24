@@ -55,7 +55,11 @@ class GeneralUnitPlanner(BaseUnitPlanner):
         logger.debug(f"Updating idle unit")
 
         # If finishing previous plans
-        if len(planned) > 0:
+        if len(planned) > 0 and not (
+            len(planned) == 1
+            and planned[0][util.ACT_TYPE] == util.MOVE
+            and planned[0][util.ACT_DIRECTION] == util.CENTER
+        ):
             path = self.unit.current_path(max_len=self.unit.max_queue_step_length)
             end_pos = path[-1]
             if (
@@ -85,6 +89,13 @@ class GeneralUnitPlanner(BaseUnitPlanner):
                     logger.debug(f"handling must move")
                     self.unit.reset_unit_to_start_of_turn_empty_queue()
                     status = self.unit.action_handler.return_to_factory()
+                    if status != self.SUCCESS:
+                        return status
+                    status = self.unit.action_handler.add_actions_to_queue([self.unit.unit.move(util.CENTER, n=50)])
+                    return status
+                elif util.num_turns_of_actions(planned) < 20:
+                    logger.debug(f"adding more center moves")
+                    status = self.unit.action_handler.add_actions_to_queue([self.unit.unit.move(util.CENTER, n=50)])
                     return status
                 else:
                     logger.debug(f"doing nothing, OK")
@@ -98,12 +109,8 @@ class GeneralUnitPlanner(BaseUnitPlanner):
         raise RuntimeError(f"Shouldn't reach here")
 
     def possible_assign_new_work(self) -> ActionHandler.HandleStatus:
-        if len(self.unit.status.planned_action_queue) > 0:
-            raise RuntimeError(
-                f"{self.unit.log_prefix} has {len(self.unit.status.planned_action_queue)} actions remaining"
-            )
-
         # Start with fresh queue when doing new work
+        self.unit.status.update_planned_action_queue([], [])
         self.unit.reset_unit_to_start_of_turn_empty_queue()
 
         ### From here decide possible new action for unit ###
