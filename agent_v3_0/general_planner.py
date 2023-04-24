@@ -19,7 +19,7 @@ class GeneralUnitPlanner(BaseUnitPlanner):
     factory_power_low_thresh = 300
     factory_power_med_thresh = 700
     factory_power_high_thresh = 1000
-    unit_power_low_thresh = 0.1
+    unit_power_low_thresh = 0.03
     unit_power_med_thresh = 0.5
     unit_power_high_thresh = 0.9
 
@@ -126,7 +126,7 @@ class GeneralUnitPlanner(BaseUnitPlanner):
         factory = self.unit.factory
         # What factory power will likely be in X steps
         factory_power = factory.calculate_power_at_step(step=10)
-        unit_power_ratio = self.unit.start_of_turn_power // self.unit.unit_config.BATTERY_CAPACITY
+        unit_power_ratio = self.unit.start_of_turn_power / self.unit.unit_config.BATTERY_CAPACITY
         act_cat = self.unit.status.current_action.category
 
         # Generate a new work status to potentially assign

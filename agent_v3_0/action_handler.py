@@ -344,6 +344,12 @@ class ActionHandler:
                     return status
                 status = self.HandleStatus.LOW_POWER_RETURNING
                 return status
+        elif path_cost > available_power:
+            logger.warning(f'Not enough power to  path to factory, adding charge steps first')
+            charges = np.ceil((path_cost-available_power)/self.unit.unit_config.CHARGE).astype(int)
+            status = self.add_actions_to_queue([self.unit.unit.move(util.CENTER, n=charges)])
+            if status != self.HandleStatus.SUCCESS:
+                return status
 
         if not targeting_enemy:
             status = self._handle_nearby_enemy(pos=dest_pos, available_power=available_power - path_cost)

@@ -237,6 +237,7 @@ class TurnStatus:
 
         # Gets set when stepping planned actions
         self.planned_actions_valid_from_last_step = False
+        self.planned_actions_require_update = True
         # Set when checking if next action of unit is valid, if not, this gets set and status gets reset to zero
         self.next_action_was_valid = False
         self.must_move = False

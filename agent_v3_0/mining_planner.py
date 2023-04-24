@@ -1039,6 +1039,7 @@ class MiningUnitPlanner(BaseUnitPlanner):
 
         if self.unit.status.current_action.step == 1:
             logger.debug(f"step 1 (empty)")
+
             self.unit.status.current_action.step = 2
 
         # 2. Get at least a min amount of power from factory
@@ -1049,6 +1050,16 @@ class MiningUnitPlanner(BaseUnitPlanner):
                 logger.debug(f"Already have enough power")
                 pass
             else:
+                if not self.unit.on_own_factory():
+                    logger.debug(f"Need to move to factory first")
+                    path = self.unit.action_handler.path_to_factory()
+                    status = self.unit.action_handler.add_path(path)
+                    if status != self.SUCCESS:
+                        return status
+                    if len(path) > 1:
+                        # Moved
+                        self.unit.status.turn_status.must_move = False
+                    power = self.unit.power_remaining()
                 factory_power = self.unit.factory.calculate_power_at_step(
                     util.num_turns_of_actions(self.unit.action_queue)
                 )
@@ -1062,8 +1073,13 @@ class MiningUnitPlanner(BaseUnitPlanner):
                     logger.warning(
                         f"{self.unit.log_prefix} wants to do mining, but not enough power at {self.unit.factory_id}"
                     )
+                    # self.unit.status.turn_status.action_queue_empty_ok = True
+                    # return self.unit.action_handler.HandleStatus.LOW_POWER_PAUSING
+                    self.unit.status.turn_status.planned_actions_require_update = False
                     self.unit.status.turn_status.action_queue_empty_ok = True
-                    return self.unit.action_handler.HandleStatus.LOW_POWER_PAUSING
+                    self.unit.status.update_action_status(ActStatus(category=ActCategory.WAITING))
+                    return self.unit.action_handler.HandleStatus.NOT_ENOUGH_POWER_TO_ASSIGN
+
             self.unit.status.current_action.step = 3
 
         # 3. Path to resource
@@ -1090,12 +1106,19 @@ class MiningUnitPlanner(BaseUnitPlanner):
             status = self.unit.action_handler.add_path(path)
             if status != self.SUCCESS:
                 return status
+            if len(path) > 1:
+                # Moved
+                self.unit.status.turn_status.must_move = False
             resource.used_by[self.unit.unit_id] = self.unit
             self.unit.status.current_action.step = 4
 
         # 4. Add dig actions
         if self.unit.status.current_action.step == 4:
             logger.debug(f"trying to dig resource")
+            if self.unit.status.turn_status.must_move is True:
+                self.unit.status.current_action.step = 1
+                self.unit.status.turn_status.replan_required = True
+                return self.unit.action_handler.HandleStatus.INVALID_FIRST_STEP
             available_power = self.unit.power_remaining()
             power_to_facory = self.unit.action_handler.path_to_factory_cost(self.unit.pos)
             n_digs = (available_power - power_to_facory) // self.unit.unit_config.DIG_COST

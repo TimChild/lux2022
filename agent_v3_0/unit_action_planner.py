@@ -272,6 +272,8 @@ class SingleUnitActionPlanner:
     def _unit_must_move(self) -> bool:
         """Must move if current location will be occupied at step 1 (not zero which is now)"""
         start_costmap = self.master.pathfinder.generate_costmap(self.unit, override_step=1, collision_only=True)
+        # if self.unit.unit_id == 'unit_9':
+        #     util.show_map_array(start_costmap).show()
 
         unit_must_move = False
         # If current location will be occupied
@@ -480,6 +482,8 @@ class SingleUnitActionPlanner:
 
         for i in range(5):
             logger.debug(f"Updating plans round {i}")
+            self.unit.status.turn_status.replan_required = False
+
             # Otherwise get updates from general planners
             status = None
             if self.unit.status.current_action.category in [
@@ -501,6 +505,10 @@ class SingleUnitActionPlanner:
                 status = self.multi_planner.clearing_planner.get_unit_planner(self.unit).update_planned_actions()
             if status is None:
                 raise ValueError(f"{self.unit.log_prefix} Failed to get updates")
+
+            if self.unit.status.turn_status.replan_required is True:
+                logger.warning(f'{self.unit.log_prefix} Replan required with status {status}')
+                continue
 
             if self.unit.status.turn_status.planned_actions_require_update:
                 logger.debug(f"copying action_queue to planned_action_queue (and statuses)")
@@ -542,10 +550,10 @@ class SingleUnitActionPlanner:
         else:
             logger.error(f"{self.unit.log_prefix}, after X attempts at planning, status = {status}")
 
-            mm_success = self._force_moving_if_necessary(unit_must_move)
-            if not mm_success:
-                logger.warning(f"{self.unit.log_prefix} status was must_move, but first step was not a move")
-                status = HS.INVALID_FIRST_STEP
+        mm_success = self._force_moving_if_necessary(unit_must_move)
+        if not mm_success:
+            logger.warning(f"{self.unit.log_prefix} status was must_move, but first step was not a move")
+            status = HS.INVALID_FIRST_STEP
 
         return status
 
