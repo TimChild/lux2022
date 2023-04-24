@@ -918,15 +918,15 @@ class MultipleUnitActionPlanner:
 
         return unit_actions
 
-    def _assign_new_factory_if_necessary(self, unit: FriendlyUnitManager, factory_infos: Dict[str, FactoryInfo]):
+    def _assign_new_factory_if_necessary(self, unit: FriendlyUnitManager): #, factory_infos: Dict[str, FactoryInfo]):
         """If doesn't have a factory, assign it to an existing one"""
         if not unit.factory_id:
             best_factory = None
-            best_space = -1
-            for f_info in factory_infos.values():
-                if f_info.connected_growable_space > best_space:
-                    best_space = f_info.connected_growable_space
-                    best_factory = f_info.factory
+            best_power = -1
+            for factory in self.master.factories.friendly.values():
+                if factory.power > best_power:
+                    best_power = factory.power
+                    best_factory = factory
             unit.factory_id = best_factory.unit_id
             best_factory.assign_unit(unit)
             logger.warning(f"Re-assigning to {best_factory.unit_id} because no factory assigned")
@@ -937,15 +937,24 @@ class MultipleUnitActionPlanner:
         current_unit_actions = unit.start_of_turn_actions
         planned_actions = unit.status.planned_action_queue
 
-        update_required = False
-        # If first X actions are the same, don't update (unnecessary cost for unit)
-        if np.all(
+        whole_actions_equal = np.all(
             np.array(current_unit_actions[: self.actions_same_check])
             == np.array(planned_actions[: self.actions_same_check])
-        ):
+        )
+        act = current_unit_actions[0] if len(current_unit_actions) > 0 else None
+        plan_act = planned_actions[0] if len(planned_actions) > 0 else None
+        first_action_similar = False
+        if act is not None and plan_act is not None:
+            if all([act[x] == plan_act[x] for x in [util.ACT_TYPE, util.ACT_DIRECTION, util.ACT_AMOUNT, util.ACT_RESOURCE]]):
+                if act[util.ACT_N] > 1 and plan_act[util.ACT_N] > 1:
+                    first_action_similar = True
+
+        update_required = False
+        # If first X actions are the same, don't update (unnecessary cost for unit)
+        if whole_actions_equal or first_action_similar:
             first_act = unit.start_of_turn_actions[0] if len(unit.start_of_turn_actions) > 0 else []
             logger.info(
-                f"First {self.actions_same_check} real actions same ({first_act}), not updating unit action queue"
+                f"First {self.actions_same_check} real actions same or similar ({first_act}), not updating unit action queue"
             )
 
             # Set the action_queue to what it will be (don't think this will actually get used again)
@@ -1022,6 +1031,7 @@ class MultipleUnitActionPlanner:
             next_act_real_move = (
                 next_act_move and unit.status.planned_action_queue[0][util.ACT_DIRECTION] != util.CENTER
             )
+            factory_dist = util.manhattan(unit.start_of_turn_pos, unit.factory.pos) if unit.factory_id is not None else 999
 
             unit_data = {
                 "unit_id": unit_id,
@@ -1034,7 +1044,7 @@ class MultipleUnitActionPlanner:
                 "power": unit.start_of_turn_power,
                 "last_real_update": unit.status.last_real_action_update_step,
                 "above_90_power": unit.start_of_turn_power > unit.unit_config.BATTERY_CAPACITY * 0.9,
-                "factory_dist": util.manhattan(unit.start_of_turn_pos, unit.factory.pos),
+                "factory_dist": factory_dist,
                 "next_act_move": next_act_move,
                 "next_act_real_move": next_act_real_move,
             }
@@ -1081,6 +1091,8 @@ class MultipleUnitActionPlanner:
 
         # For each unit
         for unit_id, unit in self.ordered_units.items():
+            self._assign_new_factory_if_necessary(unit)
+
             if unit_id not in self.units_to_act.needs_to_act:
                 logger.warning(f"{unit_id} not in needs_to_act, skipping")
                 continue

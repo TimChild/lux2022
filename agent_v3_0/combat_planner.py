@@ -513,7 +513,7 @@ class CombatUnitPlanner(BaseUnitPlanner):
         self.unit.act_statuses = self.unit.status.planned_act_statuses.copy()
         self.unit.pos = self.unit.current_path(planned_actions=True, max_len=50)[-1]
 
-        if self.unit.power_remaining() < self.unit.unit_config.BATTERY_CAPACITY*0.5 and util.manhattan(self.unit.pos, self.unit.factory.pos) < 15:
+        if self.unit.power_remaining() < self.unit.unit_config.BATTERY_CAPACITY*0.4 and util.manhattan(self.unit.pos, self.unit.factory.pos) < 15:
             logger.info(f'close enough to factory and on low power, picking up power first')
             path = self.unit.action_handler.path_to_factory()
             status = self.unit.action_handler.add_path(path)
@@ -839,10 +839,10 @@ class CombatPlanner(BaseGeneralPlanner):
             pos = enemy_unit.pos
             value = 0
             # If some cargo
-            if enemy_unit.cargo.ice + enemy_unit.ore > cfg.CARGO_SPACE * 0.3:
+            if enemy_unit.cargo.ice + enemy_unit.cargo.ore > cfg.CARGO_SPACE * 0.3:
                 value += 20
             # If more cargo
-            if enemy_unit.cargo.ice + enemy_unit.ore > cfg.CARGO_SPACE * 0.6:
+            if enemy_unit.cargo.ice + enemy_unit.cargo.ore > cfg.CARGO_SPACE * 0.6:
                 value += 20
             # If currently on a resource
             if self.master.maps.resource_at_tile(enemy_unit.pos) >= 0:
@@ -879,7 +879,7 @@ class CombatPlanner(BaseGeneralPlanner):
                 if dist < nearest:
                     nearest_enemy_factory = enemy_factory
                     nearest = dist
-            if nearest_enemy_factory and nearest < 15:
+            if nearest_enemy_factory and nearest < 20:
                 num_light = factory.info.light_attacking
                 num_heavy = factory.info.heavy_attacking
                 total = num_heavy+num_light+2

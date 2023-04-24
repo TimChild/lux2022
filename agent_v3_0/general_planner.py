@@ -56,15 +56,15 @@ class GeneralUnitPlanner(BaseUnitPlanner):
 
         # If finishing previous plans
         if len(planned) > 0 and not (
-            len(planned) == 1
-            and planned[0][util.ACT_TYPE] == util.MOVE
-            and planned[0][util.ACT_DIRECTION] == util.CENTER
+                len(planned) == 1
+                and planned[0][util.ACT_TYPE] == util.MOVE
+                and planned[0][util.ACT_DIRECTION] == util.CENTER
         ):
             path = self.unit.current_path(max_len=self.unit.max_queue_step_length)
             end_pos = path[-1]
             if (
-                self.unit.factory.factory_loc[end_pos[0], end_pos[1]] > 0
-                or self.unit.factory.queue_array[end_pos[0], end_pos[1]] > 0
+                    self.unit.factory.factory_loc[end_pos[0], end_pos[1]] > 0
+                    or self.unit.factory.queue_array[end_pos[0], end_pos[1]] > 0
             ):
                 logger.debug(f"unit still pathing toward factory")
                 return self.SUCCESS
@@ -130,7 +130,10 @@ class GeneralUnitPlanner(BaseUnitPlanner):
         act_cat = self.unit.status.current_action.category
 
         # Generate a new work status to potentially assign
-        work_ratios = self.planner.work_ratios[self.unit.factory_id]
+        if self.unit.unit_type == 'HEAVY':
+            work_ratios = self.planner.heavy_work_ratios[self.unit.factory_id]
+        else:
+            work_ratios = self.planner.light_work_ratios[self.unit.factory_id]
         next_action = work_ratios.weighted_random_choice()
 
         if act_cat == ActCategory.NOTHING:
@@ -197,8 +200,12 @@ class GeneralPlanner(BaseGeneralPlanner):
         # updated at beginning of turn
 
     @property
-    def work_ratios(self) -> Dict[str, WorkRatios]:
-        return self.factory_planner.get_factory_work_ratios()
+    def heavy_work_ratios(self) -> Dict[str, WorkRatios]:
+        return self.factory_planner.get_factory_work_ratios(heavy=True)
+
+    @property
+    def light_work_ratios(self) -> Dict[str, WorkRatios]:
+        return self.factory_planner.get_factory_work_ratios(heavy=False)
 
     def update(self):
         pass

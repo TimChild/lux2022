@@ -188,7 +188,7 @@ class ActionHandler:
             return SUCCESS
         return status
 
-    def return_to_factory(self) -> HandleStatus:
+    def return_to_factory(self, running_from_enemy=False) -> HandleStatus:
         """
         Use this to return action to factory because of failed action (e.g. low power, enemy near, etc)
 
@@ -203,7 +203,7 @@ class ActionHandler:
             path_to_factory = self.path_to_factory()
             if len(path_to_factory) == 0:
                 return self.HandleStatus.PATHING_FAILED
-            status = self.add_path(path_to_factory)
+            status = self.add_path(path_to_factory, targeting_enemy=running_from_enemy)
             if status != self.HandleStatus.SUCCESS:
                 return status
             status = self.add_dropoff()
@@ -216,7 +216,7 @@ class ActionHandler:
             path_to_queue = self.path_to_factory_queue()
             if len(path_to_queue) == 0:
                 return self.HandleStatus.PATHING_FAILED
-            status = self.add_path(path_to_queue)
+            status = self.add_path(path_to_queue, targeting_enemy=running_from_enemy)
             if status != self.HandleStatus.SUCCESS:
                 return status
 
@@ -284,6 +284,7 @@ class ActionHandler:
 
     def _handle_nearby_enemy(self, pos=None, available_power=None) -> HandleStatus:
         """Handle enemy near to pos (i.e. temporary attack or run back to factory)"""
+        from unit_status import ActStatus, ActCategory, CombatActSubCategory
         pos = pos if pos is not None else self.unit.pos
         available_power = available_power if available_power is not None else self.unit.power_remaining()
 
@@ -297,7 +298,7 @@ class ActionHandler:
                 logger.warning(
                     f"{self.unit.log_prefix}, {nearest_enemy.unit_id} near {pos} that is dangerous, returning to factory"
                 )
-                status = self.return_to_factory()
+                status = self.return_to_factory(running_from_enemy=True)
                 if status != self.HandleStatus.SUCCESS:
                     return status
                 status = self.HandleStatus.ENEMY_NEAR_FLEEING

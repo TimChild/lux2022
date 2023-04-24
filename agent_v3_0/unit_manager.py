@@ -35,6 +35,8 @@ class UnitManager(abc.ABC):
         self.id_num = int(re.search(r"\d+", unit.unit_id).group())
         # Overridden for Friendly where pos changes
         self.start_of_turn_pos = tuple(unit.pos)
+        self.start_of_turn_power = unit.power
+        self.power = unit.power
 
     def update(self, unit: Unit):
         """Beginning of turn update"""

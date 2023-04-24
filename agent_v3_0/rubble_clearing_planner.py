@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Tuple, List
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Tuple, List, Dict
 import numpy as np
 
 from config import get_logger
@@ -31,7 +32,7 @@ from util import (
 )
 import util
 
-from unit_status import MineValues, MineActSubCategory
+from unit_status import MineValues, MineActSubCategory, ActCategory
 from base_planners import BaseGeneralPlanner, BaseUnitPlanner
 
 if TYPE_CHECKING:
@@ -527,6 +528,15 @@ class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
         # 2. Get at least a min amount of power from factory
         if self.unit.status.current_action.step == 2:
             if self.unit.power < self.min_power*self.unit.unit_config.BATTERY_CAPACITY:
+                if not self.unit.on_own_factory() or self.unit.status.turn_status.must_move:
+                    logger.debug(f"Need to move to factory first")
+                    path = self.unit.action_handler.path_to_factory()
+                    status = self.unit.action_handler.add_path(path)
+                    if status != self.SUCCESS:
+                        return status
+                    if len(path) > 1:
+                        # Moved
+                        self.unit.status.turn_status.must_move = False
                 status = self.unit.action_handler.add_pickup(amount=self.unit.unit_config.BATTERY_CAPACITY-self.unit.power_remaining(), allow_partial=True)
                 if status != self.unit.action_handler.HandleStatus.SUCCESS:
                     return status
@@ -537,9 +547,13 @@ class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
         # 3. Path to target area
         if self.unit.status.current_action.step == 3:
             # status = self._path_to_target(target)
-            status = self.unit.action_handler.add_path_to_pos(target)
+            path = self.unit.action_handler.path_to_pos(target)
+            status = self.unit.action_handler.add_path(path)
             if status != self.unit.action_handler.HandleStatus.SUCCESS:
                 return status
+            if len(path) > 1:
+                # Moved
+                self.unit.status.turn_status.must_move = False
             self.unit.status.current_action.step = 4
 
         # 4. Add dig actions
@@ -550,6 +564,8 @@ class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
 
             available_power = self.unit.power_remaining()
             power_to_factory = self.unit.action_handler.path_to_factory_cost()
+            if self.unit.status.turn_status.must_move:
+                value_map[self.unit.pos[0], self.unit.pos[1]] = 0
 
             n_digs = (available_power - power_to_factory) // self.unit.unit_config.DIG_COST
             if n_digs <= 0:
@@ -562,8 +578,6 @@ class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
             return status
 
             # self.unit.status.current_action.step = 5
-
-
 
         self.unit.status.current_action.step = 1
         return self.unit.action_handler.return_to_factory()
@@ -623,6 +637,11 @@ class RubbleUnitPlanner(ClearingUnitPlanner):
     #         return False
 
 
+@dataclass
+class ClearingPosition:
+    pos: Tuple[int, int]
+    used_by: Dict[str, FriendlyUnitManager]
+
 class ClearingPlanner(BaseGeneralPlanner):
     def __init__(self, master: MasterState):
         super().__init__(master)
@@ -631,11 +650,29 @@ class ClearingPlanner(BaseGeneralPlanner):
         self.factory_rubble_maps = {}
         self.factory_lichen_maps = {}
 
+        self.factory_rubble_positions = {}
+        self.factory_lichen_positions = {}
+
     def update(self, *args, **kwargs):
         """Called at beginning of turn, may want to clear caches"""
         # Remove old (in case factories have died)
         self.update_rubble_maps()
         self.update_lichen_maps()
+        # self.update_positions()
+
+    def update_positions(self):
+        for r_dict in [self.factory_rubble_positions, self.factory_lichen_positions]:
+            for f_id, positions in r_dict.items():
+                for position in positions:
+                    units_to_pop = []
+                    for unit_id, unit in position.used_by.items():
+                        if unit is None or unit.status.start_of_turn_action.category in [
+                            ActCategory.DROPOFF,
+                            ActCategory.WAITING,
+                        ]:
+                            units_to_pop.append(unit_id)
+                    for unit_id in units_to_pop:
+                        position.used_by.pop(unit_id)
 
     def update_rubble_maps(self):
         self.factory_rubble_maps = {}
