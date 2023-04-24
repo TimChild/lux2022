@@ -6,19 +6,17 @@ import abc
 import copy
 
 from luxai_s2.unit import UnitCargo
-
-from agent_v3_0 import actions_util
-from agent_v3_0.new_unit_action_planner import ActionHandler
-from unit_status import Status, ActStatus
 from lux.unit import Unit
 from lux.config import UnitConfig
 
+from action_handler import ActionHandler
+from unit_status import Status, ActStatus
 import util
 
 from config import get_logger
-from master_state import MasterState
 
 if TYPE_CHECKING:
+    from master_state import MasterState
     from factory_manager import FriendlyFactoryManager
 
 logger = get_logger(__name__)
@@ -35,6 +33,8 @@ class UnitManager(abc.ABC):
         self.unit = unit
         self.unit_config: UnitConfig = unit.unit_cfg
         self.id_num = int(re.search(r"\d+", unit.unit_id).group())
+        # Overridden for Friendly where pos changes
+        self.start_of_turn_pos = self.unit.pos
 
     def update(self, unit: Unit):
         """Beginning of turn update"""
@@ -147,9 +147,6 @@ class EnemyUnitManager(UnitManager):
         logger.info(f"Enemy unit {self.unit_id} dead, nothing more to do")
 
 
-def step_actions(actions: List[np.ndarray]) -> List[np.ndarray]:
-    """Change actions as if an env step has occurred"""
-
 
 class FriendlyUnitManager(UnitManager):
     # Maximum number of steps to plan ahead for (pause after that)
@@ -215,7 +212,8 @@ class FriendlyUnitManager(UnitManager):
 
     @cargo.setter
     def cargo(self, value):
-        if not isinstance(value, UnitCargo):
+        # if not isinstance(value, UnitCargo):
+        if not hasattr(value, 'metal'):  # TODO: Can switch back when not autoreloading in jupyter
             raise ValueError(f"got {value}, expected UnitCargo")
         self._cargo = copy.copy(value)
 

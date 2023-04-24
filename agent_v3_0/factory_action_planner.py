@@ -3,11 +3,11 @@ from __future__ import annotations
 import random
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 from typing import Dict, TYPE_CHECKING, Optional
 import copy
 
-from factory_manager import FactoryInfo
+from factory_manager import FactoryInfo, FriendlyFactoryManager
 from unit_status import ActCategory, MineActSubCategory, ClearActSubCategory, ActStatus
 from lux.kit import GameState
 
@@ -91,7 +91,9 @@ class WorkRatios:
         return inst
 
     def weighted_random_choice(self):
-        field_names = [field.name for field in self.__dataclass_fields__]
+        # field_names = [print(type(field)) for field in self.__dataclass_fields__]
+        # field_names = [field.name for field in self.__dataclass_fields__]
+        field_names = [field for field in self.__dataclass_fields__]
         field_values = [getattr(self, field_name) for field_name in field_names]
         selected_field = random.choices(field_names, weights=field_values, k=1)[0]
 
@@ -290,9 +292,9 @@ class FactoryActionPlanner:
             info = factory.info
             logger.debug(f"Updating {f_id} work_ratios")
             ratios = WorkRatios.at_step(self.master.step)
-            if info.metal > self.max_metal or info.ore > self.max_ore:
+            if factory.cargo.metal > self.max_metal or factory.cargo.ore > self.max_ore:
                 ratios.mine_ore = 0
-            if info.water > self.max_water or info.ice > self.max_ice:
+            if factory.cargo.water > self.max_water or factory.cargo.ice > self.max_ice:
                 ratios.mine_ice = 0
             self._factory_work_ratios[f_id] = ratios
 
@@ -473,30 +475,30 @@ class FactoryActionPlanner:
     #     )
     #     return desires
 
-    def _possible_build(self, info: FactoryInfo) -> Optional[int]:
-        current_light = max(0.1, info.num_light)  # avoid div zero
-        current_heavy = max(0.1, info.num_heavy)
+    def _possible_build(self, factory: FriendlyFactoryManager) -> Optional[int]:
+        current_light = max(0.1, len(factory.light_units))  # avoid div zero
+        current_heavy = max(0.1, len(factory.heavy_units))
 
         light_ratio = current_light / current_heavy
 
         desired_ratios = util.get_interpolated_values(DESIRED_UNIT_RATIOS_DF, self.master.step)
         desired_light_ratio = desired_ratios.light / desired_ratios.heavy
 
-        power_in_X = info.factory.calculate_power_at_step(10)
+        power_in_X = factory.calculate_power_at_step(10)
 
         # If too many lights, consider building heavy
         if light_ratio > desired_light_ratio:
-            can_build = info.factory.factory.can_build_heavy(self.master.game_state)
+            can_build = factory.factory.can_build_heavy(self.master.game_state)
             if can_build and power_in_X > 0:
-                return info.factory.factory.build_heavy()
+                return factory.factory.build_heavy()
         # Otherwise consider building light
         else:
-            can_build = info.factory.factory.can_build_light(self.master.game_state)
+            can_build = factory.factory.can_build_light(self.master.game_state)
             if can_build and power_in_X > 0:
-                return info.factory.factory.build_light()
+                return factory.factory.build_light()
         return None
 
-    def _possible_water(self, info: FactoryInfo) -> Optional[int]:
+    def _possible_water(self, factory: FriendlyFactoryManager) -> Optional[int]:
         """Decide when to water"""
         min_water = 100
         if self.master.step <= 100:
@@ -516,15 +518,15 @@ class FactoryActionPlanner:
 
         steps_remaining = 1000 - self.master.step
         if steps_remaining > 700:
-            if info.water > min_water:
-                logger.debug(f"Current water = {info.water}, water cost = {info.water_cost}, min_water = {min_water}")
-                logger.info(f"{info.factory_id} midgame watering because above min water")
-                return info.factory.factory.water()
+            if factory.cargo.water > min_water:
+                logger.debug(f"Current water = {factory.cargo.water}, water cost = {factory.water_cost}, min_water = {min_water}")
+                logger.info(f"{factory.unit_id} midgame watering because above min water")
+                return factory.factory.water()
         else:
-            if info.water - min_water > (info.water_cost * steps_remaining):
-                logger.debug(f"Current water = {info.water}, water cost = {info.water_cost}, min_water = {min_water}")
-                logger.info(f"{info.factory_id} endgame watering because won't run out with this water cost")
-                return info.factory.factory.water()
+            if factory.cargo.water - min_water > (factory.water_cost * steps_remaining):
+                logger.debug(f"Current water = {factory.cargo.water}, water cost = {factory.water_cost}, min_water = {min_water}")
+                logger.info(f"{factory.unit_id} endgame watering because won't run out with this water cost")
+                return factory.factory.water()
         return None
 
     def decide_factory_actions(self) -> Dict[str, int]:
@@ -532,25 +534,26 @@ class FactoryActionPlanner:
         Decide what factory should do based on current step and resources etc
         """
         actions = {}
-        for f_info in self._factory_infos.values():
+        for factory in self.factories.values():
             center_occupied = (
-                True if self.master.units.friendly.unit_at_position(f_info.factory.pos) is not None else False
+                True if self.master.units.friendly.unit_at_position(factory.pos) is not None else False
             )
             action = None
 
             # Only consider building if center not occupied
             if not center_occupied:
                 logger.debug(f"Center not occupied, considering building unit")
-                action = self._possible_build(f_info)
+                action = self._possible_build(factory)
 
             # If not building unit, consider watering
             if action is None:
                 logger.debug(f"Not building unit, considering watering")
-                action = self._possible_water(f_info)
+                action = self._possible_water(factory)
 
             if action is not None:
                 logger.debug(f"Factory action = {action}")
-                actions[f_info.factory_id] = action
+                actions[factory.unit_id] = action
+        return actions
 
     # def decide_factory_actions(self) -> Dict[str, int]:
     #     actions = {}

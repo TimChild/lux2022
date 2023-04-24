@@ -31,7 +31,6 @@ class UnitActions:
     clearing_rubble: Dict[str, FriendlyUnitManager]
     clearing_lichen: Dict[str, FriendlyUnitManager]
     attacking: Dict[str, FriendlyUnitManager]
-    defending: Dict[str, FriendlyUnitManager]
     waiting: Dict[str, FriendlyUnitManager]
     nothing: Dict[str, FriendlyUnitManager]
 
@@ -45,6 +44,7 @@ class FactoryManager:
         self.dist_array: np.ndarray = util.pad_and_crop(
             util.stretch_middle_of_factory_array(util.manhattan_kernel(47)), map_shape, self.pos[0], self.pos[1]
         )
+
 
     def update(self, factory: Factory):
         self.factory = factory
@@ -79,13 +79,11 @@ class FactoryInfo:
     light_clearing_rubble: int
     light_clearing_lichen: int
     light_attacking: int
-    light_defending: int
     heavy_mining_ice: int
     heavy_mining_ore: int
     heavy_clearing_rubble: int
     heavy_clearing_lichen: int
     heavy_attacking: int
-    heavy_defending: int
 
     @classmethod
     def init(
@@ -126,13 +124,11 @@ class FactoryInfo:
             light_clearing_rubble=len(current_light_actions.clearing_rubble),
             light_clearing_lichen=len(current_light_actions.clearing_lichen),
             light_attacking=len(current_light_actions.attacking),
-            light_defending=len(current_light_actions.defending),
             heavy_mining_ice=len(current_heavy_actions.mining_ice),
             heavy_mining_ore=len(current_heavy_actions.mining_ore),
             heavy_clearing_rubble=len(current_heavy_actions.clearing_rubble),
             heavy_clearing_lichen=len(current_heavy_actions.clearing_lichen),
             heavy_attacking=len(current_heavy_actions.attacking),
-            heavy_defending=len(current_heavy_actions.defending),
         )
         return factory_info
 
@@ -213,6 +209,11 @@ class FriendlyFactoryManager(FactoryManager):
         self._power = factory.power
         self.short_term_power = self.calculate_power_at_step()
         self.info = FactoryInfo.init(self.master, self)
+
+    @property
+    def water_cost(self):
+        owned_lichen_tiles = (self.master.maps.lichen_strains == self.factory.strain_id).sum()
+        return np.ceil(owned_lichen_tiles / self.master.env_cfg.LICHEN_WATERING_COST_FACTOR)
 
     def generate_circle_array(self, center: util.POS_TYPE, radius: int, num: int):
         return util.generate_circle_coordinates_array(center, num, radius, self.master.maps.rubble.shape[0])

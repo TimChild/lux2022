@@ -1,46 +1,17 @@
-import copy
+from __future__ import annotations
 from enum import Enum, auto
-from typing import Dict, Optional
-from dataclasses import dataclass
-
+from typing import Dict, Optional, TYPE_CHECKING
 import numpy as np
 
 import util
-from master_state import MasterState
 from config import get_logger
 
-from unit_manager import FriendlyUnitManager, EnemyUnitManager, UnitManager
-from unit_status import ActCategory, ActStatus, CombatActSubCategory
+if TYPE_CHECKING:
+    from master_state import MasterState
+    from unit_manager import FriendlyUnitManager, EnemyUnitManager, UnitManager
+    from unit_status import ActCategory, ActStatus, CombatActSubCategory
 
 logger = get_logger(__name__)
-
-
-class CombatPlanner:
-    def __init__(self, unit):
-        self.unit = unit
-
-    def plan(self):
-        # Plan the combat actions
-        # 1. Determine the attack mode (e.g., hold, attack, retreat, etc.)
-        # 2. Find the nearest enemy target based on the attack mode
-        # 3. Path to the target or hold position
-        # 4. Add attack actions
-        # 5. Check and handle any action flags
-        pass
-
-
-class GeneralPlanner:
-    def __init__(self, unit):
-        self.unit = unit
-
-    def plan(self):
-        # Plan the general actions
-        # 1. Determine the general task for the unit (e.g., patrolling, guarding, etc.)
-        # 2. Find the target or destination for the task
-        # 3. Path to the target or destination
-        # 4. Add any required actions related to the task
-        # 5. Check and handle any action flags
-        pass
 
 
 class ActionHandler:
@@ -62,6 +33,8 @@ class ActionHandler:
         DIG_INVALID_RETURNING = auto()
         PICKUP_INVALID_RETURNING = auto()
         TRANSFER_INVALID_RETURNING = auto()
+
+        NOT_ENOUGH_POWER_TO_ASSIGN = auto()
 
     def __init__(self, master: MasterState, unit: FriendlyUnitManager, max_queue_step_length: int):
         self.master = master
@@ -88,7 +61,7 @@ class ActionHandler:
         act_status = self.unit.status.current_action.copy()
         self.unit.act_statuses.extend([act_status] * num)
 
-    def add_actions_to_queue(self, actions, targeting_enemy=None, allow_partial=None) -> HandleStatus:
+    def add_actions_to_queue(self, actions: List[np.ndarray], targeting_enemy=None, allow_partial=None) -> HandleStatus:
         """
         Add actions to the action queue after checking queue length
         Note: This should be the ONLY way actions are added to unit action queue
@@ -96,6 +69,8 @@ class ActionHandler:
         Checks:
             If max_num_steps will be exceeded, don't add, return MAX_STEPS_REACHED_PAUSE statu-
         """
+        if type(actions) != list:
+            raise TypeError(f'got {type(actions)} expected List[np.ndarray]')
         num_new_steps = util.num_turns_of_actions(actions)
         current_action_steps = util.num_turns_of_actions(self.unit.action_queue)
 
@@ -108,19 +83,31 @@ class ActionHandler:
         self._add_current_act_status(len(actions), targeting_enemy=targeting_enemy, allow_partial=allow_partial)
         return self.HandleStatus.SUCCESS
 
-    def get_costmap(self):
+    def get_costmap(self, collision_only=None, target_enemy_id_num: Optional[int]=None):
         """Get costmap at current step"""
+        if collision_only is None:
+            # TODO: Check whether collision only works OK
+            collision_only = False
+        ignore_ids = [target_enemy_id_num] if target_enemy_id_num is not None else []
+        enemy_collision_value = -1 if not ignore_ids else 0
         cm = self.pathfinder.generate_costmap(
             self.unit,
-            ignore_id_nums=[self.unit.id_num],
+            ignore_id_nums=[self.unit.id_num].extend(ignore_ids),
             friendly_light=True,
             friendly_heavy=True,
             enemy_light=None,
             enemy_heavy=True,
-            # TODO: Check whether collision only works OK
-            collision_only=True,
+            collision_only=collision_only,
+            enemy_collision_value=enemy_collision_value,
         )
         return cm
+
+    def path_to_pos(self, pos:util.POS_TYPE, from_pos: Optional[util.POS_TYPE] = None, target_enemy_id_num: Optional[int]=None):
+        """Calculate the path to pos from unit.pos (or from_pos)"""
+        from_pos = from_pos if from_pos is not None else self.unit.pos
+        cm = self.get_costmap(target_enemy_id_num=target_enemy_id_num)
+        path = self.pathfinder.fast_path(from_pos, pos, cm, margin=4)
+        return path
 
     def path_to_nearest_non_zero(self, non_zero_array: np.ndarray, from_pos=None) -> np.ndarray:
         """Calculate path to nearest available non-zero in array"""
@@ -349,6 +336,21 @@ class ActionHandler:
         self.unit.power = available_power - path_cost
         return self.HandleStatus.SUCCESS
 
+    def add_path_to_pos(self, pos: util.POS_TYPE, target_enemy_id_num: Optional[int] = None):
+        """Combine pathing and adding that path to action queue"""
+        path = self.path_to_pos(pos, target_enemy_id_num=target_enemy_id_num)
+        return self.add_path(path, targeting_enemy=True if target_enemy_id_num is not None else False)
+
+    def add_cheapest_move(self) -> HandleStatus:
+        """Move to cheapest non-blocked direction"""
+        cm = self.get_costmap(collision_only=True)
+        best_direction = util.find_cheapest_move_direction(cm, self.unit.pos)
+        if best_direction == util.CENTER:
+            return self.HandleStatus.PATHING_FAILED
+        actions = util.path_to_actions([self.unit.pos, util.add_direction_to_pos(self.unit.pos, best_direction)])
+        status = self.add_actions_to_queue(actions)
+        return status
+
     def add_dig(self, n_digs) -> HandleStatus:
         """
         Add digs to unit after some checks:
@@ -379,7 +381,7 @@ class ActionHandler:
             logger.warning(
                 f"{self.unit.log_prefix} attempted too many digs, doing as many as possible then pathihng back to factory"
             )
-            status = self.add_actions_to_queue(self.unit.dig(n=max_digs))
+            status = self.add_actions_to_queue([self.unit.dig(n=max_digs)])
             if status != self.HandleStatus.SUCCESS:
                 return status
             status = self.return_to_factory()
@@ -388,7 +390,7 @@ class ActionHandler:
             return self.HandleStatus.LOW_POWER_RETURNING
 
         # Checks passed, add actions to queue
-        status = self.add_actions_to_queue(self.unit.dig(n=n_digs))
+        status = self.add_actions_to_queue([self.unit.dig(n=n_digs)])
         if status != self.HandleStatus.SUCCESS:
             return status
 
@@ -459,7 +461,7 @@ class ActionHandler:
 
         # Checks passed, add actions to queue
         status = self.add_actions_to_queue(
-            self.unit.pickup(pickup_resource=resource_type, pickup_amount=amount), allow_partial=allow_partial
+            [self.unit.pickup(pickup_resource=resource_type, pickup_amount=amount)], allow_partial=allow_partial
         )
         if status != self.HandleStatus.SUCCESS:
             return status
@@ -509,7 +511,7 @@ class ActionHandler:
 
         # Checks passed, add actions to queue
         status = self.add_actions_to_queue(
-            self.unit.transfer(transfer_direction=direction, transfer_resource=resource_type, transfer_amount=amount)
+            [self.unit.transfer(transfer_direction=direction, transfer_resource=resource_type, transfer_amount=amount)]
         )
         if status != self.HandleStatus.SUCCESS:
             return status

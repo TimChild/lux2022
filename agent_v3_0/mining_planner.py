@@ -28,6 +28,7 @@ from unit_status import MineValues, MineActSubCategory, ActStatus, ActCategory
 if TYPE_CHECKING:
     from unit_manager import FriendlyUnitManager
     from factory_manager import FriendlyFactoryManager
+    from action_handler import ActionHandler
 
 logger = get_logger(__name__)
 
@@ -962,7 +963,7 @@ class ResourceInfo:
 class MiningUnitPlanner(BaseUnitPlanner):
     min_power = 0.5
 
-    def  __init__(self, master: MasterState, general_planner: MiningPlanner, unit: FriendlyUnitManager):
+    def __init__(self, master: MasterState, general_planner: MiningPlanner, unit: FriendlyUnitManager):
         super().__init__(master, general_planner, unit)
         self.planner = general_planner
         self.resource_type = None
@@ -977,6 +978,7 @@ class MiningUnitPlanner(BaseUnitPlanner):
         - Check each in list to determine best value (nearest, unoccupied etc)
         - Return best or None
         """
+        logger.debug(f'finding best resource')
         resource_list = self.planner.get_resource_list(self.unit.factory_id, self.resource_type)
         utype = self.unit.unit_type
         best_resource = None
@@ -1015,8 +1017,9 @@ class MiningUnitPlanner(BaseUnitPlanner):
         """
         pass
 
-    def update_planned_actions(self):
+    def update_planned_actions(self) -> ActionHandler.HandleStatus:
         # print(self.unit.status.current_action.sub_category)
+        logger.debug(f'Starting mine planning')
         if self.unit.status.current_action.sub_category == MineActSubCategory.ICE:
             self.resource_type = util.ICE
         elif self.unit.status.current_action.sub_category == MineActSubCategory.ORE:
@@ -1025,19 +1028,23 @@ class MiningUnitPlanner(BaseUnitPlanner):
             raise ValueError(f"{self.unit.status.current_action} not correct for Mining")
 
         resource = self._get_best_resource()
+        logger.debug(f'Best resource = {resource}')
         if resource is None:
             logger.warning(f'{self.unit.log_prefix} failed to find available resource')
             return self.unit.action_handler.return_to_factory()
 
         if self.unit.status.current_action.step == 1:
+            logger.debug(f'step 1 (empty)')
             self.unit.status.current_action.step = 2
 
         # 2. Get at least a min amount of power from factory
         if self.unit.status.current_action.step == 2:
+            logger.debug(f'maybe getting power')
             power = self.unit.power_remaining()
             if power < self.min_power*self.unit.unit_config.BATTERY_CAPACITY:
                 factory_power = self.unit.factory.calculate_power_at_step(util.num_turns_of_actions(self.unit.action_queue))
                 if power + factory_power >= self.min_power*self.unit.unit_config.BATTERY_CAPACITY:
+                    logger.debug(f'trying to pickup power')
                     status = self.unit.action_handler.add_pickup(allow_partial=True)
                     if status != self.SUCCESS:
                         return status
@@ -1049,18 +1056,20 @@ class MiningUnitPlanner(BaseUnitPlanner):
 
         # 3. Path to resource
         if self.unit.status.current_action.step == 3:
-            status = self.unit.action_handler.add_path(self.unit, resource.pos)
+            logger.debug(f'trying to path to resource')
+            status = self.unit.action_handler.add_path_to_pos(resource.pos)
             if status != self.SUCCESS:
                 return status
             self.unit.status.current_action.step = 4
 
         # 4. Add dig actions
         if self.unit.status.current_action.step == 4:
+            logger.debug(f'trying to dig resource')
             available_power = self.unit.power_remaining()
             power_to_facory = self.unit.action_handler.path_to_factory_cost(self.unit.pos)
             n_digs = (available_power - power_to_facory)//self.unit.unit_config.DIG_COST
             if n_digs > 0:
-                status = self.unit.action_handler.add_dig(self.unit, n_digs=n_digs)
+                status = self.unit.action_handler.add_dig(n_digs=n_digs)
                 if status != self.SUCCESS:
                     return status
             else:
@@ -1072,6 +1081,7 @@ class MiningUnitPlanner(BaseUnitPlanner):
 
         # 5. Dropoff at factory
         if self.unit.status.current_action.step == 5:
+            logger.debug(f'trying to dropoff at factory')
             status = self.unit.action_handler.return_to_factory()
             self.unit.status.current_action.step = 1
             return status
@@ -1128,29 +1138,33 @@ class MiningPlanner(BaseGeneralPlanner):
                             units_to_pop.append(unit_id)
                     for unit_id in units_to_pop:
                         resource.used_by.pop(unit_id)
+        self.update_resources()
 
     def update_resources(self):
+        """Create a list of best ice and ore for each factory once when the factory first exists"""
         ice = self.master.maps.ice
         ore = self.master.maps.ore
         for res_map, resource_dict in zip([ice, ore], [self.ice_resources, self.ore_resources]):
             for factory_id, factory in self.master.factories.friendly.items():
-                res_list = []
-                factory_dist = factory.dist_array
-                res_dist = factory_dist * res_map
-                for i in range(15):
-                    nearest = util.nearest_non_zero(res_dist, factory.pos)
-                    if nearest is None:
-                        break
-                    dist = util.manhattan(nearest, factory.pos)
-                    if dist < 5:
-                        value = 100
-                    elif dist < 10:
-                        value = 70
-                    elif dist < 15:
-                        value = 40
-                    else:
-                        value = 10
-                    res_list.append(ResourceInfo(value=value, pos=nearest, used_by={}, dist=dist))
+                if factory_id not in resource_dict:
+                    res_list = []
+                    factory_dist = factory.dist_array
+                    res_dist = factory_dist * res_map
+                    for i in range(15):
+                        nearest = util.nearest_non_zero(res_dist, factory.pos)
+                        if nearest is None:
+                            break
+                        dist = util.manhattan(nearest, factory.pos)
+                        if dist < 5:
+                            value = 100
+                        elif dist < 10:
+                            value = 70
+                        elif dist < 15:
+                            value = 40
+                        else:
+                            value = 10
+                        res_list.append(ResourceInfo(value=value, pos=nearest, used_by={}, dist=dist))
+                    resource_dict[factory_id] = res_list
 
 
     # @property

@@ -470,9 +470,7 @@ class UnitPaths:
 
         mask = util.pad_and_crop(util.manhattan_kernel(radius), near_nums.shape, pos[0], pos[1])
 
-        # Start with empty
         x, y = self._x, self._y
-        near_nums = np.full_like(self.friendly_valid_move_map, fill_value=-1)
         teams, utypes = self._get_teams_and_utypes(friendly_light, friendly_heavy, enemy_light, enemy_heavy)
         for team, utype in zip(teams, utypes):
             key = f"{team}_{utype}"
@@ -481,7 +479,7 @@ class UnitPaths:
             # Makes all outside of radius zero
             masked = (arr + 1) * mask  # +1 to make id_0 become 1 (and -1s become 0)
             # But then be sure to copy in the actual id_nums
-            near_nums[masked >= 0] = arr
+            near_nums[masked >= 0] = arr[masked >= 0]
         return near_nums
 
     @property
@@ -581,6 +579,7 @@ class UnitPaths:
 
         # Account for low energy or no path to at least get next position correct (assuming no action queue update cost)
         path = sanitize_path_start(path, unit, self.rubble)
+        print(f'adding {unit.unit_id} path {path} to paths')
 
         # Add that path to the 3D path array
         self._add_path_to_array(unit, path, array, self.max_step, is_enemy=is_enemy)

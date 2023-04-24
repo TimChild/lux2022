@@ -964,6 +964,27 @@ def move_to_cheapest_adjacent_space(pathfinder: Pather, unit: FriendlyUnitManage
     return success
 
 
+def find_cheapest_move_direction(costmap: np.ndarray, pos: POS_TYPE) -> int:
+    """Move to cheapest location wherever unit currently is"""
+    pos = np.array(pos)
+    best_direction = None
+    best_cost = 999
+    for direction, delta in zip(MOVE_DIRECTIONS[1:], MOVE_DELTAS[1:]):
+        new_x, new_y = pos + delta
+        try:
+            new_cost = costmap[new_x, new_y]
+            if 0 < new_cost < best_cost:
+                best_direction = direction
+                best_cost = new_cost
+        except IndexError as e:
+            logger.info(f"Index error for ({new_x, new_y}), probably near edge of map, ignoring this position")
+            continue
+    if best_direction is None:
+        logger.error(f"No adjacent direction available, returning center")
+        return CENTER
+    return best_direction
+
+
 ################### Plotting #################
 # def get_test_env(path=None):
 #     if path is None:
@@ -1710,7 +1731,7 @@ def calculate_path_to_nearest_non_zero(
     target_array: np.ndarray,
     near_pos: Tuple[int, int],
     max_attempts=20,
-    margin=2,
+    margin=4,
 ) -> np.ndarray:
     """Calculate path from pos to the nearest non-zero of array that will be unoccupied on arrival (closest to near_pos)
     Args:

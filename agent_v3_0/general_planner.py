@@ -10,6 +10,7 @@ import util
 if TYPE_CHECKING:
     from master_state import MasterState
     from unit_manager import FriendlyUnitManager
+    from action_handler import ActionHandler
 
 logger = get_logger(__name__)
 
@@ -28,7 +29,7 @@ class GeneralUnitPlanner(BaseUnitPlanner):
         # just make this easier to get to since it's used a lot
         self.SUCCESS = self.unit.action_handler.HandleStatus.SUCCESS
 
-    def update_planned_actions(self):
+    def update_planned_actions(self) -> ActionHandler.HandleStatus:
 
         act_cat = self.unit.status.current_action.category
         if act_cat == ActCategory.DROPOFF:
@@ -46,42 +47,56 @@ class GeneralUnitPlanner(BaseUnitPlanner):
         else:
             raise ValueError(f'{act_cat} not valid for GeneralPlanner')
 
-    def update_idle(self):
+        return self.SUCCESS
+
+    def update_idle(self) -> ActionHandler.HandleStatus:
         planned = self.unit.status.planned_action_queue
         start_pos = self.unit.start_of_turn_pos
+        logger.debug(f'Updating idle unit')
 
         # If finishing previous plans
         if len(planned) > 0:
             path = self.unit.current_path(max_len=self.unit.max_queue_step_length)
             end_pos = path[-1]
             if self.unit.factory.factory_loc[end_pos[0], end_pos[1]] > 0 or self.unit.factory.queue_array[end_pos[0], end_pos[1]] > 0:
+                logger.debug(f'unit still pathing toward factory')
                 return self.SUCCESS
             else:
                 self.unit.reset_unit_to_start_of_turn_empty_queue()
                 status = self.unit.action_handler.return_to_factory()
+                logger.warning(f'{self.unit.log_prefix} current path not ending at factory. Re-pathing unit toward factory')
                 return status
 
         # Can new actions be assigned to this unit
-        if len(planned) == 0:
+        else:
             # Check in correct place
             if self.unit.on_own_factory() or self.unit.factory.queue_array[start_pos[0], start_pos[1]] > 0:
                 new_work = self.possible_assign_new_work()
-                if new_work:
+                logger.debug(f'new_work = {new_work}')
+                if new_work == self.SUCCESS:
                     # New job will generate actions
                     return self.SUCCESS
-                if self.unit.status.turn_status.must_move:
+                elif self.unit.status.turn_status.must_move:
+                    logger.debug(f'handling must move')
                     self.unit.reset_unit_to_start_of_turn_empty_queue()
                     status = self.unit.action_handler.return_to_factory()
                     return status
+                else:
+                    logger.debug(f'doing nothing, OK')
+                    self.unit.status.turn_status.action_queue_empty_ok = True
+                    return self.SUCCESS
             else:
+                logger.warning(f'unit had no actions and was not at factory, returning now')
                 self.unit.reset_unit_to_start_of_turn_empty_queue()
                 status = self.unit.action_handler.return_to_factory()
                 return status
+        raise RuntimeError(f"Shouldn't reach here")
 
-    def possible_assign_new_work(self):
+    def possible_assign_new_work(self) -> ActionHandler.HandleStatus:
         if len(self.unit.status.planned_action_queue) > 0:
             raise RuntimeError(f'{self.unit.log_prefix} has {len(self.unit.status.planned_action_queue)} actions remaining')
 
+        # Start with fresh queue when doing new work
         self.unit.reset_unit_to_start_of_turn_empty_queue()
 
         ### From here decide possible new action for unit ###
@@ -119,7 +134,7 @@ class GeneralUnitPlanner(BaseUnitPlanner):
                 return self.SUCCESS
 
         logger.info(f'Not enough factory power to assign ne work to {self.unit.unit_id}')
-        return False
+        return self.unit.action_handler.HandleStatus.NOT_ENOUGH_POWER_TO_ASSIGN
 
     def update_dropoff(self):
 

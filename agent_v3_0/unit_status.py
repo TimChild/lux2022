@@ -161,7 +161,7 @@ class ActStatus:
     category: ActCategory = ActCategory.NOTHING
     sub_category: Optional[ActSubCategory] = None
     step: int = 1
-    previous_action: ActStatus = field(default_factory=lambda: ActStatus())
+    previous_action: ActStatus = None
 
     # Used when adding actions to unit (they are overwritten, so don't set them here!)
     targeting_enemy: bool = None  # For pathing to enemy (don't raise Close/Collision enemy statuses)
@@ -217,7 +217,7 @@ class TurnStatus:
     # If False, and planned actions are empty at the end of action calculation either error or plan again or something
     action_queue_empty_ok: bool = False
     # Whether the unit.action_queue should be updated to planned_actions at end of planner
-    planned_actions_require_update: bool = False
+    planned_actions_require_update: bool = True
     # If set True, the units next action calculation loop will be started again (e.g. if switch from Mine decides it
     # should switch to attack)
     replan_required: bool = False
@@ -379,6 +379,7 @@ class Status:
 
         valid = False
         new_planned = self._step_planned_actions_and_status()
+        new_statuses = self.planned_act_statuses.copy()
         if len(new_planned) != len(self.planned_act_statuses):
             logger.error(
                 f"{unit.log_prefix} Planned actions and ActStatuses not matched in length {len(new_planned)}!={len(self.planned_act_statuses)}"
@@ -390,12 +391,14 @@ class Status:
             else:
                 logger.error(f"{unit.log_prefix} unit actions empty, but len planned was {len(new_planned)}")
                 new_planned = []
+                new_statuses = []
                 valid = False
         elif len(unit.start_of_turn_actions) > 0 and len(new_planned) == 0:
             logger.error(
                 f"{unit.log_prefix}: len(actions) = {len(unit.start_of_turn_actions)} != len(planned) = {len(new_planned)}"
             )
             new_planned = unit.start_of_turn_actions.copy()
+            new_statuses = [ActStatus()]*len(new_planned)
             valid = False
         elif np.all(unit.start_of_turn_actions[0] == new_planned[0]):
             logger.debug(f"planned_actions still valid")
@@ -405,9 +408,10 @@ class Status:
                 f"{unit.log_prefix} planned actions no longer match q1 = {unit.start_of_turn_actions[0]}, p1 = {new_planned[0]}. updating planned actions"
             )
             new_planned = unit.start_of_turn_actions.copy()
+            new_statuses = [ActStatus()]*len(new_planned)
             valid = False
         self._debug_last_beginning_of_step_update = step
-        self.update_planned_action_queue(new_planned)
+        self.update_planned_action_queue(new_planned, new_statuses)
 
         self.turn_status.planned_actions_valid_from_last_step = valid
         return valid
