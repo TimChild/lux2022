@@ -422,19 +422,25 @@ class SingleUnitActionPlanner:
                 logger.debug(f'copying action_queue to planned_action_queue (and statuses)')
                 self.unit.status.update_planned_action_queue(self.unit.action_queue.copy(), self.unit.act_statuses.copy())
 
-            # Check again if unit must move
-            if status == HS.SUCCESS:
-                if (
+            # Was planning successful
+            if (
                     util.num_turns_of_actions(self.unit.status.planned_action_queue) > 0
                     or self.unit.status.turn_status.action_queue_empty_ok
-                ):
+            ):
+                if status in [HS.SUCCESS, HS.LOW_POWER_PAUSING, HS.MAX_STEPS_REACHED_PAUSE]:
                     logger.debug(f'planning successful')
                     # Good break here
                     break
+                elif status in [HS.LOW_POWER_RETURNING, HS.PICKUP_INVALID_RETURNING, HS.DIG_INVALID_RETURNING, HS.PATH_INVALID_RETURNING, HS.ENEMY_NEAR_ATTACKING, HS.ENEMY_NEAR_FLEEING, HS.NOT_ENOUGH_POWER_TO_ASSIGN, HS.TRANSFER_INVALID_RETURNING]:
+                    logger.info(f'planning semi-successful, returning with status {status}')
+                    break
                 else:
-                    logger.error(
-                        f"{self.unit.log_prefix}, status SUCCESS, but empty planned actions and empty_actions_ok False"
-                    )
+                    logger.error(f'{self.unit.log_prefix} planning not successful, status = {status}')
+
+            else:
+                logger.error(
+                    f"{self.unit.log_prefix},  empty planned actions and empty_actions_ok False"
+                )
         else:
             logger.error(f"{self.unit.log_prefix}, after X attempts at planning, status = {status}")
 
@@ -773,7 +779,7 @@ class MultipleUnitActionPlanner:
             else:
                 logger.warning(
                     f"Updating {unit_id} with empty actions (previous action len = "
-                    f"{len(unit.start_of_turn_actions)}) previous_status = {unit.status.previous_action}"
+                    f"{len(unit.start_of_turn_actions)}) previous_status = {unit.status.current_action.previous_action}"
                     f"(could be on purpose, but probably should figure out a better thing for this unit to do (even if stay still for a while first))"
                 )
                 if len(unit.start_of_turn_actions) == 0:
@@ -837,9 +843,10 @@ class MultipleUnitActionPlanner:
             last_updated = self.master.step - unit.status.last_real_action_update_step
             logger.info(
                 f"{unit.log_prefix} has updated actions "
-                f"(last updated {last_updated} ago),"
-                f"was {unit.status.current_action.previous_action.category}:{unit.status.current_action.previous_action.sub_category}, now {unit.status.current_action.category}:{unit.status.current_action.sub_category}"
-                f" first few new actions are {planned_actions[:3]}, first few old actions were {unit.start_of_turn_actions[:3]}"
+                f"(last updated {last_updated} ago),\n"
+                f"\twas {unit.status.current_action.previous_action}\n"
+                f"\tnow {unit.status.current_action}\n"
+                f"\tfirst few new actions are {planned_actions[:3]}, first few old actions were {unit.start_of_turn_actions[:3]}"
             )
             update_required = True
 

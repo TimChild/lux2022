@@ -579,7 +579,6 @@ class UnitPaths:
 
         # Account for low energy or no path to at least get next position correct (assuming no action queue update cost)
         path = sanitize_path_start(path, unit, self.rubble)
-        print(f'adding {unit.unit_id} path {path} to paths')
 
         # Add that path to the 3D path array
         self._add_path_to_array(unit, path, array, self.max_step, is_enemy=is_enemy)

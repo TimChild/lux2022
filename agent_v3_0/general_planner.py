@@ -32,6 +32,7 @@ class GeneralUnitPlanner(BaseUnitPlanner):
     def update_planned_actions(self) -> ActionHandler.HandleStatus:
 
         act_cat = self.unit.status.current_action.category
+        status = None
         if act_cat == ActCategory.DROPOFF:
             status = self.update_dropoff()
             if status != self.SUCCESS:
@@ -44,7 +45,7 @@ class GeneralUnitPlanner(BaseUnitPlanner):
             status = self.update_idle()
             if status != self.SUCCESS:
                 return status
-        else:
+        if status is None:
             raise ValueError(f'{act_cat} not valid for GeneralPlanner')
 
         return self.SUCCESS

@@ -175,6 +175,7 @@ class ActionHandler:
         If unit has resources, this will return unit to factory, add transfer, and set DROPOFF status
         If unit has no resources, this will return unit to nearest factory queue spot, and set WAITING status
         """
+        from unit_status import ActStatus, ActCategory
         # If unit has cargo, path direct to factory and set DROPOFF
         if self.unit.cargo_total > 0:
             path_to_factory = self.path_to_factory()
