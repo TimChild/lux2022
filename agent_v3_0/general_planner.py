@@ -93,6 +93,14 @@ class GeneralUnitPlanner(BaseUnitPlanner):
                         return status
                     status = self.unit.action_handler.add_actions_to_queue([self.unit.unit.move(util.CENTER, n=50)])
                     return status
+                elif self.unit.on_own_factory():
+                    logger.debug(f"moving unit to queue and waiting")
+                    path = self.unit.action_handler.path_to_factory_queue()
+                    status = self.unit.action_handler.add_path(path)
+                    if status != self.SUCCESS:
+                        return status
+                    status = self.unit.action_handler.add_actions_to_queue([self.unit.unit.move(util.CENTER, n=50)])
+                    return status
                 elif util.num_turns_of_actions(planned) < 20:
                     logger.debug(f"adding more center moves")
                     status = self.unit.action_handler.add_actions_to_queue([self.unit.unit.move(util.CENTER, n=50)])

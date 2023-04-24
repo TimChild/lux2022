@@ -194,6 +194,7 @@ class ActionHandler:
 
         # If unit has cargo, path direct to factory and set DROPOFF
         if self.unit.cargo_total > 0:
+            self.unit.status.update_action_status(ActStatus(category=ActCategory.DROPOFF))
             path_to_factory = self.path_to_factory()
             if len(path_to_factory) == 0:
                 return self.HandleStatus.PATHING_FAILED
@@ -204,9 +205,9 @@ class ActionHandler:
             if status != self.HandleStatus.SUCCESS:
                 return status
 
-            self.unit.status.update_action_status(ActStatus(category=ActCategory.DROPOFF))
             return self.HandleStatus.SUCCESS
         else:
+            self.unit.status.update_action_status(ActStatus(category=ActCategory.WAITING))
             path_to_queue = self.path_to_factory_queue()
             if len(path_to_queue) == 0:
                 return self.HandleStatus.PATHING_FAILED
@@ -214,7 +215,6 @@ class ActionHandler:
             if status != self.HandleStatus.SUCCESS:
                 return status
 
-            self.unit.status.update_action_status(ActStatus(category=ActCategory.WAITING))
             return self.HandleStatus.SUCCESS
 
     def get_units_near(

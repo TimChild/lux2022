@@ -309,6 +309,7 @@ class FriendlyUnitManager(UnitManager):
         move_actions = []
         status = self.action_handler.HandleStatus.SUCCESS  # Default to success for no queue
         for action, act_status in zip(actions_to_run, act_statuses):
+            self.status.current_action = act_status
             act_type = action[util.ACT_TYPE]
             rtype = action[util.ACT_RESOURCE]
             dir = action[util.ACT_DIRECTION]
