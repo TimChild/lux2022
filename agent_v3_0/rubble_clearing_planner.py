@@ -475,7 +475,7 @@ class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
         # 2. Get at least a min amount of power from factory
         if self.unit.status.current_action.step == 2:
             if self.unit.power < min_power:
-                status = self.unit.action_handler.add_pickup(allow_partial=True)
+                status = self.unit.action_handler.add_pickup(amount=desired, allow_partial=True)
                 if self._check_and_handle_action_flags(status):
                     return
             if self.unit.power < min_power:
@@ -485,7 +485,8 @@ class ClearingUnitPlanner(BaseUnitPlanner, abc.ABC):
 
         # 3. Path to target area
         if self.unit.status.current_action.step == 3:
-            status = self.action_handler.add_path(self.unit, target_array=target)
+            path = self.unit.action_handler.path_to_nearest_non_zero(non_zero_array=target)
+            status = self.unit.action_handler.add_path(path)
             if self._check_and_handle_action_flags(status):
                 return
             self.unit.status.current_action.step = 4

@@ -34,7 +34,7 @@ class UnitManager(abc.ABC):
         self.unit_config: UnitConfig = unit.unit_cfg
         self.id_num = int(re.search(r"\d+", unit.unit_id).group())
         # Overridden for Friendly where pos changes
-        self.start_of_turn_pos = self.unit.pos
+        self.start_of_turn_pos = tuple(unit.pos)
 
     def update(self, unit: Unit):
         """Beginning of turn update"""
@@ -45,14 +45,16 @@ class UnitManager(abc.ABC):
         return self.unit.unit_type
 
     @property
-    def pos(self) -> util.POS_TYPE:
-        return self._pos
+    def pos(self):
+        return self.unit.pos
 
-    @pos.setter
-    def pos(self, value):
-        if value is None or len(value) != 2:
-            raise ValueError(f"got {value} with type {type(value)} for pos")
-        self._pos = tuple(value)
+    @property
+    def action_queue(self):
+        return self.unit.action_queue
+
+    @action_queue.setter
+    def action_queue(self, value):
+        self.unit.action_queue = value
 
     @property
     def cargo(self):
@@ -65,16 +67,6 @@ class UnitManager(abc.ABC):
             r = rubble[unit.pos_slice]
         """
         return np.s_[self.pos[0], self.pos[1]]
-
-    @property
-    def action_queue(self) -> List[np.ndarray]:
-        return self._action_queue
-
-    @action_queue.setter
-    def action_queue(self, value):
-        if not isinstance(value, list):
-            raise TypeError(f"got {value}, expected List[np.ndarray]")
-        self._action_queue = value
 
     @property
     def cargo_total(self) -> int:
@@ -147,7 +139,6 @@ class EnemyUnitManager(UnitManager):
         logger.info(f"Enemy unit {self.unit_id} dead, nothing more to do")
 
 
-
 class FriendlyUnitManager(UnitManager):
     # Maximum number of steps to plan ahead for (pause after that)
     max_queue_step_length = 50
@@ -167,11 +158,11 @@ class FriendlyUnitManager(UnitManager):
         self.pickup = unit.pickup
 
         # Keep track of start of turn values (these are changed during planning)
-        self.start_of_turn_actions = copy.copy(unit.action_queue)
+        self.start_of_turn_actions = list(copy.copy(unit.action_queue))
         self.start_of_turn_pos = tuple(unit.pos)
         self.start_of_turn_power = unit.power
         self.start_of_turn_cargo = copy.copy(unit.cargo)
-        self._action_queue = copy.copy(unit.action_queue)
+        self._action_queue = list(copy.copy(unit.action_queue))
         self._cargo = copy.copy(unit.cargo)
         self._power = unit.power
         self._pos = tuple(unit.pos)
@@ -189,22 +180,23 @@ class FriendlyUnitManager(UnitManager):
     def update(self, unit: Unit):
         """Beginning of turn update"""
         super().update(unit)
-        self.status.update(self, self.master)
-
         # update from planned actions
         self.act_statuses = copy.copy(self.status.planned_act_statuses)
 
         # Avoid changing the actual pos of unit.pos (which the env also uses)
-        self.start_of_turn_actions = copy.copy(unit.action_queue)
+        self.start_of_turn_actions = list(copy.copy(unit.action_queue))
         self.start_of_turn_pos = tuple(unit.pos)
         self.start_of_turn_power = unit.power
         self.start_of_turn_cargo = copy.copy(unit.cargo)
 
         # Init values from real unit
-        self._action_queue = copy.copy(unit.action_queue)
+        self._action_queue = list(copy.copy(unit.action_queue))
         self._pos = tuple(unit.pos)
         self._power = unit.power
         self._cargo = copy.copy(unit.cargo)
+
+        # Update after the unit is updated (uses start_of_turn...)
+        self.status.update(self, self.master)
 
     @property
     def cargo(self):
@@ -213,9 +205,19 @@ class FriendlyUnitManager(UnitManager):
     @cargo.setter
     def cargo(self, value):
         # if not isinstance(value, UnitCargo):
-        if not hasattr(value, 'metal'):  # TODO: Can switch back when not autoreloading in jupyter
+        if not hasattr(value, "metal"):  # TODO: Can switch back when not autoreloading in jupyter
             raise ValueError(f"got {value}, expected UnitCargo")
         self._cargo = copy.copy(value)
+
+    @property
+    def pos(self) -> util.POS_TYPE:
+        return self._pos
+
+    @pos.setter
+    def pos(self, value):
+        if value is None or len(value) != 2:
+            raise ValueError(f"got {value} with type {type(value)} for pos")
+        self._pos = tuple(value)
 
     @property
     def power(self) -> int:
@@ -224,6 +226,16 @@ class FriendlyUnitManager(UnitManager):
     @power.setter
     def power(self, value):
         self._power = value
+
+    @property
+    def action_queue(self) -> List[np.ndarray]:
+        return self._action_queue
+
+    @action_queue.setter
+    def action_queue(self, value):
+        if not isinstance(value, list):
+            raise TypeError(f"got {value}, expected List[np.ndarray]")
+        self._action_queue = value
 
     def reset_unit_to_start_of_turn_empty_queue(self):
         """Reset unit to start of turn, with empty queue, for planning actions from scratch"""
@@ -261,6 +273,7 @@ class FriendlyUnitManager(UnitManager):
             rtype = action[util.ACT_RESOURCE]
             dir = action[util.ACT_DIRECTION]
             amount = action[util.ACT_AMOUNT]
+            n = action[util.ACT_N]
 
             # If move type, collect it and move on to next
             if act_type == util.MOVE:
@@ -274,7 +287,7 @@ class FriendlyUnitManager(UnitManager):
                 move_actions = []
 
             if act_type == util.DIG:
-                status = self.action_handler.add_dig(n_digs=amount)
+                status = self.action_handler.add_dig(n_digs=n)
                 if status != SUCCESS:
                     return status
                 continue

@@ -25,11 +25,12 @@ if __name__ == "__main__":
     update_logging_level(logging.ERROR)
     # seed = 42
     # seed = 123425
-    seed = 45342
+    # seed = 45342
+    seed = 45342 + 1
     # seed = 178220973
 
     # Run initial setup (placing factories)
     myenv = MyEnv(seed, Agent, BasicAgent)
     myenv.run_early_setup()
-    myenv.run_to_step(200)
+    myenv.run_to_step(30)
     myenv.show()

@@ -418,7 +418,7 @@ class CollectInfoFromEnv:
 ##########################################
 
 
-def generate_circle_coordinates_array(center: Tuple[int, int], N: int, radius: float, max_coord: int) -> np.ndarray:
+def generate_circle_coordinates_array(center: Tuple[int, int], N: int, radius: float, max_coord: int = 48) -> np.ndarray:
     x, y = center
     angles = np.linspace(0, 2 * np.pi, N + 1)[:-1]  # Exclude the last angle (2 * pi) to avoid overlap
 

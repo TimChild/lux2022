@@ -61,6 +61,12 @@ _desires_work_ratios_dict = {
 }
 DESIRED_WORK_RATIOS_DF = _to_df(_desires_work_ratios_dict)
 
+_desires_unit_ratios_dict = {
+    "step": [1, 10, 100, 500, 850, 1000],
+    "heavy": [1, 1, 1, 1, 1, 1],
+    "light": [0.01, 3, 8, 5, 3, 2],
+}
+DESIRED_UNIT_RATIOS_DF = _to_df(_desires_unit_ratios_dict)
 
 @dataclass
 class WorkRatios:
@@ -123,12 +129,6 @@ class WorkRatios:
         return ActStatus(category=category, sub_category=sub_category)
 
 
-_desires_unit_ratios_dict = {
-    "step": [1, 100, 500, 850, 1000],
-    "heavy": [1, 1, 1, 1, 1],
-    "light": [0.01, 10, 5, 3, 2],
-}
-DESIRED_UNIT_RATIOS_DF = _to_df(_desires_unit_ratios_dict)
 
 
 @dataclass
@@ -629,6 +629,10 @@ class FactoryActionPlanner:
         water_left = game_state.teams[player].water
         metal_left = game_state.teams[player].metal
 
+        # TODO: Debugging only
+        if water_left == 0:
+            return {}
+
         # how much to give to each factory
         water = water_left // factories_to_place
         metal = metal_left // factories_to_place
@@ -703,4 +707,5 @@ class FactoryActionPlanner:
 
         # TODO: Calculate how close to nearest enemy factory for top X
 
-        return dict(spawn=df.iloc[0].pos, metal=metal, water=water)
+        # return dict(spawn=df.iloc[0].pos, metal=metal, water=water)
+        return dict(spawn=df.iloc[0].pos, metal=metal_left, water=water_left)

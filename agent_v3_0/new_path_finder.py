@@ -99,6 +99,7 @@ class Pather:
         ignore_id_nums = ignore_id_nums if ignore_id_nums is not None else []
         if unit.id_num not in ignore_id_nums:
             ignore_id_nums.append(unit.id_num)
+
         cm = self.unit_paths.to_costmap(
             pos=unit.pos,
             start_step=step,
@@ -114,6 +115,7 @@ class Pather:
             true_intercept=collision_only,
             # step_dropoff_multiplier=0.92,
         )
+
         # Note: Be careful not to make -1s or 0s become positive (blocked becomes unblocked)
         blocked = np.logical_or(cm <= 0, self.base_costmap <= 0)
         cm += self.base_costmap

@@ -223,7 +223,8 @@ class FriendlyFactoryManager(FactoryManager):
             np.logical_or,
             [
                 self.generate_circle_array(self.pos, radius=r, num=n)
-                for r, n in zip([3, 4, 5, 6, 7], [8, 8, 14, 16, 14])
+                # for r, n in zip([3, 4, 5, 6, 7], [8, 8, 14, 16, 14])
+                for r, n in zip([3, 4, 5], [8, 8, 14])
             ],
         ).astype(int)
         # Block out resources from waiting areas

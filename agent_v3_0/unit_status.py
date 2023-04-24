@@ -300,9 +300,9 @@ class Status:
 
     def update_planned_action_queue(self, new_queue: List[np.ndarray], new_act_statuses: List[ActStatus]):
         if not isinstance(new_queue, list):
-            raise TypeError
+            raise TypeError(f'Got {new_queue}, was expecting list of actions')
         if not isinstance(new_act_statuses, list):
-            raise TypeError
+            raise TypeError(f'Got {new_act_statuses}, was expecting list of ActStatus')
         if not len(new_queue) == len(new_act_statuses):
             raise ValueError(f"{len(new_queue)} == {len(new_act_statuses)} did not evaluate True")
 

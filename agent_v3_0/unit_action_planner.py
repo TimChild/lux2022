@@ -250,6 +250,7 @@ class SingleUnitActionPlanner:
     def __init__(
         self,
         unit: FriendlyUnitManager,
+        units_to_act: NewUnitsToAct,
         master: MasterState,
         multi_planner: MultipleUnitActionPlanner,
         current_paths: collisions.UnitPaths,
@@ -259,6 +260,7 @@ class SingleUnitActionPlanner:
         collision_resolve_max_step: int,
     ):
         self.unit = unit
+        self.units_to_act = units_to_act,
         self.master = master
         self.multi_planner = multi_planner
         self.current_paths = current_paths
@@ -323,7 +325,9 @@ class SingleUnitActionPlanner:
                 )
                 self.unit.reset_unit_to_start_of_turn_empty_queue()
                 self.unit.action_handler.add_cheapest_move()
-                status = self.unit.status.update_planned_action_queue(self.unit.action_queue.copy(), self.unit.act_statuses.copy())
+                status = self.unit.status.update_planned_action_queue(
+                    self.unit.action_queue.copy(), self.unit.act_statuses.copy()
+                )
                 if status == self.unit.action_handler.HandleStatus.SUCCESS:
                     logger.warning(f"successfully forced move out of the way")
                 else:
@@ -338,7 +342,7 @@ class SingleUnitActionPlanner:
         """If any of first few actions are not valid, reset unit to that point so repathing can happen"""
         # First action valid?
         if len(self.unit.status.planned_action_queue) == 0:
-            logger.debug(f'Actions valid because 0 len')
+            logger.debug(f"Actions valid because 0 len")
             # Done, current actions are valid
             valid = True
         else:
@@ -351,7 +355,60 @@ class SingleUnitActionPlanner:
             logger.warning(f"{self.unit.log_prefix} First action invalid, resetting and returning")
             self.unit.status.reset_to_step(step=0)
             return self.unit.action_handler.HandleStatus.INVALID_FIRST_STEP
-        logger.debug(f'First action valid')
+        logger.debug(f"First action valid")
+
+        # Any collisions coming up very soon?
+        # With Friendly
+        for collision in self.collision_info.with_friendly.all.values():
+            planned_actions = self.unit.status.planned_action_queue
+            previous_dest_step = actions_util.find_dest_step_from_step(planned_actions, collision.step, direction='backward')
+            if collision.step < min(len(planned_actions), self.max_check_steps):
+                other_id = collision.other_unit_id
+                if other_id in self.units_to_act.needs_to_act:
+                    logger.info(f'{self.unit.unit_id} assuming {other_id} will get out of the way')
+                    continue
+                else:
+                    # Reset unit to before collision (will have to path from there)
+                    self.unit.status.reset_to_step(previous_dest_step)
+                    continue
+
+        # With Enemy
+        for collision in self.collision_info.with_friendly.all.values():
+            planned_actions = self.unit.status.planned_action_queue
+            previous_dest_step = actions_util.find_dest_step_from_step(planned_actions, collision.step, direction='backward')
+            if collision.step < min(len(planned_actions), self.max_check_steps):
+                other_id = collision.other_unit_id
+                other_unit = self.master.units.enemy.get_unit(other_id)
+                if other_unit is None:
+                    continue
+                # Is the unit a danger?
+                if other_unit.unit_type == 'HEAVY' and self.unit.unit_type == 'LIGHT':
+                    # Yes
+                    logger.info(f'{other_id} is dangerous (they heavy we not), resetting queue to previous dest')
+                    self.unit.status.reset_to_step(previous_dest_step)
+                    continue
+                if other_unit.unit_type == 'LIGHT' and self.unit.unit_type == 'HEAVY':
+                    logger.info(f'{other_id} is not dangerous (we heavy they not) ignoring')
+                    # No
+                    continue
+                were_moving = actions_util.was_unit_moving_at_step(planned_actions, collision.step)
+                theyre_moving = actions_util.was_unit_moving_at_step(other_unit.action_queue, collision.step)
+                if were_moving and theyre_moving is False:
+                    logger.info(f'{other_id} is not dangerous (we moving they not) ignoring')
+                    # No
+                    continue
+                if were_moving is False and theyre_moving is True:
+                    # Yes
+                    logger.info(f'{other_id} is dangerous (they moving, we not), resetting queue to previous dest')
+                    self.unit.status.reset_to_step(previous_dest_step)
+                    continue
+                # both moving
+                if other_unit.power > self.unit.start_of_turn_power and collision.step < 3:
+                    # Yes
+                    logger.info(f'{other_id} is dangerous (they higher power), resetting queue to previous dest')
+                    self.unit.status.reset_to_step(previous_dest_step)
+                    continue
+                logger.error(f'colliding with {other_id} at step {collision.step} {collision.pos} but slipped through checks')
 
         # Try running units actions
         actions_to_check = actions_util.split_actions_at_step(self.unit.status.planned_action_queue, max_check_steps)[0]
@@ -364,7 +421,7 @@ class SingleUnitActionPlanner:
             )
             # TODO: maybe don't want to actually reset here...
             self.unit.status.reset_to_step(step=num_success)
-        logger.debug(f'passed initial validation')
+        logger.debug(f"passed initial validation")
         return status
 
     def calculate_actions_for_unit(self) -> bool:
@@ -381,14 +438,14 @@ class SingleUnitActionPlanner:
         # Is current location in existing paths for next step or equal or higher enemy adjacent
         unit_must_move = self._unit_must_move()
         self.unit.status.turn_status.must_move = unit_must_move
-        logger.debug(f'Unit must move = {unit_must_move}')
+        logger.debug(f"Unit must move = {unit_must_move}")
 
         # Check next few actions are valid
         # TODO: Should I change the check value?, lower than max leaves potentially invalid queues after X steps, on othe other hand
         # TODO: they may become valid by the time they are closer to occurring
         max_check_steps = min(self.max_check_steps, unit.max_queue_step_length)
         status = self._run_actions_to_step(max_check_steps)
-        logger.debug(f'status of checks = {status}')
+        logger.debug(f"status of checks = {status}")
 
         # If status success and no more updates needed
         if (
@@ -396,51 +453,70 @@ class SingleUnitActionPlanner:
             and util.num_turns_of_actions(self.unit.status.planned_action_queue) > self.min_planned_steps
         ):
             # Done, no need to do more
-            logger.info(f'No need to update this units planned actions')
+            logger.info(f"No need to update this units planned actions")
             return status
 
         for i in range(5):
-            logger.debug(f'Updating plans round {i}')
+            logger.debug(f"Updating plans round {i}")
             # Otherwise get updates from general planners
             status = None
-            if self.unit.status.current_action.category in [ActCategory.NOTHING, ActCategory.WAITING, ActCategory.DROPOFF, ActCategory.TRANSFER]:
-                logger.debug(f'updating with general planner')
+            if self.unit.status.current_action.category in [
+                ActCategory.NOTHING,
+                ActCategory.WAITING,
+                ActCategory.DROPOFF,
+                ActCategory.TRANSFER,
+            ]:
+                logger.debug(f"updating with general planner")
                 status = self.multi_planner.general_planner.get_unit_planner(self.unit).update_planned_actions()
             if self.unit.status.current_action.category == ActCategory.COMBAT:
-                logger.debug(f'updating with combat planner')
+                logger.debug(f"updating with combat planner")
                 status = self.multi_planner.combat_planner.get_unit_planner(self.unit).update_planned_actions()
             if self.unit.status.current_action.category == ActCategory.MINE:
-                logger.debug(f'updating with mine planner')
+                logger.debug(f"updating with mine planner")
                 status = self.multi_planner.mining_planner.get_unit_planner(self.unit).update_planned_actions()
             if self.unit.status.current_action.category == ActCategory.CLEAR:
-                logger.debug(f'updating with clear planner')
+                logger.debug(f"updating with clear planner")
                 status = self.multi_planner.clearing_planner.get_unit_planner(self.unit).update_planned_actions()
             if status is None:
                 raise ValueError(f"{self.unit.log_prefix} Failed to get updates")
 
             if self.unit.status.turn_status.planned_actions_require_update:
-                logger.debug(f'copying action_queue to planned_action_queue (and statuses)')
-                self.unit.status.update_planned_action_queue(self.unit.action_queue.copy(), self.unit.act_statuses.copy())
+                logger.debug(f"copying action_queue to planned_action_queue (and statuses)")
+                self.unit.status.update_planned_action_queue(
+                    self.unit.action_queue.copy(), self.unit.act_statuses.copy()
+                )
 
             # Was planning successful
             if (
-                    util.num_turns_of_actions(self.unit.status.planned_action_queue) > 0
-                    or self.unit.status.turn_status.action_queue_empty_ok
+                util.num_turns_of_actions(self.unit.status.planned_action_queue) > 0
+                or self.unit.status.turn_status.action_queue_empty_ok
             ):
-                if status in [HS.SUCCESS, HS.LOW_POWER_PAUSING, HS.MAX_STEPS_REACHED_PAUSE]:
-                    logger.debug(f'planning successful')
+                if status in [
+                    HS.SUCCESS,
+                    HS.LOW_POWER_PAUSING,
+                    HS.MAX_STEPS_REACHED_PAUSE,
+                    HS.PAUSING,
+                    HS.ENEMY_NEAR_ATTACKING,
+                ]:
+                    logger.debug(f"planning successful")
                     # Good break here
                     break
-                elif status in [HS.LOW_POWER_RETURNING, HS.PICKUP_INVALID_RETURNING, HS.DIG_INVALID_RETURNING, HS.PATH_INVALID_RETURNING, HS.ENEMY_NEAR_ATTACKING, HS.ENEMY_NEAR_FLEEING, HS.NOT_ENOUGH_POWER_TO_ASSIGN, HS.TRANSFER_INVALID_RETURNING]:
-                    logger.info(f'planning semi-successful, returning with status {status}')
+                elif status in [
+                    HS.LOW_POWER_RETURNING,
+                    HS.PICKUP_INVALID_RETURNING,
+                    HS.DIG_INVALID_RETURNING,
+                    HS.PATH_INVALID_RETURNING,
+                    HS.ENEMY_NEAR_FLEEING,
+                    HS.NOT_ENOUGH_POWER_TO_ASSIGN,
+                    HS.TRANSFER_INVALID_RETURNING,
+                ]:
+                    logger.info(f"planning semi-successful, returning with status {status}")
                     break
                 else:
-                    logger.error(f'{self.unit.log_prefix} planning not successful, status = {status}')
+                    logger.error(f"{self.unit.log_prefix} planning not successful, status = {status}")
 
             else:
-                logger.error(
-                    f"{self.unit.log_prefix},  empty planned actions and empty_actions_ok False"
-                )
+                logger.error(f"{self.unit.log_prefix},  empty planned actions and empty_actions_ok False")
         else:
             logger.error(f"{self.unit.log_prefix}, after X attempts at planning, status = {status}")
 
@@ -936,7 +1012,9 @@ class MultipleUnitActionPlanner:
             }
 
             # Sort the DataFrame based on the desired order
-            units_df.sort_values(by=list(sort_conditions.keys()), ascending=list(sort_conditions.values()), inplace=True)
+            units_df.sort_values(
+                by=list(sort_conditions.keys()), ascending=list(sort_conditions.values()), inplace=True
+            )
 
             # Create an ordered dictionary with the sorted unit IDs
             ordered_units = OrderedDict()
@@ -945,7 +1023,6 @@ class MultipleUnitActionPlanner:
             return ordered_units
         else:
             return {}
-
 
     def decide_unit_actions(
         self,
@@ -961,6 +1038,7 @@ class MultipleUnitActionPlanner:
             # Update planned actions in here
             unit_action_planner = SingleUnitActionPlanner(
                 unit=unit,
+                units_to_act=self.units_to_act,
                 master=self.master,
                 multi_planner=self,
                 current_paths=self.current_paths,

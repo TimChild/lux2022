@@ -1,6 +1,6 @@
 from __future__ import annotations
 from enum import Enum, auto
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional, TYPE_CHECKING, List
 import numpy as np
 
 import util
@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 class ActionHandler:
     class HandleStatus(Enum):
         SUCCESS = auto()
+        PAUSING = auto()
         INVALID_FIRST_STEP = auto()
         MAX_STEPS_REACHED_PAUSE = auto()
 
@@ -70,7 +71,7 @@ class ActionHandler:
             If max_num_steps will be exceeded, don't add, return MAX_STEPS_REACHED_PAUSE statu-
         """
         if type(actions) != list:
-            raise TypeError(f'got {type(actions)} expected List[np.ndarray]')
+            raise TypeError(f"got {type(actions)} expected List[np.ndarray]")
         num_new_steps = util.num_turns_of_actions(actions)
         current_action_steps = util.num_turns_of_actions(self.unit.action_queue)
 
@@ -78,21 +79,26 @@ class ActionHandler:
         if current_action_steps + num_new_steps > self.max_queue_step_length:
             return self.HandleStatus.MAX_STEPS_REACHED_PAUSE
 
+        # If any ACT_N aren't > 0
+        if not all([act[util.ACT_N] > 0 for act in actions]):
+            raise ValueError(f"Got an action with N <= 0")
+
         # Otherwise update the action queue and add ActStatus along with each action
         self.unit.action_queue.extend(actions)
         self._add_current_act_status(len(actions), targeting_enemy=targeting_enemy, allow_partial=allow_partial)
         return self.HandleStatus.SUCCESS
 
-    def get_costmap(self, collision_only=None, target_enemy_id_num: Optional[int]=None):
+    def get_costmap(self, collision_only=None, target_enemy_id_num: Optional[int] = None):
         """Get costmap at current step"""
         if collision_only is None:
             # TODO: Check whether collision only works OK
             collision_only = False
         ignore_ids = [target_enemy_id_num] if target_enemy_id_num is not None else []
         enemy_collision_value = -1 if not ignore_ids else 0
+        ignore_ids.append(self.unit.id_num)
         cm = self.pathfinder.generate_costmap(
             self.unit,
-            ignore_id_nums=[self.unit.id_num].extend(ignore_ids),
+            ignore_id_nums=ignore_ids,
             friendly_light=True,
             friendly_heavy=True,
             enemy_light=None,
@@ -102,14 +108,16 @@ class ActionHandler:
         )
         return cm
 
-    def path_to_pos(self, pos:util.POS_TYPE, from_pos: Optional[util.POS_TYPE] = None, target_enemy_id_num: Optional[int]=None):
+    def path_to_pos(
+        self, pos: util.POS_TYPE, from_pos: Optional[util.POS_TYPE] = None, target_enemy_id_num: Optional[int] = None
+    ):
         """Calculate the path to pos from unit.pos (or from_pos)"""
         from_pos = from_pos if from_pos is not None else self.unit.pos
         cm = self.get_costmap(target_enemy_id_num=target_enemy_id_num)
         path = self.pathfinder.fast_path(from_pos, pos, cm, margin=4)
         return path
 
-    def path_to_nearest_non_zero(self, non_zero_array: np.ndarray, from_pos=None) -> np.ndarray:
+    def path_to_nearest_non_zero(self, non_zero_array: np.ndarray, from_pos=None, max_attempts=20) -> np.ndarray:
         """Calculate path to nearest available non-zero in array"""
         pos = from_pos if from_pos is not None else self.unit.pos
         path = util.calculate_path_to_nearest_non_zero(
@@ -118,7 +126,7 @@ class ActionHandler:
             from_pos=pos,
             target_array=non_zero_array,
             near_pos=pos,
-            max_attempts=20,
+            max_attempts=max_attempts,
             margin=2,
         )
         return path
@@ -139,7 +147,7 @@ class ActionHandler:
     def path_to_factory_queue(self) -> np.ndarray:
         """Get path to factory queue"""
         array = self.unit.factory.queue_array
-        path = self.path_to_nearest_non_zero(array)
+        path = self.path_to_nearest_non_zero(array, max_attempts=50)
         return path
 
     def add_dropoff(self) -> HandleStatus:
@@ -164,7 +172,7 @@ class ActionHandler:
             if status != SUCCESS:
                 return status
         if status is None:
-            logger.warning(f'{self.unit.log_prefix} tried to dropoff with no cargo')
+            logger.warning(f"{self.unit.log_prefix} tried to dropoff with no cargo")
             return SUCCESS
         return status
 
@@ -176,6 +184,7 @@ class ActionHandler:
         If unit has no resources, this will return unit to nearest factory queue spot, and set WAITING status
         """
         from unit_status import ActStatus, ActCategory
+
         # If unit has cargo, path direct to factory and set DROPOFF
         if self.unit.cargo_total > 0:
             path_to_factory = self.path_to_factory()
@@ -221,10 +230,11 @@ class ActionHandler:
         )
         unit_dict = {}
         for num in np.unique(unit_nums_array):
-            unit_id = f"unit_{num}"
-            unit = self.master.units.get_unit(unit_id)
-            if unit is not None:
-                unit_dict[unit_id] = unit
+            if num >= 0:
+                unit_id = f"unit_{num}"
+                unit = self.master.units.get_unit(unit_id)
+                if unit is not None:
+                    unit_dict[unit_id] = unit
         return unit_dict
 
     def get_nearest_unit_near(
@@ -382,16 +392,22 @@ class ActionHandler:
             logger.warning(
                 f"{self.unit.log_prefix} attempted too many digs, doing as many as possible then pathihng back to factory"
             )
-            status = self.add_actions_to_queue([self.unit.dig(n=max_digs)])
+            status = self.add_actions_to_queue([self.unit.dig(n=int(max_digs))])
             if status != self.HandleStatus.SUCCESS:
                 return status
             status = self.return_to_factory()
             if status != self.HandleStatus.SUCCESS:
                 return status
             return self.HandleStatus.LOW_POWER_RETURNING
+        elif n_digs < 1:
+            logger.warning(f"{self.unit.log_prefix} attempted {n_digs} digs, returning to factory")
+            status = self.return_to_factory()
+            if status != self.HandleStatus.SUCCESS:
+                return status
+            return self.HandleStatus.DIG_INVALID_RETURNING
 
         # Checks passed, add actions to queue
-        status = self.add_actions_to_queue([self.unit.dig(n=n_digs)])
+        status = self.add_actions_to_queue([self.unit.dig(n=int(n_digs))])
         if status != self.HandleStatus.SUCCESS:
             return status
 
@@ -403,7 +419,7 @@ class ActionHandler:
         # rubble/lichen don't change cargo
         return self.HandleStatus.SUCCESS
 
-    def add_pickup(self, resource_type: int = util.POWER, amount=0, allow_partial=False) -> HandleStatus:
+    def add_pickup(self, amount: int, resource_type: int = util.POWER, allow_partial=False) -> HandleStatus:
         """
         Add pickup to unit after some checks:
             - if on factory
@@ -450,7 +466,7 @@ class ActionHandler:
         if amount > max_pickup or amount > available:
             # Automatically resolve
             if allow_partial:
-                amount = max_pickup
+                amount = min(max_pickup, available)
             else:
                 logger.warning(
                     f"{self.unit.log_prefix} trying to pickup more than available or than space (amount={amount},  available={available}, current={current})"
@@ -459,6 +475,8 @@ class ActionHandler:
                 if status != self.HandleStatus.SUCCESS:
                     return status
                 return self.HandleStatus.PICKUP_INVALID_RETURNING
+
+        amount = int(amount)
 
         # Checks passed, add actions to queue
         status = self.add_actions_to_queue(
@@ -510,9 +528,28 @@ class ActionHandler:
                 return status
             return self.HandleStatus.TRANSFER_INVALID_RETURNING
 
+        # Figure out amount
+        if amount is None:
+            if resource_type == util.POWER:
+                amount = self.unit.power
+            elif resource_type == util.METAL:
+                amount = self.unit.cargo.metal
+            elif resource_type == util.WATER:
+                amount = self.unit.cargo.water
+            elif resource_type == util.ICE:
+                amount = self.unit.cargo.ice
+            elif resource_type == util.ORE:
+                amount = self.unit.cargo.ore
+            else:
+                raise ValueError(f"{resource_type} not valid")
+
         # Checks passed, add actions to queue
         status = self.add_actions_to_queue(
-            [self.unit.transfer(transfer_direction=direction, transfer_resource=resource_type, transfer_amount=amount)]
+            [
+                self.unit.transfer(
+                    transfer_direction=direction, transfer_resource=resource_type, transfer_amount=int(amount)
+                )
+            ]
         )
         if status != self.HandleStatus.SUCCESS:
             return status
@@ -520,23 +557,18 @@ class ActionHandler:
         # Update unit and factory
         factory = self.unit.factory
         if resource_type == util.POWER:
-            amount = amount if amount else self.unit.power
             self.unit.power -= amount
             # Factory power calculated based on planned_queues
         elif resource_type == util.METAL:
-            amount = amount if amount else self.unit.cargo.metal
             self.unit.cargo.metal -= amount
             factory.cargo.metal += amount
         elif resource_type == util.WATER:
-            amount = amount if amount else self.unit.cargo.water
             self.unit.cargo.water -= amount
             factory.cargo.water += amount
         elif resource_type == util.ICE:
-            amount = amount if amount else self.unit.cargo.ice
             self.unit.cargo.ice -= amount
             factory.cargo.ice += amount
         elif resource_type == util.ORE:
-            amount = amount if amount else self.unit.cargo.ore
             self.unit.cargo.ore -= amount
             factory.cargo.ore += amount
         return self.HandleStatus.SUCCESS
