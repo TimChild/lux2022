@@ -117,7 +117,9 @@ class ActionHandler:
         path = self.pathfinder.fast_path(from_pos, pos, cm, margin=4)
         return path
 
-    def path_to_nearest_non_zero(self, non_zero_array: np.ndarray, from_pos=None, max_attempts=20, ignore_friendly=False) -> np.ndarray:
+    def path_to_nearest_non_zero(
+        self, non_zero_array: np.ndarray, from_pos=None, max_attempts=20, ignore_friendly=False
+    ) -> np.ndarray:
         """Calculate path to nearest available non-zero in array"""
         pos = from_pos if from_pos is not None else self.unit.pos
         path = util.calculate_path_to_nearest_non_zero(
@@ -142,7 +144,7 @@ class ActionHandler:
         pos = from_pos if from_pos is not None else self.unit.pos
         # If coming from far away, other units can move if needed
         ignore_friendly = False
-        if util.manhattan(from_pos, self.unit.factory.pos) > 4:
+        if util.manhattan(pos, self.unit.factory.pos) > 4:
             ignore_friendly = True
 
         array = self.unit.factory.factory_loc
