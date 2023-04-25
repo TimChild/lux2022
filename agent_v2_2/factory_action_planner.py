@@ -329,87 +329,87 @@ class FactoryActionPlanner:
         if step < 200:
             desires.update_desires(
                 info=info,
-                light_energy_consideration=300,
+                light_energy_consideration=500,
                 light_rubble_min_tiles=20,
                 light_rubble_max_tiles=40,
-                light_rubble_max_num=5,
+                light_rubble_max_num=1,
                 light_metal_min=50,
                 light_metal_max=200,
-                light_metal_max_num=2,
+                light_metal_max_num=3,
                 light_water_min=20,
                 light_water_max=100,
                 light_water_max_num=0,
                 light_attack_max_num=1,
-                heavy_energy_consideration=1000,
+                heavy_energy_consideration=400,
                 heavy_rubble_min_tiles=30,
                 heavy_rubble_max_tiles=50,
                 heavy_rubble_max_num=1,
                 heavy_metal_min=100,
-                heavy_metal_max=300,
-                heavy_metal_max_num=2,
+                heavy_metal_max=500,
+                heavy_metal_max_num=3,
                 heavy_water_min=200,
                 heavy_water_max=500,
-                heavy_water_max_num=2,
+                heavy_water_max_num=1,
                 heavy_attack_max_num=1,
             )
         # Early mid game
         elif step < 500:
             desires.update_desires(
                 info=info,
-                light_energy_consideration=1100,
+                light_energy_consideration=500,
                 light_rubble_min_tiles=50,
                 light_rubble_max_tiles=200,
-                light_rubble_max_num=4,
+                light_rubble_max_num=2,
                 light_metal_min=50,
                 light_metal_max=200,
-                light_metal_max_num=0,
+                light_metal_max_num=1,
                 light_water_min=100,
                 light_water_max=300,
                 light_water_max_num=0,
-                light_attack_max_num=2,
-                heavy_energy_consideration=1000,
+                light_attack_max_num=1,
+                heavy_energy_consideration=400,
                 heavy_rubble_min_tiles=20,
                 heavy_rubble_max_tiles=40,
-                heavy_rubble_max_num=2,
+                heavy_rubble_max_num=0,
                 heavy_metal_min=100,
-                heavy_metal_max=300,
-                heavy_metal_max_num=2,
+                heavy_metal_max=500,
+                heavy_metal_max_num=3,
                 heavy_water_min=500,
                 heavy_water_max=1500,
-                heavy_water_max_num=3,
-                heavy_attack_max_num=3,
+                heavy_water_max_num=2,
+                heavy_attack_max_num=1,
             )
         # mid late game
         elif step < 800:
             desires.update_desires(
                 info=info,
-                light_energy_consideration=1100,
-                light_rubble_min_tiles=100,
-                light_rubble_max_tiles=150,
-                light_rubble_max_num=4,
+                light_energy_consideration=900,
+                light_rubble_min_tiles=200,
+                light_rubble_max_tiles=1000,
+                light_rubble_max_num=5,
                 light_metal_min=100,
                 light_metal_max=200,
                 light_metal_max_num=0,
                 light_water_min=300,
                 light_water_max=1000,
                 light_water_max_num=0,
-                light_attack_max_num=3,
-                heavy_energy_consideration=1000,
+                light_attack_max_num=2,
+                heavy_energy_consideration=800,
                 heavy_rubble_min_tiles=30,
                 heavy_rubble_max_tiles=70,
-                heavy_rubble_max_num=2,
+                heavy_rubble_max_num=0,
                 heavy_metal_min=100,
-                heavy_metal_max=300,
-                heavy_metal_max_num=2,
-                heavy_water_min=1000,
+                heavy_metal_max=400,
+                heavy_metal_max_num=3,
+                heavy_water_min=1500,
                 heavy_water_max=2500,
-                heavy_water_max_num=4,
-                heavy_attack_max_num=3,
+                heavy_water_max_num=3,
+                heavy_attack_max_num=1,
             )
         else:
             desires.update_desires(
                 info=info,
-                light_energy_consideration=1000,
+                light_energy_consideration=500,
                 light_rubble_min_tiles=50,
                 light_rubble_max_tiles=200,
                 light_rubble_max_num=5,
@@ -420,16 +420,16 @@ class FactoryActionPlanner:
                 light_water_max=1000,
                 light_water_max_num=0,
                 light_attack_max_num=3,
-                heavy_energy_consideration=1000,
+                heavy_energy_consideration=500,
                 heavy_rubble_min_tiles=20,
                 heavy_rubble_max_tiles=50,
-                heavy_rubble_max_num=4,
-                heavy_metal_min=0,
-                heavy_metal_max=300,
-                heavy_metal_max_num=0,
+                heavy_rubble_max_num=1,
+                heavy_metal_min=100,
+                heavy_metal_max=200,
+                heavy_metal_max_num=1,
                 heavy_water_min=500,
                 heavy_water_max=2500,
-                heavy_water_max_num=3,
+                heavy_water_max_num=5,
                 heavy_attack_max_num=3,
             )
         logger.debug(
@@ -546,20 +546,44 @@ class FactoryActionPlanner:
                 axis=1,
             )
 
+        kernel = util.manhattan_kernel(5)
+        value_kernel = 0.8**kernel
+        ore_value = util.convolve_array_kernel(ore, value_kernel)
+        df["ore_value"] = df.apply(
+            lambda row: ore_value[row.pos[0], row.pos[1]],
+            axis=1,
+        )
+
+        ice_value = util.convolve_array_kernel(ice, value_kernel)
+        df["ice_value"] = df.apply(
+            lambda row: ice_value[row.pos[0], row.pos[1]],
+            axis=1,
+        )
+
+        thresh = df['ice_value'].quantile(0.8)
+        df["ice_value_top_20"] = (df["ice_value"] > thresh).astype(int)
+        thresh = df['ore_value'].quantile(0.6)
+        df["ore_value_top_40"] = (df["ore_value"] > thresh).astype(int)
         df["ice_less_than_X"] = df["ice_dist"] <= 4
-        df["ore_less_than_X"] = df["ore_dist"] <= 8
+        df["ice_less_than_Y"] = df["ice_dist"] <= 6
+        df["ore_less_than_X"] = df["ore_dist"] <= 5
+        df["ore_less_than_Y"] = df["ore_dist"] <= 15
         df["friendly_further_than_X"] = df["nearest_friendly_factory"] >= 15
 
         # df = df.sort_values("ice_dist")
         df = df.sort_values(
             [
+                "ice_value_top_20",
+                "ore_value_top_40",
+                "friendly_further_than_X",
+                "ice_less_than_Y",
+                "ore_less_than_Y",
                 "ice_less_than_X",
                 "ore_less_than_X",
-                "friendly_further_than_X",
                 "ice_dist",
                 "ore_dist",
             ],
-            ascending=[False, False, False, True, True],
+            ascending=[False, False, False, False, False, False, False, True, True],
         )
 
         # Keep only top X before doing expensive calculations
